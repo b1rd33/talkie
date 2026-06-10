@@ -14,8 +14,8 @@ struct TalkieApp: App {
                 .keyboardShortcut("q")
         }
         Settings {
-            Text("Settings placeholder") // replaced in Task 3
-                .frame(width: 420, height: 200)
+            SettingsView(keychain: AppServices.shared.keychain,
+                         settings: AppServices.shared.settings)
         }
     }
 }
