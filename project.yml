@@ -1,0 +1,43 @@
+name: Talkie
+options:
+  bundleIdPrefix: com.archiev
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Talkie:
+    type: application
+    platform: macOS
+    sources: [Talkie]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
+        INFOPLIST_KEY_CFBundleDisplayName: Talkie
+  TalkieTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [TalkieTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES  # test bundle needs an Info.plist or signing fails
+    dependencies:
+      - target: Talkie
+schemes:
+  Talkie:
+    build:
+      targets:
+        Talkie: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [TalkieTests]
