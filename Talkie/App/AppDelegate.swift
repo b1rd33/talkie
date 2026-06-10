@@ -7,6 +7,7 @@ final class AppServices {
     static let shared = AppServices()
     let keychain = KeychainStore()
     let settings = SettingsStore()
+    let fnMonitor = FnKeyMonitor()
     private init() {}
 }
 
@@ -17,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !Self.isRunningTests else { return }
-        // Components are wired here in later tasks.
+        AppServices.shared.fnMonitor.onPress = { NSLog("Talkie: fn DOWN") }
+        AppServices.shared.fnMonitor.onRelease = { NSLog("Talkie: fn UP") }
+        AppServices.shared.fnMonitor.start()
     }
 }
