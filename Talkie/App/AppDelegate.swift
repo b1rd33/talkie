@@ -1,14 +1,36 @@
 import AppKit
 import Foundation
 
-/// Process-wide service container. Extended in later tasks.
 @MainActor
 final class AppServices {
     static let shared = AppServices()
+
     let keychain = KeychainStore()
     let settings = SettingsStore()
     let fnMonitor = FnKeyMonitor()
-    private init() {}
+    let recorder = AudioRecorder()
+    let coordinator: DictationCoordinator
+    private(set) var flowBar: FlowBarPanel?
+
+    private init() {
+        let engine = OpenAIEngine(
+            apiKeyProvider: { KeychainStore().read(.openAIKey) },
+            modelProvider: { UserDefaults.standard.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" }
+        )
+        let cleanup = CleanupService(
+            apiKeyProvider: { KeychainStore().read(.openRouterKey) },
+            modelProvider: { UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash" }
+        )
+        coordinator = DictationCoordinator(recorder: recorder, engine: engine,
+                                           cleanup: cleanup, inserter: TextInserter())
+    }
+
+    func startUI() {
+        flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder)
+        fnMonitor.onPress = { [coordinator] in Task { await coordinator.dictationKeyPressed() } }
+        fnMonitor.onRelease = { [coordinator] in Task { await coordinator.dictationKeyReleased() } }
+        fnMonitor.start()
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -18,8 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !Self.isRunningTests else { return }
-        AppServices.shared.fnMonitor.onPress = { NSLog("Talkie: fn DOWN") }
-        AppServices.shared.fnMonitor.onRelease = { NSLog("Talkie: fn UP") }
-        AppServices.shared.fnMonitor.start()
+        AppServices.shared.startUI()
     }
 }
