@@ -57,10 +57,15 @@ final class AppServices {
                 return (provider == "openai" && model.hasPrefix("gpt-5")) ? ["reasoning_effort": "none"] : [:]
             }
         )
+        let orTranscription = OpenRouterTranscriptionEngine(
+            apiKeyProvider: { KeychainStore().read(.openRouterKey) },
+            modelProvider: { UserDefaults.standard.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe" }
+        )
+        let cloudSwitch = CloudEngineSwitch(openai: engine, openrouter: orTranscription)
         let backend = FluidAudioBackend()
         let localEngine = ParakeetEngine(backend: backend)
         let router = EngineRouter(
-            cloud: engine, local: localEngine,
+            cloud: cloudSwitch, local: localEngine,
             mode: { UserDefaults.standard.string(forKey: "engineMode") ?? "cloud" },
             localAvailable: { FluidAudioBackend.modelsPresent })
         let history = try? HistoryStore()

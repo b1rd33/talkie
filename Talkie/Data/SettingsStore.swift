@@ -12,6 +12,9 @@ final class SettingsStore {
     var cleanupModel: String { didSet { defaults.set(cleanupModel, forKey: "cleanupModel") } }
     /// "openrouter" | "openai" — which API the cleanup chat call goes to.
     var cleanupProvider: String { didSet { defaults.set(cleanupProvider, forKey: "cleanupProvider") } }
+    /// "openai" | "openrouter" — which API cloud (batch) transcription goes to.
+    var transcriptionProvider: String { didSet { defaults.set(transcriptionProvider, forKey: "transcriptionProvider") } }
+    var openrouterTranscriptionModel: String { didSet { defaults.set(openrouterTranscriptionModel, forKey: "openrouterTranscriptionModel") } }
     var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
@@ -47,6 +50,8 @@ final class SettingsStore {
         transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe"
         cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
         cleanupProvider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+        transcriptionProvider = defaults.string(forKey: "transcriptionProvider") ?? "openai"
+        openrouterTranscriptionModel = defaults.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe"
         showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
         engineMode = defaults.string(forKey: "engineMode") ?? "cloud"

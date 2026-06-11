@@ -8,6 +8,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.transcriptionModel, "gpt-4o-mini-transcribe")
         XCTAssertEqual(store.cleanupModel, "google/gemini-2.5-flash-lite") // measured 3x faster than flash
         XCTAssertEqual(store.cleanupProvider, "openrouter")
+        XCTAssertEqual(store.transcriptionProvider, "openai")
+        XCTAssertEqual(store.openrouterTranscriptionModel, "mistralai/voxtral-mini-transcribe")
     }
 
     func testNewDefaults() {
