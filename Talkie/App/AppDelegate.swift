@@ -46,8 +46,26 @@ final class AppServices {
             })
     }
 
+    private var pillReshowTask: Task<Void, Never>?
+
+    /// "Hide for 1 hour": orders the pill out and re-shows it later, respecting
+    /// whatever showFlowBar says by then. (If the user toggles showFlowBar in
+    /// Settings during the hour, the Phase 2 visibility loop re-shows early —
+    /// acceptable: an explicit settings change wins over a temporary hide.)
+    func hidePillTemporarily(for seconds: TimeInterval = 3600) {
+        pillReshowTask?.cancel()
+        flowBar?.setVisible(false)
+        pillReshowTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self, !Task.isCancelled else { return }
+            self.flowBar?.setVisible(self.settings.showFlowBar)
+        }
+    }
+
     func startUI() {
-        flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder)
+        flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder,
+                               onHideForHour: { [weak self] in self?.hidePillTemporarily() },
+                               onHidePermanently: { [weak self] in self?.settings.showFlowBar = false })
         fnMonitor.onPress = { [coordinator] in Task { await coordinator.dictationKeyPressed() } }
         fnMonitor.onRelease = { [coordinator] in Task { await coordinator.dictationKeyReleased() } }
         fnMonitor.onDoubleTap = { [coordinator] in Task { await coordinator.handsFreeToggled() } }

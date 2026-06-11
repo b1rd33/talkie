@@ -5,18 +5,11 @@ import SwiftUI
 struct TalkieApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    private var menuIcon: String {
-        switch AppServices.shared.coordinator.state {
-        case .idle: "waveform.circle"
-        case .recording: "waveform.circle.fill"
-        case .transcribing, .cleaning, .inserting: "ellipsis.circle"
-        case .error: "exclamationmark.circle"
-        }
-    }
-
     var body: some Scene {
-        MenuBarExtra("Talkie", systemImage: menuIcon) {
+        MenuBarExtra {
             MenuBarContent()
+        } label: {
+            MenuBarIcon(coordinator: AppServices.shared.coordinator)
         }
         Window("Talkie", id: "hub") {
             if let history = AppServices.shared.history {
@@ -60,5 +53,25 @@ struct MenuBarContent: View {
         Divider()
         Button("Quit Talkie") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+}
+
+/// Menu-bar glyph that re-renders on coordinator state changes. Reading the state
+/// inside this View's body registers Observation tracking — the Phase 1
+/// computed-property-in-App approach did not re-render reliably.
+struct MenuBarIcon: View {
+    let coordinator: DictationCoordinator
+
+    var body: some View {
+        Image(systemName: symbolName)
+    }
+
+    private var symbolName: String {
+        switch coordinator.state {
+        case .idle: "waveform.circle"
+        case .recording: "waveform.circle.fill"
+        case .transcribing, .cleaning, .inserting: "ellipsis.circle"
+        case .error: "exclamationmark.circle"
+        }
     }
 }

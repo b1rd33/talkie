@@ -6,7 +6,9 @@ import SwiftUI
 final class FlowBarPanel {
     private let panel: NSPanel
 
-    init(coordinator: DictationCoordinator, recorder: AudioRecorder) {
+    init(coordinator: DictationCoordinator, recorder: AudioRecorder,
+         onHideForHour: @escaping () -> Void = {},
+         onHidePermanently: @escaping () -> Void = {}) {
         panel = NSPanel(contentRect: .zero,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
@@ -15,10 +17,12 @@ final class FlowBarPanel {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.ignoresMouseEvents = true // Phase 1: display only; click targets come later
+        panel.ignoresMouseEvents = false // pill has click targets now (✕, context menu)
         panel.hidesOnDeactivate = false
 
-        let host = NSHostingView(rootView: FlowBarView(coordinator: coordinator, recorder: recorder))
+        let host = NSHostingView(rootView: FlowBarView(coordinator: coordinator, recorder: recorder,
+                                                       onHideForHour: onHideForHour,
+                                                       onHidePermanently: onHidePermanently))
         host.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
         panel.contentView = host
         panel.setContentSize(host.frame.size)
