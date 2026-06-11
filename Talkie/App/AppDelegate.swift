@@ -14,6 +14,7 @@ final class AppServices {
     let pasteLastInserter = TextInserter(notifier: Notifier())
     let coordinator: DictationCoordinator
     let history: HistoryStore?
+    let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
     private(set) var flowBar: FlowBarPanel?
 
     private init() {
@@ -25,11 +26,17 @@ final class AppServices {
             apiKeyProvider: { KeychainStore().read(.openRouterKey) },
             modelProvider: { UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash" }
         )
+        let backend = FluidAudioBackend()
+        let localEngine = ParakeetEngine(backend: backend)
+        let router = EngineRouter(
+            cloud: engine, local: localEngine,
+            mode: { UserDefaults.standard.string(forKey: "engineMode") ?? "cloud" },
+            localAvailable: { FluidAudioBackend.modelsPresent })
         let history = try? HistoryStore()
         self.history = history
         let notifier = Notifier()
         coordinator = DictationCoordinator(
-            recorder: recorder, engine: engine, cleanup: cleanup,
+            recorder: recorder, engine: router, cleanup: cleanup,
             inserter: TextInserter(notifier: notifier),
             notifier: notifier,
             history: history,

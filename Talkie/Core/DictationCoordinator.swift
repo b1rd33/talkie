@@ -37,6 +37,8 @@ final class DictationCoordinator {
     private var processingTask: Task<Void, Never>?
     private var capTask: Task<Void, Never>?
     private(set) var isHandsFree = false
+    /// Briefly true after a cloud→local fallback insert — the pill flashes "offline".
+    private(set) var offlineBadgeVisible = false
     private var targetApp: (bundleID: String?, name: String?) = (nil, nil)
 
     init(recorder: AudioRecording, engine: TranscriptionEngine,
@@ -136,12 +138,13 @@ final class DictationCoordinator {
 
     private func process() async {
         guard state == .recording else { return } // cancelled (or superseded) before this task started
+        var audioURL: URL?
         do {
             state = .transcribing
             let audio = try await recorder.stop()
+            audioURL = audio.fileURL
             let transcript = try await engine.transcribe(audio, dictionaryTerms: [])
             try Task.checkCancellation()
-            defer { try? FileManager.default.removeItem(at: audio.fileURL) } // spec §8: discard audio
 
             state = .cleaning
             let cleaned: String
@@ -157,9 +160,14 @@ final class DictationCoordinator {
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
             state = .idle
+            if transcript.usedFallback {
+                offlineBadgeVisible = true
+                Task { try? await Task.sleep(for: .seconds(4)); self.offlineBadgeVisible = false }
+            }
             history?.save(rawText: transcript.text, cleanedText: cleaned,
                           appBundleID: targetApp.bundleID, appName: targetApp.name,
-                          duration: audio.duration, engine: "openai", status: .completed)
+                          duration: audio.duration, engine: transcript.engineID, status: .completed)
+            try? FileManager.default.removeItem(at: audio.fileURL) // spec §8: discard audio on success
         } catch is CancellationError {
             recorder.discard()
             state = .idle
@@ -168,8 +176,20 @@ final class DictationCoordinator {
         } catch {
             recorder.discard()
             fail(error)
+            // spec §10 row 1 / §8: failed dictations keep their audio for retry.
+            var keptPath: String?
+            if let audioURL {
+                let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("Talkie/FailedAudio", isDirectory: true)
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let dest = dir.appendingPathComponent("\(UUID().uuidString).m4a")
+                if (try? FileManager.default.moveItem(at: audioURL, to: dest)) != nil {
+                    keptPath = dest.path
+                }
+            }
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
-                          appName: targetApp.name, duration: 0, engine: "openai", status: .failed)
+                          appName: targetApp.name, duration: 0, engine: "openai", status: .failed,
+                          audioPath: keptPath)
         }
     }
 

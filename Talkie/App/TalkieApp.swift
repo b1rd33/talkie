@@ -7,6 +7,13 @@ struct TalkieApp: App {
     var body: some Scene {
         MenuBarExtra("Talkie", systemImage: menuIcon) {
             Text("Talkie — hold fn to dictate")
+            Picker("Engine", selection: Binding(
+                get: { AppServices.shared.settings.engineMode },
+                set: { AppServices.shared.settings.engineMode = $0 })) {
+                Text("Cloud").tag("cloud")
+                Text("Local").tag("local")
+            }
+            .pickerStyle(.inline)
             Divider()
             SettingsLink { Text("Settings…") }
                 .keyboardShortcut(",")

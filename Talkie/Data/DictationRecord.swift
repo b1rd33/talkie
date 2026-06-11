@@ -18,6 +18,8 @@ final class DictationRecord {
     // populated by Phase 4's cleanup-levels and language-pin work, nil until then.
     var cleanupModel: String?
     var language: String?
+    /// Failed/cancelled dictations keep their audio here for retry (spec §8/§10).
+    var audioPath: String?
     var statusRaw: String
     var wordCount: Int
 
@@ -26,7 +28,8 @@ final class DictationRecord {
     init(date: Date = Date(), rawText: String, cleanedText: String,
          appBundleID: String?, appName: String?, durationSec: Double,
          engine: String, status: DictationStatus,
-         cleanupModel: String? = nil, language: String? = nil) {
+         cleanupModel: String? = nil, language: String? = nil,
+         audioPath: String? = nil) {
         self.date = date
         self.rawText = rawText
         self.cleanedText = cleanedText
@@ -36,6 +39,7 @@ final class DictationRecord {
         self.engine = engine
         self.cleanupModel = cleanupModel
         self.language = language
+        self.audioPath = audioPath
         self.statusRaw = status.rawValue
         self.wordCount = cleanedText.split { $0.isWhitespace }.count
     }

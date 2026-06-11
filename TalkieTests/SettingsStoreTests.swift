@@ -14,6 +14,7 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         XCTAssertTrue(store.showFlowBar)
         XCTAssertFalse(store.launchAtLogin)
+        XCTAssertEqual(store.engineMode, "cloud")
     }
 
     func testPersistence() {

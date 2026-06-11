@@ -12,6 +12,7 @@ final class SettingsStore {
     var cleanupModel: String { didSet { defaults.set(cleanupModel, forKey: "cleanupModel") } }
     var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
+    var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -19,5 +20,6 @@ final class SettingsStore {
         cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash"
         showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
+        engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
     }
 }

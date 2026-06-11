@@ -38,6 +38,13 @@ struct FlowBarView: View {
         }
         .frame(width: 260, height: 56, alignment: .bottom)
         .padding(.bottom, 2)
+        .overlay(alignment: .topTrailing) {
+            if coordinator.offlineBadgeVisible {
+                Text("offline").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.orange.opacity(0.9), in: Capsule()).foregroundStyle(.white)
+                    .offset(y: -4)
+            }
+        }
         .animation(.spring(duration: 0.25), value: coordinator.state)
         .onReceive(timer) { _ in
             guard coordinator.state == .recording else { return }

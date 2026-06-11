@@ -9,7 +9,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsTab(settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
-            EngineSettingsTab(keychain: keychain, settings: settings)
+            EngineSettingsTab(keychain: keychain, settings: settings,
+                              downloader: AppServices.shared.modelDownloader)
                 .tabItem { Label("Engines", systemImage: "waveform") }
         }
         .frame(width: 520, height: 340)
@@ -48,6 +49,7 @@ private struct GeneralSettingsTab: View {
 private struct EngineSettingsTab: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
+    let downloader: ModelDownloader
     @State private var openAIKey: String = ""
     @State private var openRouterKey: String = ""
 
@@ -55,6 +57,32 @@ private struct EngineSettingsTab: View {
 
     var body: some View {
         Form {
+            Section("Engine") {
+                Picker("Transcription runs", selection: $settings.engineMode) {
+                    Text("In the cloud (OpenAI)").tag("cloud")
+                    Text("On this Mac (Parakeet)").tag("local")
+                }
+                .pickerStyle(.radioGroup)
+            }
+            Section("Local models") {
+                switch downloader.state {
+                case .ready:
+                    LabeledContent("Status", value: "Downloaded")
+                    removeModelsButton
+                case .downloading:
+                    ProgressView(value: downloader.progress) { Text("Downloading… \(Int(downloader.progress * 100))%") }
+                case .failed(let message):
+                    Text(message).foregroundStyle(.red)
+                    Button("Retry") { Task { await downloader.download() } }
+                case .idle:
+                    LabeledContent("Status", value: FluidAudioBackend.modelsPresent ? "Downloaded" : "Not downloaded (~2 GB)")
+                    if FluidAudioBackend.modelsPresent {
+                        removeModelsButton
+                    } else {
+                        Button("Download models") { Task { await downloader.download() } }
+                    }
+                }
+            }
             Section("API Keys") {
                 SecureField("OpenAI API key (sk-…)", text: $openAIKey)
                     .onChange(of: openAIKey) { _, new in keychain.write(new, for: .openAIKey) }
@@ -72,6 +100,13 @@ private struct EngineSettingsTab: View {
         .onAppear {
             openAIKey = keychain.read(.openAIKey) ?? ""
             openRouterKey = keychain.read(.openRouterKey) ?? ""
+        }
+    }
+
+    private var removeModelsButton: some View {
+        Button("Remove models") {
+            try? FileManager.default.removeItem(at: FluidAudioBackend.modelsDirectory)
+            downloader.reset()
         }
     }
 }
