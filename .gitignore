@@ -4,3 +4,4 @@ DerivedData/
 .build/
 Talkie.xcodeproj/
 *.xcresult
+tools/keygen/talkie-keygen
