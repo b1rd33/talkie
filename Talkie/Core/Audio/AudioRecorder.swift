@@ -9,6 +9,7 @@ struct RecordedAudio: Sendable {
 @MainActor
 protocol AudioRecording: AnyObject {
     var latestLevel: Float { get }
+    var chunkConsumer: (([Float]) -> Void)? { get set }
     func start() async throws
     func stop() async throws -> RecordedAudio
     func discard()
@@ -36,6 +37,12 @@ final class AudioSink {
     private var converter: AVAudioConverter?
     private var sourceFormat: AVAudioFormat?
     private(set) var latestLevel: Float = 0
+
+    /// Streaming hook: every converted 16kHz mono chunk is forwarded here as it
+    /// arrives (used by Instant mode). Called on the tap thread — consumer must
+    /// be thread-safe. Accumulation into `samples` continues regardless, so the
+    /// batch path always has the full recording for fallback.
+    var chunkConsumer: (([Float]) -> Void)?
 
     var sampleCount: Int { samples.count }
     var duration: TimeInterval { Double(samples.count) / 16_000 }
@@ -68,6 +75,9 @@ final class AudioSink {
         let n = Int(out.frameLength)
         if n > 0, let ptr = out.floatChannelData?[0] {
             samples.append(contentsOf: UnsafeBufferPointer(start: ptr, count: n))
+            if let chunkConsumer {
+                chunkConsumer(Array(UnsafeBufferPointer(start: ptr, count: n)))
+            }
             var sum: Float = 0
             for i in 0..<n { sum += ptr[i] * ptr[i] }
             latestLevel = min(1, sqrt(sum / Float(n)) * 4) // scaled RMS for UI bars
@@ -90,6 +100,9 @@ final class AudioSink {
             let n = Int(out.frameLength)
             if n > 0, let ptr = out.floatChannelData?[0] {
                 samples.append(contentsOf: UnsafeBufferPointer(start: ptr, count: n))
+                if let chunkConsumer {
+                    chunkConsumer(Array(UnsafeBufferPointer(start: ptr, count: n)))
+                }
             }
             if status != .haveData || n == 0 { break }
         }
@@ -136,12 +149,18 @@ final class AudioRecorder: AudioRecording {
 
     var latestLevel: Float { sink.latestLevel }
 
+    /// Forwarded to the active sink for the duration of a recording (Instant mode).
+    var chunkConsumer: (([Float]) -> Void)? {
+        didSet { sink.chunkConsumer = chunkConsumer }
+    }
+
     func start() async throws {
         guard !isRecording else { return }
         let granted = await AVCaptureDevice.requestAccess(for: .audio)
         guard granted else { throw AudioError.microphoneDenied }
 
         sink = AudioSink()
+        sink.chunkConsumer = chunkConsumer
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw AudioError.engineFailure("no input device") }
