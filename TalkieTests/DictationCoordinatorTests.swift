@@ -138,6 +138,29 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    func testExpiredEntitlementBlocksDictationWithErrorPill() async {
+        let recorder = MockRecorder()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0, entitlement: { .expired })
+        await coordinator.dictationKeyPressed()
+        XCTAssertEqual(recorder.started, 0)
+        guard case .error(let message) = coordinator.state else {
+            return XCTFail("expected error state, got \(coordinator.state)")
+        }
+        XCTAssertTrue(message.contains("Trial expired"))
+    }
+
+    func testEntitledDictationProceeds() async {
+        let recorder = MockRecorder()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0, entitlement: { nil })
+        await coordinator.dictationKeyPressed()
+        XCTAssertEqual(coordinator.state, .recording)
+        XCTAssertEqual(recorder.started, 1)
+    }
+
     func testRetryTranscribesKeptAudioAndCompletesRecord() async throws {
         let history = try HistoryStore(inMemory: true)
         let audioURL = FileManager.default.temporaryDirectory

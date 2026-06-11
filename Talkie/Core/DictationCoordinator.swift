@@ -46,6 +46,7 @@ final class DictationCoordinator {
     private let pinnedLanguageProvider: () -> String?
     private let cleanupModelProvider: () -> String?
     private let keepRecordingsProvider: () -> Bool
+    private let entitlement: (() -> EntitlementError?)?
     private var activeTerms: [String] = []
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
@@ -66,7 +67,8 @@ final class DictationCoordinator {
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
          pinnedLanguageProvider: @escaping () -> String? = { nil },
          cleanupModelProvider: @escaping () -> String? = { nil },
-         keepRecordingsProvider: @escaping () -> Bool = { false }) {
+         keepRecordingsProvider: @escaping () -> Bool = { false },
+         entitlement: (() -> EntitlementError?)? = nil) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -82,6 +84,7 @@ final class DictationCoordinator {
         self.pinnedLanguageProvider = pinnedLanguageProvider
         self.cleanupModelProvider = cleanupModelProvider
         self.keepRecordingsProvider = keepRecordingsProvider
+        self.entitlement = entitlement
     }
 
     func dictationKeyPressed() async {
@@ -91,6 +94,11 @@ final class DictationCoordinator {
             return
         }
         guard state == .idle || isErrorState else { return } // one dictation in flight
+        if let entitlement, let gateError = entitlement() {
+            isHandsFree = false // a gated hands-free attempt must not stay armed (Phase 2 flag)
+            fail(gateError)
+            return
+        }
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
         activeLevel = cleanupLevelProvider()
