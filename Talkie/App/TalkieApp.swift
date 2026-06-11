@@ -65,15 +65,17 @@ struct MenuBarIcon: View {
     let coordinator: DictationCoordinator
 
     var body: some View {
-        Image(systemName: symbolName)
-    }
-
-    private var symbolName: String {
+        // Idle: Talkie's own waveform-bars glyph (template asset, auto-tinted).
+        // Active states keep distinct SF symbols so state stays readable at a glance.
         switch coordinator.state {
-        case .idle: "waveform.circle"
-        case .recording: "waveform.circle.fill"
-        case .transcribing, .cleaning, .inserting: "ellipsis.circle"
-        case .error: "exclamationmark.circle"
+        case .idle:
+            Image("MenuBarIcon")
+        case .recording:
+            Image(systemName: "waveform.circle.fill")
+        case .transcribing, .cleaning, .inserting:
+            Image(systemName: "ellipsis.circle")
+        case .error:
+            Image(systemName: "exclamationmark.circle")
         }
     }
 }

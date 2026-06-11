@@ -170,7 +170,18 @@ final class AppServices {
         trackPillVisibility()
         trackCustomShortcuts()
         trackDockIconPolicy()
+        trackPillPosition()
         showOnboardingIfNeeded()
+    }
+
+    /// Re-arming observation loop: pill placement follows Settings → Appearance.
+    private func trackPillPosition() {
+        _ = withObservationTracking {
+            settings.pillPosition
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackPillPosition() }
+        }
+        flowBar?.reposition()
     }
 
     /// Re-arming observation loop: Dock visibility follows Settings → Appearance.

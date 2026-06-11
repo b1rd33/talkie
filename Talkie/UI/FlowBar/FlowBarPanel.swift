@@ -5,11 +5,13 @@ import SwiftUI
 @MainActor
 final class FlowBarPanel {
     private let panel: NSPanel
+    private let settings: SettingsStore?
 
     init(coordinator: DictationCoordinator, recorder: AudioRecorder,
          settings: SettingsStore? = nil,
          onHideForHour: @escaping () -> Void = {},
          onHidePermanently: @escaping () -> Void = {}) {
+        self.settings = settings
         panel = NSPanel(contentRect: .zero,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
@@ -41,10 +43,23 @@ final class FlowBarPanel {
         visible ? panel.orderFrontRegardless() : panel.orderOut(nil)
     }
 
-    private func reposition() {
+    /// Re-reads Settings → pill position and moves the panel (AppServices tracks changes).
+    func reposition() {
         guard let screen = NSScreen.main else { return }
         let frame = screen.visibleFrame
         let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: frame.minY + 12))
+        let margin: CGFloat = 12
+        let origin: NSPoint
+        switch settings?.pillPosition ?? "bottomCenter" {
+        case "bottomLeft":
+            origin = NSPoint(x: frame.minX + margin, y: frame.minY + margin)
+        case "bottomRight":
+            origin = NSPoint(x: frame.maxX - size.width - margin, y: frame.minY + margin)
+        case "topCenter":
+            origin = NSPoint(x: frame.midX - size.width / 2, y: frame.maxY - size.height - margin)
+        default: // bottomCenter
+            origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + margin)
+        }
+        panel.setFrameOrigin(origin)
     }
 }

@@ -154,6 +154,18 @@ private struct GeneralSettingsTab: View {
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
+                Picker("Pill style", selection: $settings.pillStyle) {
+                    Text("Classic — slim notch when idle").tag("classic")
+                    Text("Dot — tiny dot when idle").tag("dot")
+                    Text("Hidden — appears only while dictating").tag("hidden")
+                    Text("Compact — hidden idle, smaller pill").tag("compact")
+                }
+                Picker("Pill position", selection: $settings.pillPosition) {
+                    Text("Bottom center").tag("bottomCenter")
+                    Text("Bottom left").tag("bottomLeft")
+                    Text("Bottom right").tag("bottomRight")
+                    Text("Top center").tag("topCenter")
+                }
                 Toggle("Show Dock icon", isOn: $settings.showDockIcon)
             }
             Section("Privacy") {

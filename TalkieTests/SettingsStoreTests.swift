@@ -18,6 +18,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.engineMode, "cloud")
         XCTAssertFalse(store.showDockIcon)
         XCTAssertFalse(store.keepRecordings)
+        XCTAssertEqual(store.pillStyle, "classic")
+        XCTAssertEqual(store.pillPosition, "bottomCenter")
     }
 
     func testStyleDefaults() {
