@@ -69,11 +69,28 @@ final class DictationCoordinator {
         await processingTask?.value
     }
 
+    /// Cancels the in-flight dictation: recording is discarded; transcription and
+    /// cleanup are interrupted cooperatively. Inserting is past the point of no return.
+    func cancel() {
+        switch state {
+        case .recording:
+            processingTask?.cancel() // a release may already have queued process() — kill it pre-start
+            recorder.discard()
+            state = .idle
+        case .transcribing, .cleaning:
+            processingTask?.cancel()
+        case .idle, .inserting, .error:
+            break
+        }
+    }
+
     private func process() async {
+        guard state == .recording else { return } // cancelled (or superseded) before this task started
         do {
             state = .transcribing
             let audio = try await recorder.stop()
             let transcript = try await engine.transcribe(audio, dictionaryTerms: [])
+            try Task.checkCancellation()
             defer { try? FileManager.default.removeItem(at: audio.fileURL) } // spec §8: discard audio
 
             state = .cleaning
@@ -83,11 +100,15 @@ final class DictationCoordinator {
             } catch {
                 cleaned = transcript.text // spec §6: raw transcript beats nothing
             }
+            try Task.checkCancellation()
 
             state = .inserting
             try await inserter.insert(cleaned)
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
+            state = .idle
+        } catch is CancellationError {
+            recorder.discard()
             state = .idle
         } catch {
             recorder.discard()

@@ -105,6 +105,35 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    func testCancelDuringRecordingDiscardsAndGoesIdle() async {
+        let (coordinator, recorder, inserter) = makeCoordinator()
+        await coordinator.dictationKeyPressed()
+        coordinator.cancel()
+        XCTAssertEqual(recorder.discarded, 1)
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertTrue(inserter.inserted.isEmpty)
+    }
+
+    func testCancelDuringTranscriptionInsertsNothing() async {
+        struct SlowEngine: TranscriptionEngine {
+            func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+                try await Task.sleep(for: .seconds(5)) // cancellation interrupts this sleep
+                return Transcript(text: "too late")
+            }
+        }
+        let recorder = MockRecorder()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: SlowEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter,
+                                               minimumHold: 0)
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        coordinator.cancel()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
     func testPressWhileProcessingIgnored() async {
         let (coordinator, recorder, _) = makeCoordinator()
         await coordinator.dictationKeyPressed()

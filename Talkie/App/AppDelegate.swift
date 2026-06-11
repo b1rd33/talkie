@@ -8,6 +8,7 @@ final class AppServices {
     let keychain = KeychainStore()
     let settings = SettingsStore()
     let fnMonitor = FnKeyMonitor()
+    let escMonitor = EscKeyMonitor()
     let recorder = AudioRecorder()
     let coordinator: DictationCoordinator
     private(set) var flowBar: FlowBarPanel?
@@ -30,6 +31,21 @@ final class AppServices {
         fnMonitor.onPress = { [coordinator] in Task { await coordinator.dictationKeyPressed() } }
         fnMonitor.onRelease = { [coordinator] in Task { await coordinator.dictationKeyReleased() } }
         fnMonitor.start()
+        escMonitor.onEsc = { [coordinator] in coordinator.cancel() }
+        trackDictationActivity()
+    }
+
+    /// Re-arming observation loop: Esc monitoring runs only while a dictation is active.
+    private func trackDictationActivity() {
+        let active: Bool = withObservationTracking {
+            switch coordinator.state {
+            case .recording, .transcribing, .cleaning: true
+            default: false
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackDictationActivity() }
+        }
+        active ? escMonitor.start() : escMonitor.stop()
     }
 }
 
