@@ -256,11 +256,20 @@ private struct EngineSettingsTab: View {
                     HStack {
                         TextField("OpenRouter transcription model", text: $settings.openrouterTranscriptionModel)
                         Menu("Presets") {
+                            Button("openai/whisper-large-v3-turbo — $0.0007/min, 99+ languages, fastest") {
+                                settings.openrouterTranscriptionModel = "openai/whisper-large-v3-turbo"
+                            }
+                            Button("nvidia/parakeet-tdt-0.6b-v3 — $0.0015/min, best EU-language accuracy") {
+                                settings.openrouterTranscriptionModel = "nvidia/parakeet-tdt-0.6b-v3"
+                            }
                             Button("mistralai/voxtral-mini-transcribe — $0.003/min") {
                                 settings.openrouterTranscriptionModel = "mistralai/voxtral-mini-transcribe"
                             }
                             Button("microsoft/mai-transcribe-1.5 — $0.006/min, 100+ locales") {
                                 settings.openrouterTranscriptionModel = "microsoft/mai-transcribe-1.5"
+                            }
+                            Button("google/chirp-3 — $0.016/min, widest language preview") {
+                                settings.openrouterTranscriptionModel = "google/chirp-3"
                             }
                         }
                         .frame(width: 90)

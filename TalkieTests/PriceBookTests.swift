@@ -12,6 +12,13 @@ final class PriceBookTests: XCTestCase {
                                           cleanupModel: nil, wordCount: 0), 0.003, accuracy: 1e-9)
         XCTAssertEqual(PriceBook.estimate(engine: "microsoft/mai-transcribe-1.5", durationSec: 60,
                                           cleanupModel: nil, wordCount: 0), 0.006, accuracy: 1e-9)
+        // OpenRouter category models (scouted 2026-06-11)
+        XCTAssertEqual(PriceBook.estimate(engine: "openai/whisper-large-v3-turbo", durationSec: 60,
+                                          cleanupModel: nil, wordCount: 0), 0.00067, accuracy: 1e-9)
+        XCTAssertEqual(PriceBook.estimate(engine: "nvidia/parakeet-tdt-0.6b-v3", durationSec: 60,
+                                          cleanupModel: nil, wordCount: 0), 0.0015, accuracy: 1e-9)
+        XCTAssertEqual(PriceBook.estimate(engine: "google/chirp-3", durationSec: 60,
+                                          cleanupModel: nil, wordCount: 0), 0.016, accuracy: 1e-9)
     }
 
     func testLocalEngineIsFree() {

@@ -13,6 +13,15 @@ enum PriceBook {
         "mistralai/voxtral-mini-transcribe": 0.003, // OpenRouter
         "microsoft/mai-transcribe-1.5": 0.006,      // OpenRouter ($0.36/hr)
         "parakeet": 0,                              // local, free
+        // Rest of OpenRouter's transcription category (scouted 2026-06-11):
+        "openai/whisper-large-v3-turbo": 0.00067,   // $0.04/hr — cheapest, 99+ languages
+        "openai/whisper-large-v3": 0.0015,
+        "nvidia/parakeet-tdt-0.6b-v3": 0.0015,      // cloud parakeet (≠ local "parakeet")
+        "qwen/qwen3-asr-flash-2026-02-10": 0.0021,
+        "openai/gpt-4o-mini-transcribe": 0.003,     // via OpenRouter, token-billed ≈ same
+        "openai/whisper-1": 0.006,
+        "openai/gpt-4o-transcribe": 0.006,
+        "google/chirp-3": 0.016,
     ]
     /// Legacy rows store engine "openai" without a model — assume mini pricing.
     static let fallbackPerMinute = 0.003
