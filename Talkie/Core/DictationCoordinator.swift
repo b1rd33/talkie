@@ -40,13 +40,29 @@ final class DictationCoordinator {
     /// Briefly true after a cloud→local fallback insert — the pill flashes "offline".
     private(set) var offlineBadgeVisible = false
     private var targetApp: (bundleID: String?, name: String?) = (nil, nil)
+    private let dictionaryTermsProvider: () -> [String]
+    private let cleanupLevelProvider: () -> CleanupLevel
+    private let stylePresetProvider: (String?) -> StylePreset
+    private let pinnedLanguageProvider: () -> String?
+    private var activeTerms: [String] = []
+    private var activeLevel: CleanupLevel = .high
+    private var activeStyle: StylePreset = .neutral
+    /// Bumped after every successful insert — the pill's checkmark flash observes it.
+    private(set) var lastCompletedAt: Date?
+    /// Set when cleanup failed and raw ASR text was inserted (spec §6/§10) — the
+    /// pill renders a subtle warning while true. Mirrors Phase 3's offlineBadgeVisible.
+    private(set) var cleanupDegraded = false
 
     init(recorder: AudioRecording, engine: TranscriptionEngine,
          cleanup: CleanupServicing, inserter: TextInserting,
          minimumHold: TimeInterval = 0.3, maxDuration: TimeInterval = 1200,
          notifier: Notifying? = nil,
          history: HistoryStore? = nil,
-         frontmostApp: @escaping () -> (bundleID: String?, name: String?) = { (nil, nil) }) {
+         frontmostApp: @escaping () -> (bundleID: String?, name: String?) = { (nil, nil) },
+         dictionaryTermsProvider: @escaping () -> [String] = { [] },
+         cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
+         stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
+         pinnedLanguageProvider: @escaping () -> String? = { nil }) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -56,6 +72,10 @@ final class DictationCoordinator {
         self.notifier = notifier
         self.history = history
         self.frontmostApp = frontmostApp
+        self.dictionaryTermsProvider = dictionaryTermsProvider
+        self.cleanupLevelProvider = cleanupLevelProvider
+        self.stylePresetProvider = stylePresetProvider
+        self.pinnedLanguageProvider = pinnedLanguageProvider
     }
 
     func dictationKeyPressed() async {
@@ -66,6 +86,9 @@ final class DictationCoordinator {
         }
         guard state == .idle || isErrorState else { return } // one dictation in flight
         targetApp = frontmostApp()
+        activeTerms = dictionaryTermsProvider()
+        activeLevel = cleanupLevelProvider()
+        activeStyle = stylePresetProvider(targetApp.bundleID)
         do {
             state = .recording
             recordingStartedAt = Date()
@@ -143,23 +166,31 @@ final class DictationCoordinator {
             state = .transcribing
             let audio = try await recorder.stop()
             audioURL = audio.fileURL
-            let transcript = try await engine.transcribe(audio, dictionaryTerms: [])
+            let transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
             try Task.checkCancellation()
 
-            state = .cleaning
             let cleaned: String
-            do {
-                cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: [],
-                                                  level: .high, style: .neutral, pinnedLanguage: nil)
-            } catch {
-                cleaned = transcript.text // spec §6: raw transcript beats nothing
+            if activeLevel == .none {
+                cleaned = transcript.text // spec §6: None = raw ASR text, no LLM call
+            } else {
+                state = .cleaning
+                do {
+                    cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: activeTerms,
+                                                      level: activeLevel, style: activeStyle,
+                                                      pinnedLanguage: pinnedLanguageProvider())
+                } catch {
+                    cleaned = transcript.text // spec §6: raw transcript beats nothing
+                    cleanupDegraded = true    // spec §6/§10: badge the pill with a subtle warning
+                    Task { try? await Task.sleep(for: .seconds(4)); self.cleanupDegraded = false }
+                }
             }
-            try Task.checkCancellation()
+            try Task.checkCancellation() // a cancelled cleanup must not insert raw text
 
             state = .inserting
             try await inserter.insert(cleaned)
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
+            lastCompletedAt = Date()
             state = .idle
             if transcript.usedFallback {
                 offlineBadgeVisible = true

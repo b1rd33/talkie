@@ -22,10 +22,15 @@ final class DictationCoordinatorTests: XCTestCase {
         func discard() { discarded += 1 }
     }
 
-    struct MockEngine: TranscriptionEngine {
-        var result: Result<Transcript, Error> = .success(Transcript(text: "raw text"))
+    final class MockEngine: TranscriptionEngine, @unchecked Sendable {
+        var result: Result<Transcript, Error>
+        private(set) var receivedTerms: [[String]] = []
+        init(result: Result<Transcript, Error> = .success(Transcript(text: "raw text"))) {
+            self.result = result
+        }
         func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
-            try result.get()
+            receivedTerms.append(dictionaryTerms)
+            return try result.get()
         }
     }
 
@@ -109,6 +114,72 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.waitForIdle()
         XCTAssertEqual(inserter.inserted, ["raw text"]) // spec §6: raw beats nothing
         XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testProvidersFeedEngineAndCleanupResolvedAtPressTime() async {
+        let engine = MockEngine()
+        let cleanup = MockCleanup()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: engine, cleanup: cleanup, inserter: MockInserter(),
+            minimumHold: 0,
+            frontmostApp: { ("com.apple.dt.Xcode", "Xcode") },
+            dictionaryTermsProvider: { ["Archiev", "Talkie"] },
+            cleanupLevelProvider: { .medium },
+            stylePresetProvider: { bundleID in bundleID == "com.apple.dt.Xcode" ? .technical : .neutral },
+            pinnedLanguageProvider: { "German" })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(engine.receivedTerms, [["Archiev", "Talkie"]])
+        XCTAssertEqual(cleanup.calls.count, 1)
+        XCTAssertEqual(cleanup.calls[0].terms, ["Archiev", "Talkie"])
+        XCTAssertEqual(cleanup.calls[0].level, .medium)
+        XCTAssertEqual(cleanup.calls[0].style, .technical)
+        XCTAssertEqual(cleanup.calls[0].language, "German")
+    }
+
+    func testLevelNoneSkipsCleanupAndInsertsRaw() async {
+        let cleanup = MockCleanup()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: cleanup, inserter: inserter,
+            minimumHold: 0,
+            cleanupLevelProvider: { .none })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(cleanup.calls.isEmpty)            // spec §6: None = no LLM call
+        XCTAssertEqual(inserter.inserted, ["raw text"]) // raw ASR text inserted
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testSuccessfulDictationPublishesLastCompletedAt() async {
+        let (coordinator, _, _) = makeCoordinator()
+        XCTAssertNil(coordinator.lastCompletedAt)
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertNotNil(coordinator.lastCompletedAt)
+    }
+
+    func testFailedDictationDoesNotPublishLastCompletedAt() async {
+        let engine = MockEngine(result: .failure(EngineError.requestFailed(status: 500, message: "boom")))
+        let (coordinator, _, _) = makeCoordinator(engine: engine)
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertNil(coordinator.lastCompletedAt)
+    }
+
+    func testCleanupFailureInsertsRawAndFlagsDegraded() async {
+        let cleanup = MockCleanup(result: .failure(EngineError.invalidResponse))
+        let (coordinator, _, inserter) = makeCoordinator(cleanup: cleanup)
+        XCTAssertFalse(coordinator.cleanupDegraded)
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["raw text"]) // spec §6: raw transcript beats nothing
+        XCTAssertTrue(coordinator.cleanupDegraded)      // spec §6/§10: subtle pill warning
     }
 
     final class MockNotifier: Notifying {
