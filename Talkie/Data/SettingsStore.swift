@@ -16,6 +16,11 @@ final class SettingsStore {
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
     var showDockIcon: Bool { didSet { defaults.set(showDockIcon, forKey: "showDockIcon") } }
+    /// "classic" (notch when idle) | "dot" (small dot) | "hidden" (invisible until active)
+    /// | "compact" (hidden idle + smaller active pill).
+    var pillStyle: String { didSet { defaults.set(pillStyle, forKey: "pillStyle") } }
+    /// "bottomCenter" | "bottomLeft" | "bottomRight" | "topCenter"
+    var pillPosition: String { didSet { defaults.set(pillPosition, forKey: "pillPosition") } }
     var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
     var cleanupLevel: String { didSet { defaults.set(cleanupLevel, forKey: "cleanupLevel") } }
     var pttShortcut: String? {
@@ -46,6 +51,8 @@ final class SettingsStore {
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
         engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
+        pillStyle = defaults.string(forKey: "pillStyle") ?? "classic"
+        pillPosition = defaults.string(forKey: "pillPosition") ?? "bottomCenter"
         keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
