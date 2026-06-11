@@ -82,6 +82,24 @@ final class AppServices {
             entitlement: {
                 entitlementStore.refresh() // keep the displayed `current` honest on every press
                 return entitlementStore.gateError
+            },
+            liveSessionFactory: { [history] in
+                guard UserDefaults.standard.string(forKey: "engineMode") == "instant" else {
+                    throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
+                }
+                let key = KeychainStore().read(.openAIKey) ?? ""
+                guard !key.isEmpty else { throw EngineError.missingAPIKey }
+                // Same source as the batch path's dictionaryTermsProvider (Phase 4) — spec §3/§6
+                // carries ASR-level vocabulary biasing and the pinned language into instant mode too.
+                let terms = history?.dictionaryTermStrings() ?? []
+                let session = OpenAIRealtimeSession(
+                    transport: OpenAIRealtimeTransport(apiKey: key),
+                    model: "gpt-realtime-whisper",
+                    vocabulary: terms.isEmpty ? nil : terms.joined(separator: ", "),
+                    language: UserDefaults.standard.string(forKey: "pinnedLanguage"), // nil = auto-detect
+                    encoder: RealtimePCMEncoder())
+                try await session.begin()
+                return session
             })
     }
 
@@ -121,6 +139,7 @@ final class AppServices {
     func startUI() {
         updater = UpdaterService()
         flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder,
+                               settings: settings,
                                onHideForHour: { [weak self] in self?.hidePillTemporarily() },
                                onHidePermanently: { [weak self] in self?.settings.showFlowBar = false })
         fnMonitor.onPress = { [coordinator] in Task { await coordinator.dictationKeyPressed() } }

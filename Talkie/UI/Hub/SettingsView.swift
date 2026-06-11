@@ -193,10 +193,13 @@ private struct EngineSettingsTab: View {
         Form {
             Section("Engine") {
                 Picker("Transcription runs", selection: $settings.engineMode) {
-                    Text("In the cloud (OpenAI)").tag("cloud")
-                    Text("On this Mac (Parakeet)").tag("local")
+                    Text("Cloud — batch (≈ $0.18/hr)").tag("cloud")
+                    Text("Cloud — instant streaming (≈ $1.02/hr)").tag("instant")
+                    Text("On this Mac — free, offline").tag("local")
                 }
                 .pickerStyle(.radioGroup)
+                Text("Instant streams audio while you speak (gpt-realtime-whisper, billed per audio minute) so text lands ~1s after release. Batch waits until release (gpt-4o transcribe models).")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Local models") {
                 switch downloader.state {
