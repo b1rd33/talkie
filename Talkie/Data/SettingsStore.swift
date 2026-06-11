@@ -2,21 +2,22 @@ import Foundation
 import Observation
 
 /// Non-secret settings. Secrets belong in KeychainStore.
+/// Stored properties with didSet persistence — @Observable does not track
+/// computed properties for out-of-view observers (withObservationTracking).
 @Observable
 final class SettingsStore {
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
+
+    var transcriptionModel: String { didSet { defaults.set(transcriptionModel, forKey: "transcriptionModel") } }
+    var cleanupModel: String { didSet { defaults.set(cleanupModel, forKey: "cleanupModel") } }
+    var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
+    var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-    }
-
-    var transcriptionModel: String {
-        get { defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" }
-        set { defaults.set(newValue, forKey: "transcriptionModel") }
-    }
-
-    var cleanupModel: String {
-        get { defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash" }
-        set { defaults.set(newValue, forKey: "cleanupModel") }
+        transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe"
+        cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash"
+        showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
+        launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
     }
 }

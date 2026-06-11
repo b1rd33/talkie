@@ -51,6 +51,17 @@ final class AppServices {
             guard let last = coordinator.lastResult?.cleanedText else { return }
             Task { try? await AppServices.shared.pasteLastInserter.insert(last) }
         }
+        trackPillVisibility()
+    }
+
+    /// Re-arming observation loop: pill visibility follows Settings → Appearance.
+    private func trackPillVisibility() {
+        let visible = withObservationTracking {
+            settings.showFlowBar
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackPillVisibility() }
+        }
+        flowBar?.setVisible(visible)
     }
 
     /// Re-arming observation loop: Esc monitoring runs only while a dictation is active.

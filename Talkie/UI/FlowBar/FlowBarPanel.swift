@@ -31,6 +31,10 @@ final class FlowBarPanel {
         }
     }
 
+    func setVisible(_ visible: Bool) {
+        visible ? panel.orderFrontRegardless() : panel.orderOut(nil)
+    }
+
     private func reposition() {
         guard let screen = NSScreen.main else { return }
         let frame = screen.visibleFrame

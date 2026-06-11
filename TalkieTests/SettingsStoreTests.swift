@@ -9,6 +9,13 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.cleanupModel, "google/gemini-2.5-flash")
     }
 
+    func testNewDefaults() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertTrue(store.showFlowBar)
+        XCTAssertFalse(store.launchAtLogin)
+    }
+
     func testPersistence() {
         let suite = "talkie-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
