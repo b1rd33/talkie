@@ -44,6 +44,7 @@ final class DictationCoordinator {
     private let cleanupLevelProvider: () -> CleanupLevel
     private let stylePresetProvider: (String?) -> StylePreset
     private let pinnedLanguageProvider: () -> String?
+    private let cleanupModelProvider: () -> String?
     private var activeTerms: [String] = []
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
@@ -62,7 +63,8 @@ final class DictationCoordinator {
          dictionaryTermsProvider: @escaping () -> [String] = { [] },
          cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
-         pinnedLanguageProvider: @escaping () -> String? = { nil }) {
+         pinnedLanguageProvider: @escaping () -> String? = { nil },
+         cleanupModelProvider: @escaping () -> String? = { nil }) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -76,6 +78,7 @@ final class DictationCoordinator {
         self.cleanupLevelProvider = cleanupLevelProvider
         self.stylePresetProvider = stylePresetProvider
         self.pinnedLanguageProvider = pinnedLanguageProvider
+        self.cleanupModelProvider = cleanupModelProvider
     }
 
     func dictationKeyPressed() async {
@@ -198,30 +201,67 @@ final class DictationCoordinator {
             }
             history?.save(rawText: transcript.text, cleanedText: cleaned,
                           appBundleID: targetApp.bundleID, appName: targetApp.name,
-                          duration: audio.duration, engine: transcript.engineID, status: .completed)
+                          duration: audio.duration, engine: transcript.engineID, status: .completed,
+                          cleanupModel: activeLevel == .none ? nil : cleanupModelProvider(),
+                          language: pinnedLanguageProvider())
             try? FileManager.default.removeItem(at: audio.fileURL) // spec §8: discard audio on success
         } catch is CancellationError {
             recorder.discard()
             state = .idle
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
-                          appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled)
+                          appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled,
+                          audioPath: keepAudioForRetry(audioURL))
         } catch {
             recorder.discard()
             fail(error)
             // spec §10 row 1 / §8: failed dictations keep their audio for retry.
-            var keptPath: String?
-            if let audioURL {
-                let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                    .appendingPathComponent("Talkie/FailedAudio", isDirectory: true)
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let dest = dir.appendingPathComponent("\(UUID().uuidString).m4a")
-                if (try? FileManager.default.moveItem(at: audioURL, to: dest)) != nil {
-                    keptPath = dest.path
-                }
-            }
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
                           appName: targetApp.name, duration: 0, engine: "openai", status: .failed,
-                          audioPath: keptPath)
+                          audioPath: keepAudioForRetry(audioURL))
+        }
+    }
+
+    /// Moves a recorded file into Application Support for later retry (spec §8/§10).
+    /// Returns the destination path, or nil if there was no file or the move failed.
+    private func keepAudioForRetry(_ url: URL?, into subfolder: String = "FailedAudio") -> String? {
+        guard let url else { return nil }
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Talkie/\(subfolder)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent("\(UUID().uuidString).m4a")
+        guard (try? FileManager.default.moveItem(at: url, to: dest)) != nil else { return nil }
+        return dest.path
+    }
+
+    /// Re-runs transcribe→clean from a failed/cancelled record's kept audio
+    /// (spec §7/§10). Returns the cleaned text, or nil if the retry failed again
+    /// or the kept file is gone. Delivery is the caller's job — focus is on the
+    /// Hub during a retry, so paste-at-cursor would land in the wrong app
+    /// (Task 7 copies the result to the clipboard).
+    func retry(_ record: DictationRecord) async -> String? {
+        guard state == .idle, let path = record.audioPath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        let audio = RecordedAudio(fileURL: URL(fileURLWithPath: path), duration: record.durationSec)
+        do {
+            state = .transcribing
+            let terms = dictionaryTermsProvider()
+            let transcript = try await engine.transcribe(audio, dictionaryTerms: terms)
+            let level = cleanupLevelProvider()
+            var cleaned = transcript.text
+            if level != .none {
+                state = .cleaning
+                cleaned = (try? await cleanup.clean(
+                    transcript.text, dictionaryTerms: terms, level: level,
+                    style: stylePresetProvider(record.appBundleID),
+                    pinnedLanguage: pinnedLanguageProvider())) ?? transcript.text
+            }
+            history?.markRetried(record, rawText: transcript.text, cleanedText: cleaned)
+            try? FileManager.default.removeItem(at: audio.fileURL)
+            state = .idle
+            return cleaned
+        } catch {
+            fail(error)
+            return nil
         }
     }
 

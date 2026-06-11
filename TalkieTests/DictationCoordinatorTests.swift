@@ -116,6 +116,27 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    func testRetryTranscribesKeptAudioAndCompletesRecord() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let audioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("talkie-retry-test-\(UUID().uuidString).m4a")
+        try Data("fake audio".utf8).write(to: audioURL)
+        history.save(rawText: "", cleanedText: "", appBundleID: nil, appName: nil,
+                     duration: 2, engine: "openai", status: .failed, audioPath: audioURL.path)
+        let record = history.recent(limit: 1)[0]
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0, history: history)
+        let text = await coordinator.retry(record)
+        XCTAssertEqual(text, "Clean text.")
+        XCTAssertEqual(record.status, .completed)
+        XCTAssertNil(record.audioPath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path)) // consumed on success
+        XCTAssertTrue(inserter.inserted.isEmpty) // delivery is the caller's job (clipboard, Task 7)
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
     func testProvidersFeedEngineAndCleanupResolvedAtPressTime() async {
         let engine = MockEngine()
         let cleanup = MockCleanup()
