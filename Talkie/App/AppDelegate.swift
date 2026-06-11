@@ -95,6 +95,24 @@ final class AppServices {
             Task { try? await AppServices.shared.pasteLastInserter.insert(last) }
         }
         trackPillVisibility()
+        trackCustomShortcuts()
+    }
+
+    /// Re-arming observation loop: rebind custom combos whenever they change in Settings.
+    private func trackCustomShortcuts() {
+        withObservationTracking {
+            rebindCustomShortcuts()
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackCustomShortcuts() }
+        }
+    }
+
+    private func rebindCustomShortcuts() {
+        shortcuts.bindPushToTalk(settings.pttShortcut.flatMap(ShortcutSpec.init(storage:)),
+                                 onPress: { [coordinator] in Task { await coordinator.dictationKeyPressed() } },
+                                 onRelease: { [coordinator] in Task { await coordinator.dictationKeyReleased() } })
+        shortcuts.bindHandsFree(settings.handsFreeShortcut.flatMap(ShortcutSpec.init(storage:)),
+                                onToggle: { [coordinator] in Task { await coordinator.handsFreeToggled() } })
     }
 
     /// Re-arming observation loop: pill visibility follows Settings → Appearance.

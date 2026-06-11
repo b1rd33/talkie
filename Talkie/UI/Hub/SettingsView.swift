@@ -136,11 +136,19 @@ private struct GeneralSettingsTab: View {
     var body: some View {
         Form {
             Section("Dictation") {
-                LabeledContent("Hold to dictate", value: "fn")
-                LabeledContent("Hands-free toggle", value: "double-tap fn")
+                LabeledContent("Hold to dictate") {
+                    HStack {
+                        Text("fn").foregroundStyle(.secondary)
+                        ShortcutRecorderField(storage: $settings.pttShortcut)
+                    }
+                }
+                LabeledContent("Hands-free toggle") {
+                    HStack {
+                        Text("double-tap fn").foregroundStyle(.secondary)
+                        ShortcutRecorderField(storage: $settings.handsFreeShortcut)
+                    }
+                }
                 LabeledContent("Paste last dictation", value: "⇧⌥V")
-                Text("Custom shortcuts arrive in a later update.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)

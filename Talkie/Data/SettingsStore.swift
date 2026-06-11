@@ -14,6 +14,18 @@ final class SettingsStore {
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
     var cleanupLevel: String { didSet { defaults.set(cleanupLevel, forKey: "cleanupLevel") } }
+    var pttShortcut: String? {
+        didSet {
+            if let pttShortcut { defaults.set(pttShortcut, forKey: "pttShortcut") }
+            else { defaults.removeObject(forKey: "pttShortcut") }
+        }
+    }
+    var handsFreeShortcut: String? {
+        didSet {
+            if let handsFreeShortcut { defaults.set(handsFreeShortcut, forKey: "handsFreeShortcut") }
+            else { defaults.removeObject(forKey: "handsFreeShortcut") }
+        }
+    }
     var pinnedLanguage: String? {
         didSet {
             if let pinnedLanguage { defaults.set(pinnedLanguage, forKey: "pinnedLanguage") }
@@ -30,5 +42,7 @@ final class SettingsStore {
         engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
+        pttShortcut = defaults.string(forKey: "pttShortcut")
+        handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")
     }
 }
