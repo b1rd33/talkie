@@ -40,6 +40,17 @@ final class AudioRecorderTests: XCTestCase {
         XCTAssertLessThan(quietSink.latestLevel, 0.01)
     }
 
+    func testChunkConsumerReceivesConvertedChunks() throws {
+        let sink = AudioSink()
+        var received: [[Float]] = []
+        sink.chunkConsumer = { received.append($0) }
+        try sink.append(makeBuffer()) // 0.5s @ 48k stereo → ~8000 samples @ 16k mono
+        sink.finish()
+        let total = received.reduce(0) { $0 + $1.count }
+        XCTAssertEqual(Double(total), Double(sink.sampleCount), accuracy: 1)
+        XCTAssertFalse(received.isEmpty)
+    }
+
     func testWritesPlayableM4A() throws {
         let sink = AudioSink()
         try sink.append(makeBuffer(seconds: 1.0))

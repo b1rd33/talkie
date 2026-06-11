@@ -7,6 +7,7 @@ final class DictationCoordinatorTests: XCTestCase {
 
     final class MockRecorder: AudioRecording {
         var latestLevel: Float = 0
+        var chunkConsumer: (([Float]) -> Void)?
         var started = 0
         var stopped = 0
         var discarded = 0
