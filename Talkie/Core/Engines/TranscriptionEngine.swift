@@ -3,6 +3,7 @@ import Foundation
 struct Transcript: Sendable, Equatable {
     let text: String
     var engineID: String = "openai"
+    var usedFallback: Bool = false
 }
 
 enum EngineError: Error, Equatable, LocalizedError {
