@@ -23,10 +23,13 @@ final class FlowBarPanel {
         panel.ignoresMouseEvents = false // pill has click targets now (✕, context menu)
         panel.hidesOnDeactivate = false
 
-        let host = NSHostingView(rootView: FlowBarView(coordinator: coordinator, recorder: recorder,
-                                                       settings: settings,
-                                                       onHideForHour: onHideForHour,
-                                                       onHidePermanently: onHidePermanently))
+        let root = FlowBarView(coordinator: coordinator, recorder: recorder,
+                               onHideForHour: onHideForHour,
+                               onHidePermanently: onHidePermanently)
+        // .environment makes SettingsStore observable INSIDE the hosting view —
+        // pill style/engine badge updates require it (see FlowBarView.settings).
+        let host = settings.map { NSHostingView(rootView: AnyView(root.environment($0))) }
+            ?? NSHostingView(rootView: AnyView(root))
         host.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
         panel.contentView = host
         panel.setContentSize(host.frame.size)

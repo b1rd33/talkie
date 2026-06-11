@@ -3,7 +3,10 @@ import SwiftUI
 struct FlowBarView: View {
     let coordinator: DictationCoordinator
     let recorder: AudioRecorder
-    var settings: SettingsStore? = nil
+    /// Injected via .environment from FlowBarPanel — a plain stored property is
+    /// NOT tracked by SwiftUI inside NSHostingView, so pillStyle/engineMode
+    /// changes never re-rendered the pill (live-testing bug 2026-06-11).
+    @Environment(SettingsStore.self) private var settings: SettingsStore?
     var onHideForHour: () -> Void = {}
     var onHidePermanently: () -> Void = {}
 
