@@ -139,6 +139,80 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    final class MockLiveSession: LiveDictationSession {
+        var fed = 0
+        var finishResult: Result<Transcript, Error> = .success(Transcript(text: "live text", engineID: "realtime"))
+        var cancelled = false
+        func feed(_ samples: [Float]) async { fed += 1 }
+        func finish() async throws -> Transcript { try finishResult.get() }
+        func cancel() async { cancelled = true }
+    }
+
+    func testInstantModeUsesLiveTranscript() async {
+        let live = MockLiveSession()
+        let recorder = MockRecorder()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter,
+                                               minimumHold: 0,
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        XCTAssertNotNil(recorder.chunkConsumer) // chunks are being forwarded
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["Clean text."]) // cleanup ran on the LIVE transcript
+        XCTAssertEqual(coordinator.lastResult?.rawText, "live text")
+    }
+
+    func testLiveFailureFallsBackToBatchEngine() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let recorder = MockRecorder()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(), // returns "raw text"
+                                               cleanup: MockCleanup(), inserter: inserter,
+                                               minimumHold: 0,
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(coordinator.lastResult?.rawText, "raw text") // batch fallback won
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testShortHoldCancelsLiveSession() async {
+        let live = MockLiveSession()
+        let recorder = MockRecorder()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 10,
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(live.cancelled)
+        XCTAssertNil(recorder.chunkConsumer) // unhooked
+    }
+
+    func testChunksBufferedWhileSessionConnectsAreDelivered() async {
+        let live = MockLiveSession()
+        let recorder = MockRecorder()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0,
+                                               liveSessionFactory: {
+                                                   // simulates speech landing while the socket is still
+                                                   // connecting: the tap must already be wired when the
+                                                   // factory runs, and the chunk must reach the session
+                                                   recorder.chunkConsumer?([0.1, 0.2])
+                                                   return live
+                                               })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(live.fed, 1) // the pre-connect chunk was buffered and replayed, not dropped
+    }
+
     func testExpiredEntitlementBlocksDictationWithErrorPill() async {
         let recorder = MockRecorder()
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),

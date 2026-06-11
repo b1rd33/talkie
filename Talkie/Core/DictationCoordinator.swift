@@ -47,6 +47,10 @@ final class DictationCoordinator {
     private let cleanupModelProvider: () -> String?
     private let keepRecordingsProvider: () -> Bool
     private let entitlement: (() -> EntitlementError?)?
+    private let liveSessionFactory: (@MainActor () async throws -> LiveDictationSession)?
+    private var liveSession: LiveDictationSession?
+    private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
+    private var liveFeedTask: Task<Void, Never>?
     private var activeTerms: [String] = []
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
@@ -68,7 +72,8 @@ final class DictationCoordinator {
          pinnedLanguageProvider: @escaping () -> String? = { nil },
          cleanupModelProvider: @escaping () -> String? = { nil },
          keepRecordingsProvider: @escaping () -> Bool = { false },
-         entitlement: (() -> EntitlementError?)? = nil) {
+         entitlement: (() -> EntitlementError?)? = nil,
+         liveSessionFactory: (@MainActor () async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -85,6 +90,7 @@ final class DictationCoordinator {
         self.cleanupModelProvider = cleanupModelProvider
         self.keepRecordingsProvider = keepRecordingsProvider
         self.entitlement = entitlement
+        self.liveSessionFactory = liveSessionFactory
     }
 
     func dictationKeyPressed() async {
@@ -107,6 +113,20 @@ final class DictationCoordinator {
             state = .recording
             recordingStartedAt = Date()
             try await recorder.start()
+            if let liveSessionFactory {
+                let (stream, continuation) = AsyncStream.makeStream(of: [Float].self)
+                liveChunkContinuation = continuation
+                recorder.chunkConsumer = { continuation.yield($0) } // buffers while the socket connects
+                do {
+                    let session = try await liveSessionFactory()
+                    liveSession = session
+                    liveFeedTask = Task { // ONE consumer — replays the backlog, preserves order
+                        for await samples in stream { await session.feed(samples) }
+                    }
+                } catch {
+                    unhookLiveTap() // batch path still works; not an error
+                }
+            }
             capTask?.cancel()
             capTask = Task { [weak self, maxDuration] in
                 try? await Task.sleep(for: .seconds(maxDuration))
@@ -127,10 +147,22 @@ final class DictationCoordinator {
         if heldFor < minimumHold {
             capTask?.cancel()
             recorder.discard()
+            unhookLiveTap()
+            liveFeedTask?.cancel()
+            liveFeedTask = nil
+            if let liveSession { await liveSession.cancel() }
+            liveSession = nil
             state = .idle
             return
         }
         beginProcessing()
+    }
+
+    /// Detaches the chunk tap and ends the feed task's stream.
+    private func unhookLiveTap() {
+        recorder.chunkConsumer = nil
+        liveChunkContinuation?.finish()
+        liveChunkContinuation = nil
     }
 
     func handsFreeToggled() async {
@@ -162,6 +194,11 @@ final class DictationCoordinator {
             processingTask?.cancel() // a release may already have queued process() — kill it pre-start
             capTask?.cancel()
             isHandsFree = false
+            unhookLiveTap()
+            liveFeedTask?.cancel()
+            liveFeedTask = nil
+            if let liveSession { Task { await liveSession.cancel() } }
+            liveSession = nil
             recorder.discard()
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
                           appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled)
@@ -180,7 +217,23 @@ final class DictationCoordinator {
             state = .transcribing
             let audio = try await recorder.stop()
             audioURL = audio.fileURL
-            let transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+            let transcript: Transcript
+            if let liveSession {
+                self.liveSession = nil
+                unhookLiveTap()
+                await liveFeedTask?.value // backlog fully fed before the commit
+                liveFeedTask = nil
+                do {
+                    transcript = try await liveSession.finish()
+                } catch is CancellationError {
+                    throw CancellationError() // Esc mid-finish must not trigger a paid batch call
+                } catch {
+                    // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
+                    transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+                }
+            } else {
+                transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+            }
             try Task.checkCancellation()
 
             let cleaned: String
