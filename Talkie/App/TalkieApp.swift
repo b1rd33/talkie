@@ -1,30 +1,9 @@
+import SwiftData
 import SwiftUI
 
 @main
 struct TalkieApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        MenuBarExtra("Talkie", systemImage: menuIcon) {
-            Text("Talkie — hold fn to dictate")
-            Picker("Engine", selection: Binding(
-                get: { AppServices.shared.settings.engineMode },
-                set: { AppServices.shared.settings.engineMode = $0 })) {
-                Text("Cloud").tag("cloud")
-                Text("Local").tag("local")
-            }
-            .pickerStyle(.inline)
-            Divider()
-            SettingsLink { Text("Settings…") }
-                .keyboardShortcut(",")
-            Button("Quit Talkie") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
-        }
-        Settings {
-            SettingsView(keychain: AppServices.shared.keychain,
-                         settings: AppServices.shared.settings)
-        }
-    }
 
     private var menuIcon: String {
         switch AppServices.shared.coordinator.state {
@@ -33,5 +12,53 @@ struct TalkieApp: App {
         case .transcribing, .cleaning, .inserting: "ellipsis.circle"
         case .error: "exclamationmark.circle"
         }
+    }
+
+    var body: some Scene {
+        MenuBarExtra("Talkie", systemImage: menuIcon) {
+            MenuBarContent()
+        }
+        Window("Talkie", id: "hub") {
+            if let history = AppServices.shared.history {
+                HubView(history: history)
+                    .modelContainer(history.container) // @Query in Tasks 7–8 reads this
+            } else {
+                HubView(history: nil)
+            }
+        }
+        .defaultSize(width: 880, height: 560)
+        Settings {
+            SettingsView(keychain: AppServices.shared.keychain,
+                         settings: AppServices.shared.settings)
+        }
+    }
+}
+
+/// Menu-bar dropdown. Lives in its own View so @Environment(\.openWindow) resolves.
+struct MenuBarContent: View {
+    @Environment(\.openWindow) private var openWindow
+    @Bindable private var settings = AppServices.shared.settings
+
+    var body: some View {
+        Text("Talkie — hold fn to dictate")
+        Divider()
+        // spec §7: the menu carries the Cloud/Local engine picker too — bound to
+        // the same SettingsStore property the Engines tab's radio group uses (Phase 3).
+        Picker("Engine", selection: $settings.engineMode) {
+            Text("Cloud (OpenAI)").tag("cloud")
+            Text("On this Mac (Parakeet)").tag("local")
+        }
+        .pickerStyle(.inline)
+        Divider()
+        Button("Open Talkie") {
+            openWindow(id: "hub")
+            // LSUIElement apps don't auto-activate; without this the hub opens behind others.
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        SettingsLink { Text("Settings…") }
+            .keyboardShortcut(",")
+        Divider()
+        Button("Quit Talkie") { NSApp.terminate(nil) }
+            .keyboardShortcut("q")
     }
 }
