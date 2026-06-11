@@ -34,7 +34,14 @@ struct OpenAIEngine: TranscriptionEngine {
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError where
+            [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .cannotFindHost,
+             .cannotConnectToHost, .timedOut].contains(urlError.code) {
+            throw EngineError.offline
+        }
         guard let http = response as? HTTPURLResponse else { throw EngineError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw EngineError.requestFailed(status: http.statusCode,

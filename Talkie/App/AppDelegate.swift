@@ -10,6 +10,8 @@ final class AppServices {
     let fnMonitor = FnKeyMonitor()
     let escMonitor = EscKeyMonitor()
     let recorder = AudioRecorder()
+    let shortcuts = ShortcutManager()
+    let pasteLastInserter = TextInserter(notifier: Notifier())
     let coordinator: DictationCoordinator
     let history: HistoryStore?
     private(set) var flowBar: FlowBarPanel?
@@ -45,6 +47,10 @@ final class AppServices {
         fnMonitor.start()
         escMonitor.onEsc = { [coordinator] in coordinator.cancel() }
         trackDictationActivity()
+        shortcuts.enablePasteLast { [coordinator] in
+            guard let last = coordinator.lastResult?.cleanedText else { return }
+            Task { try? await AppServices.shared.pasteLastInserter.insert(last) }
+        }
     }
 
     /// Re-arming observation loop: Esc monitoring runs only while a dictation is active.

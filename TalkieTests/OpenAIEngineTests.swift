@@ -61,6 +61,17 @@ final class OpenAIEngineTests: XCTestCase {
         } catch { XCTFail("wrong error: \(error)") }
     }
 
+    func testOfflineErrorMapsToOfflineCase() async {
+        StubURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
+        do {
+            _ = try await makeEngine().transcribe(
+                RecordedAudio(fileURL: audioURL, duration: 1.0), dictionaryTerms: [])
+            XCTFail("expected throw")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .offline)
+        } catch { XCTFail("wrong error: \(error)") }
+    }
+
     func testHTTPErrorSurfacesStatusAndBody() async {
         StubURLProtocol.handler = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!,
