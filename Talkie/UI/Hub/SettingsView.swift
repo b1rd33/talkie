@@ -239,8 +239,29 @@ private struct EngineSettingsTab: View {
                     .onChange(of: openRouterKey) { _, new in keychain.write(new, for: .openRouterKey) }
             }
             Section("Models") {
-                Picker("Transcription model", selection: $settings.transcriptionModel) {
-                    ForEach(Self.transcriptionPresets, id: \.self) { Text($0) }
+                Picker("Cloud transcription via", selection: $settings.transcriptionProvider) {
+                    Text("OpenAI").tag("openai")
+                    Text("OpenRouter").tag("openrouter")
+                }
+                if settings.transcriptionProvider == "openrouter" {
+                    HStack {
+                        TextField("OpenRouter transcription model", text: $settings.openrouterTranscriptionModel)
+                        Menu("Presets") {
+                            Button("mistralai/voxtral-mini-transcribe — $0.003/min") {
+                                settings.openrouterTranscriptionModel = "mistralai/voxtral-mini-transcribe"
+                            }
+                            Button("microsoft/mai-transcribe-1.5 — $0.006/min, 100+ locales") {
+                                settings.openrouterTranscriptionModel = "microsoft/mai-transcribe-1.5"
+                            }
+                        }
+                        .frame(width: 90)
+                    }
+                    Text("Uses your OpenRouter key. Instant mode stays OpenAI-only (realtime websocket).")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("Transcription model", selection: $settings.transcriptionModel) {
+                        ForEach(Self.transcriptionPresets, id: \.self) { Text($0) }
+                    }
                 }
             }
             Section("Cleanup") {
