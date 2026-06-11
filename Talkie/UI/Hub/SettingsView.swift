@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Engines", systemImage: "waveform") }
             StyleSettingsTab(settings: settings, history: AppServices.shared.history)
                 .tabItem { Label("Style", systemImage: "textformat") }
+            LicenseSettingsTab(entitlements: AppServices.shared.entitlements)
+                .tabItem { Label("License", systemImage: "key") }
         }
         .frame(width: 560, height: 480)
     }
@@ -158,6 +160,11 @@ private struct GeneralSettingsTab: View {
                 Toggle("Keep audio recordings", isOn: $settings.keepRecordings)
                 Text("Off (default): audio is deleted after transcription. On: saved to Application Support/Talkie/Recordings.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Setup") {
+                Button("Run Setup Assistant…") {
+                    AppServices.shared.showOnboarding()
+                }
             }
             Section("Startup") {
                 Toggle("Launch Talkie at login", isOn: $settings.launchAtLogin)

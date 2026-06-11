@@ -1,4 +1,6 @@
 import AppKit
+import AVFoundation
+import ApplicationServices
 import Foundation
 import UserNotifications
 
@@ -17,9 +19,19 @@ final class AppServices {
     let coordinator: DictationCoordinator
     let history: HistoryStore?
     let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
+    let licenseManager: LicenseManager
+    let entitlements: EntitlementStore
+    let onboarding = OnboardingWindow()
     private(set) var flowBar: FlowBarPanel?
 
     private init() {
+        let licenseKeychain = KeychainStore(service: "com.archiev.talkie.license")
+        let license = LicenseManager(keychain: licenseKeychain)
+        licenseManager = license
+        let entitlementStore = EntitlementStore(
+            license: license,
+            trial: TrialManager(keychain: licenseKeychain))
+        entitlements = entitlementStore
         let engine = OpenAIEngine(
             apiKeyProvider: { KeychainStore().read(.openAIKey) },
             modelProvider: { UserDefaults.standard.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
@@ -65,7 +77,28 @@ final class AppServices {
             },
             keepRecordingsProvider: {
                 UserDefaults.standard.object(forKey: "keepRecordings") as? Bool ?? false
+            },
+            entitlement: {
+                entitlementStore.refresh() // keep the displayed `current` honest on every press
+                return entitlementStore.gateError
             })
+    }
+
+    /// First launch (or licensed-but-broken setup): show onboarding when there is
+    /// no entitlement yet (never licensed AND trial never started) OR a required
+    /// permission is missing (spec §7 / §9).
+    func showOnboardingIfNeeded() {
+        let needsEntitlement = !licenseManager.isLicensed && !entitlements.trialHasStarted
+        let micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let axTrusted = AXIsProcessTrusted()
+        guard needsEntitlement || !micGranted || !axTrusted else { return }
+        showOnboarding()
+    }
+
+    /// Also reachable from Settings → General → "Run Setup Assistant…".
+    func showOnboarding() {
+        onboarding.show(entitlements: entitlements, keychain: keychain,
+                        settings: settings, modelDownloader: modelDownloader)
     }
 
     private var pillReshowTask: Task<Void, Never>?
@@ -101,6 +134,7 @@ final class AppServices {
         trackPillVisibility()
         trackCustomShortcuts()
         trackDockIconPolicy()
+        showOnboardingIfNeeded()
     }
 
     /// Re-arming observation loop: Dock visibility follows Settings → Appearance.
