@@ -55,6 +55,9 @@ final class AppServices {
                 let model = UserDefaults.standard.string(forKey: "cleanupModel") ?? ""
                 // gpt-5-family reasoning models: skip the thinking pass (~1.3s saved).
                 return (provider == "openai" && model.hasPrefix("gpt-5")) ? ["reasoning_effort": "none"] : [:]
+            },
+            customInstructionsProvider: {
+                UserDefaults.standard.string(forKey: "customCleanupPrompt")
             }
         )
         let orTranscription = OpenRouterTranscriptionEngine(

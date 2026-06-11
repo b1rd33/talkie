@@ -47,6 +47,15 @@ private struct StyleSettingsTab: View {
                     Text("Light — punctuation only").tag("light")
                     Text("Medium — also remove fillers").tag("medium")
                     Text("High — also self-corrections, lists").tag("high")
+                    Text("Custom — your own instructions").tag("custom")
+                }
+                if settings.cleanupLevel == "custom" {
+                    TextEditor(text: $settings.customCleanupPrompt)
+                        .font(.body)
+                        .frame(minHeight: 70)
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                    Text("Tell the AI exactly how to rewrite your dictation (e.g. “summarize into action items”, “translate to English”). Output-only guardrails stay in place; empty = High.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             Section("Language") {

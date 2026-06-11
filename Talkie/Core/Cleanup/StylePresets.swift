@@ -2,13 +2,15 @@ import Foundation
 
 /// How aggressively cleanup rewrites the transcript (spec §6).
 /// `.none` means the coordinator skips the LLM entirely and inserts raw ASR text.
+/// `.custom` replaces the built-in level section with the user's own instructions.
 enum CleanupLevel: String, CaseIterable, Sendable {
-    case none, light, medium, high
+    case none, light, medium, high, custom
 }
 
 /// App-aware tone preset, keyed by the frontmost app's bundle ID (spec §6).
+/// `.bullets` reshapes dictation into slide/notes-ready bullet points.
 enum StylePreset: String, CaseIterable, Sendable {
-    case casual, polished, technical, neutral
+    case casual, polished, technical, bullets, neutral
 }
 
 /// Resolves the style preset for a target app: user overrides win, then the

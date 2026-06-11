@@ -18,6 +18,8 @@ struct CleanupService: CleanupServicing {
     /// Extra top-level body fields, e.g. reasoning_effort=none for gpt-5-family
     /// models (without it they burn ~1.3s "thinking" before the cleanup).
     var extraPayloadProvider: @Sendable () -> [String: String] = { [:] }
+    /// User's own cleanup instructions (CleanupLevel.custom).
+    var customInstructionsProvider: @Sendable () -> String? = { nil }
     var session: URLSession = .shared
     var promptBuilder = PromptBuilder()
 
@@ -37,7 +39,8 @@ struct CleanupService: CleanupServicing {
             "messages": [
                 ["role": "system", "content": promptBuilder.systemPrompt(
                     level: level, style: style, dictionaryTerms: dictionaryTerms,
-                    pinnedLanguage: pinnedLanguage)],
+                    pinnedLanguage: pinnedLanguage,
+                    customInstructions: customInstructionsProvider())],
                 ["role": "user", "content": transcript],
             ],
         ]

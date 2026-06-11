@@ -5,8 +5,17 @@ import Foundation
 /// the `.none` branch here is defensive and matches `.light`.
 struct PromptBuilder {
     func systemPrompt(level: CleanupLevel, style: StylePreset,
-                      dictionaryTerms: [String], pinnedLanguage: String?) -> String {
-        var sections: [String] = [levelSection(level)]
+                      dictionaryTerms: [String], pinnedLanguage: String?,
+                      customInstructions: String? = nil) -> String {
+        // Custom level: the user's instructions replace the built-in level section;
+        // the dictation guardrails below still apply. Empty custom text → High.
+        let trimmedCustom = customInstructions?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveLevel: CleanupLevel = (level == .custom && (trimmedCustom?.isEmpty ?? true)) ? .high : level
+        var sections: [String] = [
+            effectiveLevel == .custom
+                ? "You clean up raw speech-to-text dictation. Follow these instructions from the speaker:\n\(trimmedCustom!)"
+                : levelSection(effectiveLevel)
+        ]
         if let styleSection = styleSection(style) {
             sections.append(styleSection)
         }
@@ -27,6 +36,8 @@ struct PromptBuilder {
 
     private func levelSection(_ level: CleanupLevel) -> String {
         switch level {
+        case .custom: // unreachable (systemPrompt resolves custom first); defensive
+            return levelSection(.high)
         case .none, .light:
             return """
                 You clean up raw speech-to-text dictation. Add correct punctuation, \
@@ -74,6 +85,13 @@ struct PromptBuilder {
                 Style: technical text. Preserve identifiers exactly as spoken: keep \
                 camelCase, snake_case, file paths, URLs, and code symbols verbatim — never \
                 autocorrect, re-space, or re-case them. Use plain ASCII quotes (' and ") only.
+                """
+        case .bullets:
+            return """
+                Style: slide/notes bullet points. Reshape the dictation into terse bullet \
+                points ready to paste into a slide or outline: one idea per line prefixed \
+                with "- ", drop connective filler ("and then", "so basically"), keep key \
+                terms and numbers, use nested bullets for sub-points.
                 """
         }
     }
