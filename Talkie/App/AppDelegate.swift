@@ -10,6 +10,7 @@ final class AppServices {
     let fnMonitor = FnKeyMonitor()
     let escMonitor = EscKeyMonitor()
     let recorder = AudioRecorder()
+    let activeApp = ActiveAppMonitor()
     let shortcuts = ShortcutManager()
     let pasteLastInserter = TextInserter(notifier: Notifier())
     let coordinator: DictationCoordinator
@@ -20,7 +21,8 @@ final class AppServices {
     private init() {
         let engine = OpenAIEngine(
             apiKeyProvider: { KeychainStore().read(.openAIKey) },
-            modelProvider: { UserDefaults.standard.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" }
+            modelProvider: { UserDefaults.standard.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
+            languageProvider: { UserDefaults.standard.string(forKey: "pinnedLanguage") }
         )
         let cleanup = CleanupService(
             apiKeyProvider: { KeychainStore().read(.openRouterKey) },
@@ -34,15 +36,31 @@ final class AppServices {
             localAvailable: { FluidAudioBackend.modelsPresent })
         let history = try? HistoryStore()
         self.history = history
+        let activeApp = self.activeApp
         let notifier = Notifier()
+        let resolver = StyleResolver(overrides: { [history] in
+            history?.styleOverridesByBundleID() ?? [:]
+        })
         coordinator = DictationCoordinator(
             recorder: recorder, engine: router, cleanup: cleanup,
             inserter: TextInserter(notifier: notifier),
-            notifier: notifier,
+            notifier: notifier, // Phase 2: cap + failure notifications
             history: history,
-            frontmostApp: {
-                let app = NSWorkspace.shared.frontmostApplication
-                return (app?.bundleIdentifier, app?.localizedName)
+            frontmostApp: { activeApp.frontmost },
+            dictionaryTermsProvider: { [history] in history?.dictionaryTermStrings() ?? [] },
+            cleanupLevelProvider: {
+                CleanupLevel(rawValue: UserDefaults.standard.string(forKey: "cleanupLevel") ?? "high") ?? .high
+            },
+            stylePresetProvider: { bundleID in resolver.resolve(bundleID: bundleID) },
+            pinnedLanguageProvider: {
+                // Settings stores the ISO code ("de"); the prompt wants a name ("German").
+                UserDefaults.standard.string(forKey: "pinnedLanguage").flatMap {
+                    Locale(identifier: "en").localizedString(forLanguageCode: $0)
+                }
+            },
+            cleanupModelProvider: {
+                // Stamped into DictationRecord.cleanupModel (spec §8) — same key CleanupService reads.
+                UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash"
             })
     }
 

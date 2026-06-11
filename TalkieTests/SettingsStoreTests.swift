@@ -17,6 +17,23 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.engineMode, "cloud")
     }
 
+    func testStyleDefaults() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertEqual(store.cleanupLevel, "high")
+        XCTAssertNil(store.pinnedLanguage)
+    }
+
+    func testPinnedLanguageRoundTripsThroughNil() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = SettingsStore(defaults: defaults)
+        store.pinnedLanguage = "de"
+        XCTAssertEqual(SettingsStore(defaults: defaults).pinnedLanguage, "de")
+        store.pinnedLanguage = nil
+        XCTAssertNil(SettingsStore(defaults: defaults).pinnedLanguage)
+    }
+
     func testPersistence() {
         let suite = "talkie-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

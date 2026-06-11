@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ServiceManagement
 
@@ -12,8 +13,120 @@ struct SettingsView: View {
             EngineSettingsTab(keychain: keychain, settings: settings,
                               downloader: AppServices.shared.modelDownloader)
                 .tabItem { Label("Engines", systemImage: "waveform") }
+            StyleSettingsTab(settings: settings, history: AppServices.shared.history)
+                .tabItem { Label("Style", systemImage: "textformat") }
         }
-        .frame(width: 520, height: 340)
+        .frame(width: 560, height: 480)
+    }
+}
+
+private struct StyleSettingsTab: View {
+    @Bindable var settings: SettingsStore
+    let history: HistoryStore?
+
+    @State private var overrides: [AppStyleOverride] = []
+    @State private var newBundleID = ""
+    @State private var newPreset: StylePreset = .neutral
+
+    /// ISO-639-1 codes — sent to the ASR API verbatim; the cleanup prompt gets
+    /// the English name via Locale (see AppServices wiring).
+    private static let languages: [(name: String, code: String?)] = [
+        ("Auto-detect", nil), ("English", "en"), ("German", "de"), ("French", "fr"),
+        ("Spanish", "es"), ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"),
+        ("Polish", "pl"), ("Russian", "ru"), ("Ukrainian", "uk"), ("Turkish", "tr"),
+        ("Japanese", "ja"), ("Korean", "ko"), ("Chinese", "zh"), ("Hindi", "hi"),
+    ]
+
+    var body: some View {
+        Form {
+            Section("Cleanup") {
+                Picker("Cleanup level", selection: $settings.cleanupLevel) {
+                    Text("None — raw transcript, no AI").tag("none")
+                    Text("Light — punctuation only").tag("light")
+                    Text("Medium — also remove fillers").tag("medium")
+                    Text("High — also self-corrections, lists").tag("high")
+                }
+            }
+            Section("Language") {
+                Picker("Output language", selection: $settings.pinnedLanguage) {
+                    ForEach(Self.languages, id: \.code) { language in
+                        Text(language.name).tag(language.code)
+                    }
+                }
+            }
+            Section("Per-app style") {
+                if overrides.isEmpty {
+                    Text("No overrides — Talkie picks a tone from the app's category (chat: casual, email: polished, code: technical, otherwise neutral).")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(overrides, id: \.bundleID) { override in
+                    HStack {
+                        Text(override.bundleID)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Picker("", selection: presetBinding(for: override)) {
+                            ForEach(StylePreset.allCases, id: \.self) { preset in
+                                Text(preset.rawValue).tag(preset)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                        Button(role: .destructive) {
+                            history?.removeStyleOverride(bundleID: override.bundleID)
+                            reload()
+                        } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                HStack {
+                    Menu(newBundleID.isEmpty ? "Choose app…" : newBundleID) {
+                        ForEach(runningApps(), id: \.0) { bundleID, name in
+                            Button("\(name) — \(bundleID)") { newBundleID = bundleID }
+                        }
+                    }
+                    Picker("", selection: $newPreset) {
+                        ForEach(StylePreset.allCases, id: \.self) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 120)
+                    Button("Add") {
+                        history?.setStyleOverride(bundleID: newBundleID, preset: newPreset)
+                        newBundleID = ""
+                        reload()
+                    }
+                    .disabled(newBundleID.isEmpty)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear(perform: reload)
+    }
+
+    private func reload() {
+        overrides = history?.allStyleOverrides() ?? []
+    }
+
+    private func presetBinding(for override: AppStyleOverride) -> Binding<StylePreset> {
+        Binding(
+            get: { override.preset },
+            set: { newValue in
+                history?.setStyleOverride(bundleID: override.bundleID, preset: newValue)
+                reload()
+            })
+    }
+
+    /// Regular (Dock-visible) running apps as pick targets — covers the common case
+    /// without a file-picker flow.
+    private func runningApps() -> [(String, String)] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app in
+                guard let id = app.bundleIdentifier else { return nil }
+                return (id, app.localizedName ?? id)
+            }
+            .sorted { $0.1.localizedCaseInsensitiveCompare($1.1) == .orderedAscending }
     }
 }
 
