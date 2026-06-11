@@ -94,6 +94,24 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.stats().streakDays, 2) // today + yesterday
     }
 
+    func testStatsEstimateCosts() throws {
+        let store = try makeStore()
+        // 2 min realtime, no cleanup model stamped: 2 × $0.017
+        store.save(rawText: "r", cleanedText: "one two", appBundleID: nil, appName: nil,
+                   duration: 120, engine: "realtime", status: .completed)
+        // 1 min parakeet: free
+        store.save(rawText: "r", cleanedText: "three", appBundleID: nil, appName: nil,
+                   duration: 60, engine: "parakeet", status: .completed)
+        // failed rows cost nothing in the dashboard
+        store.save(rawText: "", cleanedText: "", appBundleID: nil, appName: nil,
+                   duration: 60, engine: "realtime", status: .failed)
+        let stats = store.stats()
+        XCTAssertEqual(stats.costTotal, 0.034, accuracy: 1e-6)
+        XCTAssertEqual(stats.costThisMonth, 0.034, accuracy: 1e-6) // saved today
+        XCTAssertEqual(stats.costByEngine["realtime"] ?? 0, 0.034, accuracy: 1e-6)
+        XCTAssertEqual(stats.costByEngine["parakeet"] ?? 0, 0, accuracy: 1e-6)
+    }
+
     func testSaveStampsMetadataAndAudioPath() throws {
         let store = try makeStore()
         // Param order matches the accreted Phase 2+3 signature: cleanupModel, language, audioPath.
