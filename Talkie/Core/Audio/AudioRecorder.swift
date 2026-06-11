@@ -80,7 +80,7 @@ final class AudioSink {
             }
             var sum: Float = 0
             for i in 0..<n { sum += ptr[i] * ptr[i] }
-            latestLevel = min(1, sqrt(sum / Float(n)) * 4) // scaled RMS for UI bars
+            latestLevel = min(1, sqrt(sum / Float(n)) * 5) // scaled RMS for UI bars (+25% per user feedback: bars too shy at arm's length)
         } else {
             latestLevel = 0
         }
