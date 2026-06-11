@@ -4,6 +4,7 @@ import Foundation
 struct OpenAIEngine: TranscriptionEngine {
     var apiKeyProvider: @Sendable () -> String?
     var modelProvider: @Sendable () -> String
+    var languageProvider: @Sendable () -> String? = { nil }
     var session: URLSession = .shared
 
     func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
@@ -28,6 +29,9 @@ struct OpenAIEngine: TranscriptionEngine {
                 $0.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
             }
             field("prompt", "Vocabulary: " + sanitized.joined(separator: ", "))
+        }
+        if let language = languageProvider(), !language.isEmpty {
+            field("language", language) // ISO-639-1 code, spec §3: pinned language
         }
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n".utf8))
         body.append(try Data(contentsOf: audio.fileURL))

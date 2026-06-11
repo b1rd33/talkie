@@ -61,6 +61,39 @@ final class OpenAIEngineTests: XCTestCase {
         } catch { XCTFail("wrong error: \(error)") }
     }
 
+    func testLanguageFieldSentWhenPinned() async throws {
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200,
+                                    httpVersion: nil, headerFields: nil)!,
+                    Data(#"{"text": "hallo welt"}"#.utf8))
+        }
+        let engine = OpenAIEngine(apiKeyProvider: { "sk-test" },
+                                  modelProvider: { "gpt-4o-mini-transcribe" },
+                                  languageProvider: { "de" },
+                                  session: StubURLProtocol.session())
+        _ = try await engine.transcribe(RecordedAudio(fileURL: audioURL, duration: 1.0),
+                                        dictionaryTerms: [])
+        let body = try XCTUnwrap(capturedBody.flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertTrue(body.contains("name=\"language\""))
+        XCTAssertTrue(body.contains("\r\n\r\nde\r\n"))
+    }
+
+    func testNoLanguageFieldByDefault() async throws {
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200,
+                                    httpVersion: nil, headerFields: nil)!,
+                    Data(#"{"text": "hello"}"#.utf8))
+        }
+        _ = try await makeEngine().transcribe(RecordedAudio(fileURL: audioURL, duration: 1.0),
+                                              dictionaryTerms: [])
+        let body = try XCTUnwrap(capturedBody.flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertFalse(body.contains("name=\"language\""))
+    }
+
     func testOfflineErrorMapsToOfflineCase() async {
         StubURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
         do {
