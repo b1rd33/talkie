@@ -48,6 +48,7 @@ struct MenuBarContent: View {
             // LSUIElement apps don't auto-activate; without this the hub opens behind others.
             NSApp.activate(ignoringOtherApps: true)
         }
+        Button("Check for Updates…") { AppServices.shared.updater?.checkForUpdates() }
         SettingsLink { Text("Settings…") }
             .keyboardShortcut(",")
         Divider()
