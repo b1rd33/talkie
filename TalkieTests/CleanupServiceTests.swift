@@ -55,6 +55,32 @@ final class CleanupServiceTests: XCTestCase {
         XCTAssertTrue(system.contains("Talkie"))                       // dictionary
     }
 
+    func testCustomEndpointAndExtraPayloadReachTheWire() async throws {
+        // Direct-OpenAI provider: different endpoint, reasoning_effort merged into the body
+        // (gpt-5-family models burn ~1.3s "thinking" without it).
+        var captured: URLRequest?
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            captured = request
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200,
+                                    httpVersion: nil, headerFields: nil)!,
+                    Data(#"{"choices": [{"message": {"role": "assistant", "content": "ok"}}]}"#.utf8))
+        }
+        let service = CleanupService(
+            apiKeyProvider: { "sk-test" }, modelProvider: { "gpt-5.4-nano" },
+            endpointProvider: { URL(string: "https://api.openai.com/v1/chat/completions")! },
+            extraPayloadProvider: { ["reasoning_effort": "none"] },
+            session: StubURLProtocol.session())
+        _ = try await service.clean("text", dictionaryTerms: [],
+                                    level: .high, style: .neutral, pinnedLanguage: nil)
+        XCTAssertEqual(try XCTUnwrap(captured).url?.absoluteString,
+                       "https://api.openai.com/v1/chat/completions")
+        let json = try JSONSerialization.jsonObject(with: XCTUnwrap(capturedBody)) as! [String: Any]
+        XCTAssertEqual(json["model"] as? String, "gpt-5.4-nano")
+        XCTAssertEqual(json["reasoning_effort"] as? String, "none")
+    }
+
     func testMissingKeyThrows() async {
         do {
             _ = try await makeService(apiKey: nil).clean("text", dictionaryTerms: [],

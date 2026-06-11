@@ -6,7 +6,8 @@ final class SettingsStoreTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
         let store = SettingsStore(defaults: defaults)
         XCTAssertEqual(store.transcriptionModel, "gpt-4o-mini-transcribe")
-        XCTAssertEqual(store.cleanupModel, "google/gemini-2.5-flash")
+        XCTAssertEqual(store.cleanupModel, "google/gemini-2.5-flash-lite") // measured 3x faster than flash
+        XCTAssertEqual(store.cleanupProvider, "openrouter")
     }
 
     func testNewDefaults() {

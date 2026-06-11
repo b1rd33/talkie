@@ -230,7 +230,31 @@ private struct EngineSettingsTab: View {
                 Picker("Transcription model", selection: $settings.transcriptionModel) {
                     ForEach(Self.transcriptionPresets, id: \.self) { Text($0) }
                 }
-                TextField("Cleanup model (OpenRouter)", text: $settings.cleanupModel)
+            }
+            Section("Cleanup") {
+                Picker("Cleanup runs via", selection: $settings.cleanupProvider) {
+                    Text("OpenRouter").tag("openrouter")
+                    Text("OpenAI (direct)").tag("openai")
+                }
+                HStack {
+                    TextField("Cleanup model", text: $settings.cleanupModel)
+                    Menu("Presets") {
+                        if settings.cleanupProvider == "openai" {
+                            Button("gpt-5.4-nano — fastest (~0.7s)") { setCleanup("gpt-5.4-nano") }
+                            Button("gpt-5.4-mini — higher quality") { setCleanup("gpt-5.4-mini") }
+                            Button("gpt-4.1-nano — non-reasoning") { setCleanup("gpt-4.1-nano") }
+                        } else {
+                            Button("google/gemini-2.5-flash-lite — fastest (~0.4s)") { setCleanup("google/gemini-2.5-flash-lite") }
+                            Button("google/gemini-2.5-flash — balanced (~1.3s)") { setCleanup("google/gemini-2.5-flash") }
+                            Button("openai/gpt-5.4-nano — via OpenRouter") { setCleanup("openai/gpt-5.4-nano") }
+                        }
+                    }
+                    .frame(width: 90)
+                }
+                Text(settings.cleanupProvider == "openai"
+                     ? "Uses your OpenAI key. gpt-5-family models automatically skip the reasoning pass for speed."
+                     : "Uses your OpenRouter key. Latencies measured live on this Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -238,6 +262,10 @@ private struct EngineSettingsTab: View {
             openAIKey = keychain.read(.openAIKey) ?? ""
             openRouterKey = keychain.read(.openRouterKey) ?? ""
         }
+    }
+
+    private func setCleanup(_ model: String) {
+        settings.cleanupModel = model
     }
 
     private var removeModelsButton: some View {

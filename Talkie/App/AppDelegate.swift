@@ -39,8 +39,23 @@ final class AppServices {
             languageProvider: { UserDefaults.standard.string(forKey: "pinnedLanguage") }
         )
         let cleanup = CleanupService(
-            apiKeyProvider: { KeychainStore().read(.openRouterKey) },
-            modelProvider: { UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash" }
+            apiKeyProvider: {
+                let provider = UserDefaults.standard.string(forKey: "cleanupProvider") ?? "openrouter"
+                return KeychainStore().read(provider == "openai" ? .openAIKey : .openRouterKey)
+            },
+            modelProvider: { UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite" },
+            endpointProvider: {
+                let provider = UserDefaults.standard.string(forKey: "cleanupProvider") ?? "openrouter"
+                return URL(string: provider == "openai"
+                    ? "https://api.openai.com/v1/chat/completions"
+                    : "https://openrouter.ai/api/v1/chat/completions")!
+            },
+            extraPayloadProvider: {
+                let provider = UserDefaults.standard.string(forKey: "cleanupProvider") ?? "openrouter"
+                let model = UserDefaults.standard.string(forKey: "cleanupModel") ?? ""
+                // gpt-5-family reasoning models: skip the thinking pass (~1.3s saved).
+                return (provider == "openai" && model.hasPrefix("gpt-5")) ? ["reasoning_effort": "none"] : [:]
+            }
         )
         let backend = FluidAudioBackend()
         let localEngine = ParakeetEngine(backend: backend)
@@ -74,7 +89,7 @@ final class AppServices {
             },
             cleanupModelProvider: {
                 // Stamped into DictationRecord.cleanupModel (spec §8) — same key CleanupService reads.
-                UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash"
+                UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
             },
             keepRecordingsProvider: {
                 UserDefaults.standard.object(forKey: "keepRecordings") as? Bool ?? false
