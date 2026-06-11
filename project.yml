@@ -16,6 +16,9 @@ settings:
     SWIFT_VERSION: "5.10"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     CODE_SIGN_STYLE: Automatic
+    # Both targets must sign with the same team or the test bundle fails dlopen
+    # ("different Team IDs"). Release overrides with the Developer ID team.
+    DEVELOPMENT_TEAM: EB2QMSLYN4
 targets:
   Talkie:
     type: application
@@ -24,11 +27,21 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
-        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Talkie/Talkie.entitlements
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
         INFOPLIST_KEY_CFBundleDisplayName: Talkie
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          DEVELOPMENT_TEAM: YOURTEAMID  # ⚠️ HUMAN: real Team ID (Human inputs #1)
     dependencies:
       - package: HotKey
       - package: FluidAudio
