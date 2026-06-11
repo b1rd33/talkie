@@ -113,6 +113,13 @@ final class DictationCoordinator {
             state = .recording
             recordingStartedAt = Date()
             try await recorder.start()
+            guard state == .recording else {
+                // Released or cancelled while the engine was starting — the discard
+                // that ran during the await was a no-op (isRecording was still false).
+                // Without this, the engine (and macOS's orange mic indicator) stays on.
+                recorder.discard()
+                return
+            }
             if let liveSessionFactory {
                 let (stream, continuation) = AsyncStream.makeStream(of: [Float].self)
                 liveChunkContinuation = continuation
