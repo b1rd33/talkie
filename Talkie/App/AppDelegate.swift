@@ -11,6 +11,7 @@ final class AppServices {
     let escMonitor = EscKeyMonitor()
     let recorder = AudioRecorder()
     let coordinator: DictationCoordinator
+    let history: HistoryStore?
     private(set) var flowBar: FlowBarPanel?
 
     private init() {
@@ -22,8 +23,18 @@ final class AppServices {
             apiKeyProvider: { KeychainStore().read(.openRouterKey) },
             modelProvider: { UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash" }
         )
-        coordinator = DictationCoordinator(recorder: recorder, engine: engine,
-                                           cleanup: cleanup, inserter: TextInserter())
+        let history = try? HistoryStore()
+        self.history = history
+        let notifier = Notifier()
+        coordinator = DictationCoordinator(
+            recorder: recorder, engine: engine, cleanup: cleanup,
+            inserter: TextInserter(notifier: notifier),
+            notifier: notifier,
+            history: history,
+            frontmostApp: {
+                let app = NSWorkspace.shared.frontmostApplication
+                return (app?.bundleIdentifier, app?.localizedName)
+            })
     }
 
     func startUI() {

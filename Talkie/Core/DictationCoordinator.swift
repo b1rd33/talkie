@@ -31,15 +31,20 @@ final class DictationCoordinator {
     private let minimumHold: TimeInterval
     private let maxDuration: TimeInterval
     private let notifier: Notifying?
+    private let history: HistoryStore?
+    private let frontmostApp: () -> (bundleID: String?, name: String?)
     private var recordingStartedAt: Date?
     private var processingTask: Task<Void, Never>?
     private var capTask: Task<Void, Never>?
     private(set) var isHandsFree = false
+    private var targetApp: (bundleID: String?, name: String?) = (nil, nil)
 
     init(recorder: AudioRecording, engine: TranscriptionEngine,
          cleanup: CleanupServicing, inserter: TextInserting,
          minimumHold: TimeInterval = 0.3, maxDuration: TimeInterval = 1200,
-         notifier: Notifying? = nil) {
+         notifier: Notifying? = nil,
+         history: HistoryStore? = nil,
+         frontmostApp: @escaping () -> (bundleID: String?, name: String?) = { (nil, nil) }) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -47,6 +52,8 @@ final class DictationCoordinator {
         self.minimumHold = minimumHold
         self.maxDuration = maxDuration
         self.notifier = notifier
+        self.history = history
+        self.frontmostApp = frontmostApp
     }
 
     func dictationKeyPressed() async {
@@ -56,6 +63,7 @@ final class DictationCoordinator {
             return
         }
         guard state == .idle || isErrorState else { return } // one dictation in flight
+        targetApp = frontmostApp()
         do {
             state = .recording
             recordingStartedAt = Date()
@@ -116,6 +124,8 @@ final class DictationCoordinator {
             capTask?.cancel()
             isHandsFree = false
             recorder.discard()
+            history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
+                          appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled)
             state = .idle
         case .transcribing, .cleaning:
             processingTask?.cancel()
@@ -147,12 +157,19 @@ final class DictationCoordinator {
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
             state = .idle
+            history?.save(rawText: transcript.text, cleanedText: cleaned,
+                          appBundleID: targetApp.bundleID, appName: targetApp.name,
+                          duration: audio.duration, engine: "openai", status: .completed)
         } catch is CancellationError {
             recorder.discard()
             state = .idle
+            history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
+                          appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled)
         } catch {
             recorder.discard()
             fail(error)
+            history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
+                          appName: targetApp.name, duration: 0, engine: "openai", status: .failed)
         }
     }
 
