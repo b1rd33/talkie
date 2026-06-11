@@ -39,6 +39,7 @@ struct MenuBarContent: View {
         // the same SettingsStore property the Engines tab's radio group uses (Phase 3).
         Picker("Engine", selection: $settings.engineMode) {
             Text("Cloud (OpenAI)").tag("cloud")
+            Text("Instant (OpenAI streaming)").tag("instant")
             Text("On this Mac (Parakeet)").tag("local")
         }
         .pickerStyle(.inline)

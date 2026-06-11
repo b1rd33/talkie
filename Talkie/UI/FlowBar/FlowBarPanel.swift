@@ -7,6 +7,7 @@ final class FlowBarPanel {
     private let panel: NSPanel
 
     init(coordinator: DictationCoordinator, recorder: AudioRecorder,
+         settings: SettingsStore? = nil,
          onHideForHour: @escaping () -> Void = {},
          onHidePermanently: @escaping () -> Void = {}) {
         panel = NSPanel(contentRect: .zero,
@@ -21,6 +22,7 @@ final class FlowBarPanel {
         panel.hidesOnDeactivate = false
 
         let host = NSHostingView(rootView: FlowBarView(coordinator: coordinator, recorder: recorder,
+                                                       settings: settings,
                                                        onHideForHour: onHideForHour,
                                                        onHidePermanently: onHidePermanently))
         host.frame = NSRect(x: 0, y: 0, width: 260, height: 56)

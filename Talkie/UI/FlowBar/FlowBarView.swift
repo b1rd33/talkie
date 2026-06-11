@@ -3,6 +3,7 @@ import SwiftUI
 struct FlowBarView: View {
     let coordinator: DictationCoordinator
     let recorder: AudioRecorder
+    var settings: SettingsStore? = nil
     var onHideForHour: () -> Void = {}
     var onHidePermanently: () -> Void = {}
 
@@ -39,6 +40,9 @@ struct FlowBarView: View {
             case .recording:
                 pill {
                     HStack(spacing: 8) {
+                        if settings?.engineMode == "instant" {
+                            Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                        }
                         HStack(spacing: 2.5) {
                             ForEach(levels.indices, id: \.self) { i in
                                 Capsule().fill(.white)
