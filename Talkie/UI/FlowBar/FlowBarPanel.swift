@@ -36,9 +36,12 @@ final class FlowBarPanel {
         self.makeRoot = makeRoot
         let host = NSHostingView(rootView: makeRoot())
         self.host = host
-        host.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
+        // The pill is a fixed-size panel (PillLayout.panelSize). Empty sizing
+        // options stop NSHostingView from driving the window size on rootView
+        // reassignment — that resize zeroed the panel and broke positioning.
+        host.sizingOptions = []
+        host.frame = NSRect(origin: .zero, size: PillLayout.panelSize)
         panel.contentView = host
-        panel.setContentSize(host.frame.size)
         reposition()
         panel.orderFrontRegardless()
 
@@ -49,7 +52,12 @@ final class FlowBarPanel {
     }
 
     func setVisible(_ visible: Bool) {
-        visible ? panel.orderFrontRegardless() : panel.orderOut(nil)
+        if visible {
+            reposition() // re-assert size + origin before every show
+            panel.orderFrontRegardless()
+        } else {
+            panel.orderOut(nil)
+        }
     }
 
     /// Deterministic re-render: reassigning rootView forces NSHostingView to
@@ -57,6 +65,7 @@ final class FlowBarPanel {
     /// reaching into the hosted tree (live-testing bug: style changes didn't render).
     func refreshStyle() {
         host.rootView = makeRoot()
+        reposition()
     }
 
     /// Applies PillVisibilityPolicy for the current dictation state: orders the
@@ -72,23 +81,13 @@ final class FlowBarPanel {
         setVisible(show)
     }
 
-    /// Re-reads Settings → pill position and moves the panel (AppServices tracks changes).
+    /// Re-reads Settings → pill position and moves the panel (AppServices tracks
+    /// changes). Sets the full frame from PillLayout's constant size — never from
+    /// panel.frame, which is transiently zero around rootView swaps.
     func reposition() {
         guard let screen = NSScreen.main else { return }
-        let frame = screen.visibleFrame
-        let size = panel.frame.size
-        let margin: CGFloat = 12
-        let origin: NSPoint
-        switch settings?.pillPosition ?? "bottomCenter" {
-        case "bottomLeft":
-            origin = NSPoint(x: frame.minX + margin, y: frame.minY + margin)
-        case "bottomRight":
-            origin = NSPoint(x: frame.maxX - size.width - margin, y: frame.minY + margin)
-        case "topCenter":
-            origin = NSPoint(x: frame.midX - size.width / 2, y: frame.maxY - size.height - margin)
-        default: // bottomCenter
-            origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + margin)
-        }
-        panel.setFrameOrigin(origin)
+        let origin = PillLayout.origin(position: settings?.pillPosition ?? "bottomCenter",
+                                       screenFrame: screen.visibleFrame)
+        panel.setFrame(NSRect(origin: origin, size: PillLayout.panelSize), display: true)
     }
 }
