@@ -171,7 +171,38 @@ final class AppServices {
         trackCustomShortcuts()
         trackDockIconPolicy()
         trackPillPosition()
+        trackPillActivity()
         showOnboardingIfNeeded()
+    }
+
+    private var pillFlashTask: Task<Void, Never>?
+
+    /// Re-arming observation loop: panel existence + mouse participation follow
+    /// the dictation state and pill style (PillVisibilityPolicy). After a
+    /// completion, keeps the panel up ~1s so the checkmark flash stays visible.
+    private func trackPillActivity() {
+        _ = withObservationTracking {
+            (coordinator.state, coordinator.lastCompletedAt)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackPillActivity() }
+        }
+        applyPillActivity()
+    }
+
+    /// Shared (non-observing) application of PillVisibilityPolicy.
+    private func applyPillActivity() {
+        let recentlyCompleted = coordinator.lastCompletedAt
+            .map { Date().timeIntervalSince($0) < 1.0 } ?? false
+        flowBar?.applyActivity(state: coordinator.state, recentlyCompleted: recentlyCompleted)
+        pillFlashTask?.cancel()
+        if recentlyCompleted {
+            // Re-evaluate once the checkmark window closes so the panel orders out.
+            pillFlashTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(1100))
+                guard !Task.isCancelled else { return }
+                self?.applyPillActivity()
+            }
+        }
     }
 
     /// Re-arming observation loop: pill placement follows Settings → Appearance.
@@ -212,13 +243,15 @@ final class AppServices {
     }
 
     /// Re-arming observation loop: pill visibility follows Settings → Appearance.
+    /// Applies through PillVisibilityPolicy (same as trackPillActivity) so the
+    /// on/off toggle and pill style never fight the state-driven loop.
     private func trackPillVisibility() {
-        let visible = withObservationTracking {
-            settings.showFlowBar
+        _ = withObservationTracking {
+            (settings.showFlowBar, settings.pillStyle)
         } onChange: { [weak self] in
             Task { @MainActor in self?.trackPillVisibility() }
         }
-        flowBar?.setVisible(visible)
+        applyPillActivity()
     }
 
     /// Re-arming observation loop: Esc monitoring runs only while a dictation is active.

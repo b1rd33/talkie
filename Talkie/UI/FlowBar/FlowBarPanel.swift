@@ -43,6 +43,19 @@ final class FlowBarPanel {
         visible ? panel.orderFrontRegardless() : panel.orderOut(nil)
     }
 
+    /// Applies PillVisibilityPolicy for the current dictation state: orders the
+    /// panel in/out and gates mouse participation so an idle, invisible pill is
+    /// never hit-tested (crash 2026-06-11).
+    func applyActivity(state: DictationState, recentlyCompleted: Bool) {
+        let style = settings?.pillStyle ?? "classic"
+        let show = PillVisibilityPolicy.shouldShowPanel(
+            state: state, style: style,
+            showFlowBar: settings?.showFlowBar ?? true,
+            recentlyCompleted: recentlyCompleted)
+        panel.ignoresMouseEvents = !PillVisibilityPolicy.shouldAcceptMouse(state: state, style: style)
+        setVisible(show)
+    }
+
     /// Re-reads Settings → pill position and moves the panel (AppServices tracks changes).
     func reposition() {
         guard let screen = NSScreen.main else { return }
