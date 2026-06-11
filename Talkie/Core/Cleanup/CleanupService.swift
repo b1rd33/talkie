@@ -11,6 +11,13 @@ protocol CleanupServicing: Sendable {
 struct CleanupService: CleanupServicing {
     var apiKeyProvider: @Sendable () -> String?
     var modelProvider: @Sendable () -> String
+    /// Defaults to OpenRouter; the direct-OpenAI provider swaps this at call time.
+    var endpointProvider: @Sendable () -> URL = {
+        URL(string: "https://openrouter.ai/api/v1/chat/completions")!
+    }
+    /// Extra top-level body fields, e.g. reasoning_effort=none for gpt-5-family
+    /// models (without it they burn ~1.3s "thinking" before the cleanup).
+    var extraPayloadProvider: @Sendable () -> [String: String] = { [:] }
     var session: URLSession = .shared
     var promptBuilder = PromptBuilder()
 
@@ -18,13 +25,13 @@ struct CleanupService: CleanupServicing {
                style: StylePreset, pinnedLanguage: String?) async throws -> String {
         guard let key = apiKeyProvider(), !key.isEmpty else { throw EngineError.missingAPIKey }
 
-        var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
+        var request = URLRequest(url: endpointProvider())
         request.httpMethod = "POST"
         request.timeoutInterval = 10 // spec §3: cleanup timeout 10s
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "model": modelProvider(),
             "temperature": 0.2,
             "messages": [
@@ -34,6 +41,7 @@ struct CleanupService: CleanupServicing {
                 ["role": "user", "content": transcript],
             ],
         ]
+        for (field, value) in extraPayloadProvider() { payload[field] = value }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await session.data(for: request)

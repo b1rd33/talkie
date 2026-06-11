@@ -10,6 +10,8 @@ final class SettingsStore {
 
     var transcriptionModel: String { didSet { defaults.set(transcriptionModel, forKey: "transcriptionModel") } }
     var cleanupModel: String { didSet { defaults.set(cleanupModel, forKey: "cleanupModel") } }
+    /// "openrouter" | "openai" — which API the cleanup chat call goes to.
+    var cleanupProvider: String { didSet { defaults.set(cleanupProvider, forKey: "cleanupProvider") } }
     var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
@@ -38,7 +40,8 @@ final class SettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe"
-        cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash"
+        cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
+        cleanupProvider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
         showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
         engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
