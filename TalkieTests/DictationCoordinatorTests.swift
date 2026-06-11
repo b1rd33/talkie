@@ -12,16 +12,25 @@ final class DictationCoordinatorTests: XCTestCase {
         var stopped = 0
         var discarded = 0
         var startError: Error?
+        var startDelay: Duration?
+        /// Mirrors the real engine: true once start() completes, false on stop/discard.
+        var isRunning = false
         var stopURL = URL(fileURLWithPath: "/tmp/fake.m4a")
         func start() async throws {
+            if let startDelay { try? await Task.sleep(for: startDelay) }
             started += 1
             if let startError { throw startError }
+            isRunning = true
         }
         func stop() async throws -> RecordedAudio {
             stopped += 1
+            isRunning = false
             return RecordedAudio(fileURL: stopURL, duration: 2.0)
         }
-        func discard() { discarded += 1 }
+        func discard() {
+            discarded += 1
+            isRunning = false
+        }
     }
 
     final class MockEngine: TranscriptionEngine, @unchecked Sendable {
@@ -104,6 +113,24 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(coordinator.lastResult?.cleanedText, "Clean text.")
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+    }
+
+    func testReleaseDuringEngineStartupStopsTheEngine() async throws {
+        // Mic-pinned-on race (live bug 2026-06-11): release lands while
+        // recorder.start() is still awaiting — its discard() no-ops because the
+        // engine isn't running yet. The coordinator must re-check after the await
+        // and discard, or the engine (and macOS's orange mic indicator) stays on.
+        let recorder = MockRecorder()
+        recorder.startDelay = .milliseconds(80)
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 10) // any release is "too soon"
+        let press = Task { await coordinator.dictationKeyPressed() }
+        try await Task.sleep(for: .milliseconds(20)) // press in flight, engine still starting
+        await coordinator.dictationKeyReleased()     // short tap → discard (no-op pre-fix)
+        await press.value                            // start() completes after the release
+        XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertFalse(recorder.isRunning, "engine left running after a tap during startup")
     }
 
     func testShortHoldDiscards() async {
