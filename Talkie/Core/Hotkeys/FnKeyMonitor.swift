@@ -12,11 +12,34 @@ final class FnKeyMonitor {
     private var globalMonitor: Any?
     private var localMonitor: Any?
 
+    var onDoubleTap: () -> Void = {}
+
+    private var downAt: Date?
+    private var lastTapEndedAt: Date?
+    static let tapMaxHold: TimeInterval = 0.3
+    static let doubleTapWindow: TimeInterval = 0.45
+
     /// Pure transition logic, unit-testable without NSEvent.
-    func handleFlagsChanged(fnDown: Bool) {
+    func handleFlagsChanged(fnDown: Bool, at now: Date = Date()) {
         guard fnDown != isDown else { return }
         isDown = fnDown
-        fnDown ? onPress() : onRelease()
+        if fnDown {
+            downAt = now
+            onPress()
+        } else {
+            onRelease()
+            let wasTap = now.timeIntervalSince(downAt ?? now) < Self.tapMaxHold
+            if wasTap {
+                if let last = lastTapEndedAt, now.timeIntervalSince(last) < Self.doubleTapWindow {
+                    lastTapEndedAt = nil
+                    onDoubleTap()
+                } else {
+                    lastTapEndedAt = now
+                }
+            } else {
+                lastTapEndedAt = nil
+            }
+        }
     }
 
     func start() {

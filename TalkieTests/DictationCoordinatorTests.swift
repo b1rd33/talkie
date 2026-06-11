@@ -105,6 +105,47 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    final class MockNotifier: Notifying {
+        var titles: [String] = []
+        func notify(title: String, body: String) { titles.append(title) }
+    }
+
+    func testSessionCapAutoStopsAndProcesses() async throws {
+        let recorder = MockRecorder()
+        let inserter = MockInserter()
+        let notifier = MockNotifier()
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter,
+                                               minimumHold: 0, maxDuration: 0.05, notifier: notifier)
+        await coordinator.dictationKeyPressed()
+        try await Task.sleep(for: .milliseconds(250)) // cap (50ms) fires
+        await coordinator.waitForIdle()
+        XCTAssertEqual(recorder.stopped, 1)
+        XCTAssertEqual(inserter.inserted, ["Clean text."])
+        XCTAssertEqual(notifier.titles, ["Dictation auto-stopped"]) // spec §10: cap notifies
+    }
+
+    func testHandsFreeToggleRecordsAcrossRelease() async {
+        let (coordinator, recorder, inserter) = makeCoordinator()
+        await coordinator.handsFreeToggled()           // starts hands-free recording
+        XCTAssertEqual(coordinator.state, .recording)
+        await coordinator.dictationKeyReleased()       // fn release must NOT stop it
+        XCTAssertEqual(coordinator.state, .recording)
+        await coordinator.handsFreeToggled()           // second toggle stops + processes
+        await coordinator.waitForIdle()
+        XCTAssertEqual(recorder.stopped, 1)
+        XCTAssertEqual(inserter.inserted, ["Clean text."])
+    }
+
+    func testHandsFreeStopsOnSingleTapPress() async {
+        let (coordinator, recorder, inserter) = makeCoordinator()
+        await coordinator.handsFreeToggled()           // hands-free recording on
+        await coordinator.dictationKeyPressed()        // single fn tap stops it (spec §4)
+        await coordinator.waitForIdle()
+        XCTAssertEqual(recorder.stopped, 1)
+        XCTAssertEqual(inserter.inserted, ["Clean text."])
+    }
+
     func testCancelDuringRecordingDiscardsAndGoesIdle() async {
         let (coordinator, recorder, inserter) = makeCoordinator()
         await coordinator.dictationKeyPressed()

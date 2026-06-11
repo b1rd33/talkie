@@ -32,4 +32,26 @@ final class FnKeyMonitorTests: XCTestCase {
         monitor.handleFlagsChanged(fnDown: false)
         XCTAssertEqual(releases, 0)
     }
+
+    func testDoubleTapFires() {
+        var doubleTaps = 0
+        monitor.onDoubleTap = { doubleTaps += 1 }
+        let t0 = Date()
+        monitor.handleFlagsChanged(fnDown: true, at: t0)
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(0.1))  // tap 1
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(0.25))
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(0.35)) // tap 2
+        XCTAssertEqual(doubleTaps, 1)
+    }
+
+    func testSlowTapsDoNotFireDoubleTap() {
+        var doubleTaps = 0
+        monitor.onDoubleTap = { doubleTaps += 1 }
+        let t0 = Date()
+        monitor.handleFlagsChanged(fnDown: true, at: t0)
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(0.1))
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(1.0)) // too late
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(1.1))
+        XCTAssertEqual(doubleTaps, 0)
+    }
 }

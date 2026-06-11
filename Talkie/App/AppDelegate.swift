@@ -30,6 +30,7 @@ final class AppServices {
         flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder)
         fnMonitor.onPress = { [coordinator] in Task { await coordinator.dictationKeyPressed() } }
         fnMonitor.onRelease = { [coordinator] in Task { await coordinator.dictationKeyReleased() } }
+        fnMonitor.onDoubleTap = { [coordinator] in Task { await coordinator.handsFreeToggled() } }
         fnMonitor.start()
         escMonitor.onEsc = { [coordinator] in coordinator.cancel() }
         trackDictationActivity()

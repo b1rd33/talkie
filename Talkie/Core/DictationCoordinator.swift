@@ -29,38 +29,76 @@ final class DictationCoordinator {
     private let cleanup: CleanupServicing
     private let inserter: TextInserting
     private let minimumHold: TimeInterval
+    private let maxDuration: TimeInterval
+    private let notifier: Notifying?
     private var recordingStartedAt: Date?
     private var processingTask: Task<Void, Never>?
+    private var capTask: Task<Void, Never>?
+    private(set) var isHandsFree = false
 
     init(recorder: AudioRecording, engine: TranscriptionEngine,
          cleanup: CleanupServicing, inserter: TextInserting,
-         minimumHold: TimeInterval = 0.3) {
+         minimumHold: TimeInterval = 0.3, maxDuration: TimeInterval = 1200,
+         notifier: Notifying? = nil) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
         self.inserter = inserter
         self.minimumHold = minimumHold
+        self.maxDuration = maxDuration
+        self.notifier = notifier
     }
 
     func dictationKeyPressed() async {
+        if isHandsFree, state == .recording {
+            isHandsFree = false
+            beginProcessing()
+            return
+        }
         guard state == .idle || isErrorState else { return } // one dictation in flight
         do {
             state = .recording
             recordingStartedAt = Date()
             try await recorder.start()
+            capTask?.cancel()
+            capTask = Task { [weak self, maxDuration] in
+                try? await Task.sleep(for: .seconds(maxDuration))
+                guard let self, !Task.isCancelled, self.state == .recording else { return }
+                self.isHandsFree = false
+                self.notifier?.notify(title: "Dictation auto-stopped",
+                                      body: "Reached the 20-minute limit — processing what you said.")
+                self.beginProcessing()
+            }
         } catch {
             fail(error)
         }
     }
 
     func dictationKeyReleased() async {
-        guard state == .recording else { return }
+        guard state == .recording, !isHandsFree else { return }
         let heldFor = Date().timeIntervalSince(recordingStartedAt ?? Date())
         if heldFor < minimumHold {
+            capTask?.cancel()
             recorder.discard()
             state = .idle
             return
         }
+        beginProcessing()
+    }
+
+    func handsFreeToggled() async {
+        if state == .recording, isHandsFree {
+            isHandsFree = false
+            beginProcessing()
+        } else if state == .idle || isErrorState {
+            isHandsFree = true
+            await dictationKeyPressed()
+        }
+    }
+
+    private func beginProcessing() {
+        capTask?.cancel()
+        isHandsFree = false
         processingTask = Task { await process() }
     }
 
@@ -75,6 +113,8 @@ final class DictationCoordinator {
         switch state {
         case .recording:
             processingTask?.cancel() // a release may already have queued process() — kill it pre-start
+            capTask?.cancel()
+            isHandsFree = false
             recorder.discard()
             state = .idle
         case .transcribing, .cleaning:
@@ -122,6 +162,13 @@ final class DictationCoordinator {
     }
 
     private func fail(_ error: Error) {
+        if let engineError = error as? EngineError, engineError == .missingAPIKey {
+            notifier?.notify(title: "API key missing",
+                             body: "Add your OpenAI key in Talkie's Settings → Engines.")
+        } else if let audioError = error as? AudioError, case .microphoneDenied = audioError {
+            notifier?.notify(title: "Microphone unavailable",
+                             body: "Check System Settings → Privacy & Security → Microphone.")
+        }
         state = .error((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
