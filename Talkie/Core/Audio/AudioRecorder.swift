@@ -40,6 +40,9 @@ final class AudioSink {
     var sampleCount: Int { samples.count }
     var duration: TimeInterval { Double(samples.count) / 16_000 }
 
+    /// Hands out the accumulated 16kHz mono samples (used by the local engine's decoder).
+    func drainSamples() -> [Float] { samples }
+
     func append(_ buffer: AVAudioPCMBuffer) throws {
         if converter == nil || sourceFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: Self.targetFormat)

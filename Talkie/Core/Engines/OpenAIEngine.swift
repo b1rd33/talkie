@@ -51,6 +51,6 @@ struct OpenAIEngine: TranscriptionEngine {
         guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else {
             throw EngineError.invalidResponse
         }
-        return Transcript(text: decoded.text)
+        return Transcript(text: decoded.text, engineID: "openai")
     }
 }
