@@ -15,6 +15,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.showFlowBar)
         XCTAssertFalse(store.launchAtLogin)
         XCTAssertEqual(store.engineMode, "cloud")
+        XCTAssertFalse(store.showDockIcon)
+        XCTAssertFalse(store.keepRecordings)
     }
 
     func testStyleDefaults() {

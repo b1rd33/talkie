@@ -152,6 +152,12 @@ private struct GeneralSettingsTab: View {
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
+                Toggle("Show Dock icon", isOn: $settings.showDockIcon)
+            }
+            Section("Privacy") {
+                Toggle("Keep audio recordings", isOn: $settings.keepRecordings)
+                Text("Off (default): audio is deleted after transcription. On: saved to Application Support/Talkie/Recordings.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Startup") {
                 Toggle("Launch Talkie at login", isOn: $settings.launchAtLogin)

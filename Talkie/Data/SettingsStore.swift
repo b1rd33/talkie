@@ -13,6 +13,8 @@ final class SettingsStore {
     var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
+    var showDockIcon: Bool { didSet { defaults.set(showDockIcon, forKey: "showDockIcon") } }
+    var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
     var cleanupLevel: String { didSet { defaults.set(cleanupLevel, forKey: "cleanupLevel") } }
     var pttShortcut: String? {
         didSet {
@@ -40,6 +42,8 @@ final class SettingsStore {
         showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
         engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
+        showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
+        keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
         pttShortcut = defaults.string(forKey: "pttShortcut")

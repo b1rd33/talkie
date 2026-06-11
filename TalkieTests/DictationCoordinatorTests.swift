@@ -11,13 +11,14 @@ final class DictationCoordinatorTests: XCTestCase {
         var stopped = 0
         var discarded = 0
         var startError: Error?
+        var stopURL = URL(fileURLWithPath: "/tmp/fake.m4a")
         func start() async throws {
             started += 1
             if let startError { throw startError }
         }
         func stop() async throws -> RecordedAudio {
             stopped += 1
-            return RecordedAudio(fileURL: URL(fileURLWithPath: "/tmp/fake.m4a"), duration: 2.0)
+            return RecordedAudio(fileURL: stopURL, duration: 2.0)
         }
         func discard() { discarded += 1 }
     }
@@ -56,7 +57,9 @@ final class DictationCoordinatorTests: XCTestCase {
         recorder: MockRecorder? = nil,
         engine: MockEngine = MockEngine(),
         cleanup: MockCleanup = MockCleanup(),
-        inserter: MockInserter? = nil
+        inserter: MockInserter? = nil,
+        history: HistoryStore? = nil,
+        keepRecordings: @escaping () -> Bool = { false }
     ) -> (DictationCoordinator, MockRecorder, MockInserter) {
         // Mocks conform to @MainActor protocols, so their inits can't run in
         // nonisolated default-argument position — construct them here instead.
@@ -64,8 +67,27 @@ final class DictationCoordinatorTests: XCTestCase {
         let inserter = inserter ?? MockInserter()
         let c = DictationCoordinator(recorder: recorder, engine: engine,
                                      cleanup: cleanup, inserter: inserter,
-                                     minimumHold: 0) // disable debounce in most tests
+                                     minimumHold: 0, // disable debounce in most tests
+                                     history: history,
+                                     keepRecordingsProvider: keepRecordings)
         return (c, recorder, inserter)
+    }
+
+    func testKeepRecordingsStampsAudioPathOnSuccess() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let recorder = MockRecorder()
+        recorder.stopURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("talkie-keep-test-\(UUID().uuidString).m4a")
+        try Data("x".utf8).write(to: recorder.stopURL)
+        defer { try? FileManager.default.removeItem(at: recorder.stopURL) }
+        let (coordinator, _, _) = makeCoordinator(recorder: recorder, history: history,
+                                                  keepRecordings: { true })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        let record = history.recent(limit: 1)[0]
+        XCTAssertEqual(record.status, .completed)
+        XCTAssertNotNil(record.audioPath) // moved to Recordings/, not deleted
     }
 
     // MARK: tests

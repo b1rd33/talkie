@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UserNotifications
 
 @MainActor
 final class AppServices {
@@ -61,6 +62,9 @@ final class AppServices {
             cleanupModelProvider: {
                 // Stamped into DictationRecord.cleanupModel (spec §8) — same key CleanupService reads.
                 UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash"
+            },
+            keepRecordingsProvider: {
+                UserDefaults.standard.object(forKey: "keepRecordings") as? Bool ?? false
             })
     }
 
@@ -96,6 +100,17 @@ final class AppServices {
         }
         trackPillVisibility()
         trackCustomShortcuts()
+        trackDockIconPolicy()
+    }
+
+    /// Re-arming observation loop: Dock visibility follows Settings → Appearance.
+    private func trackDockIconPolicy() {
+        let show = withObservationTracking {
+            settings.showDockIcon
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackDockIconPolicy() }
+        }
+        NSApp.setActivationPolicy(show ? .regular : .accessory)
     }
 
     /// Re-arming observation loop: rebind custom combos whenever they change in Settings.
@@ -139,13 +154,26 @@ final class AppServices {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self // harmless under tests
         guard !Self.isRunningTests else { return }
         AppServices.shared.startUI()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.notification.request.content.userInfo["talkie.action"] as? String == "openEngineSettings" {
+            NSApp.activate(ignoringOtherApps: true)
+            // SwiftUI Settings has no public programmatic opener; this selector is the
+            // established workaround on macOS 14 — verify it still resolves on the SDK you build with.
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
+        completionHandler()
     }
 }

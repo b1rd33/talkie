@@ -45,6 +45,7 @@ final class DictationCoordinator {
     private let stylePresetProvider: (String?) -> StylePreset
     private let pinnedLanguageProvider: () -> String?
     private let cleanupModelProvider: () -> String?
+    private let keepRecordingsProvider: () -> Bool
     private var activeTerms: [String] = []
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
@@ -64,7 +65,8 @@ final class DictationCoordinator {
          cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
          pinnedLanguageProvider: @escaping () -> String? = { nil },
-         cleanupModelProvider: @escaping () -> String? = { nil }) {
+         cleanupModelProvider: @escaping () -> String? = { nil },
+         keepRecordingsProvider: @escaping () -> Bool = { false }) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -79,6 +81,7 @@ final class DictationCoordinator {
         self.stylePresetProvider = stylePresetProvider
         self.pinnedLanguageProvider = pinnedLanguageProvider
         self.cleanupModelProvider = cleanupModelProvider
+        self.keepRecordingsProvider = keepRecordingsProvider
     }
 
     func dictationKeyPressed() async {
@@ -199,12 +202,17 @@ final class DictationCoordinator {
                 offlineBadgeVisible = true
                 Task { try? await Task.sleep(for: .seconds(4)); self.offlineBadgeVisible = false }
             }
+            var keptPath: String?
+            if keepRecordingsProvider() {
+                keptPath = keepAudioForRetry(audio.fileURL, into: "Recordings") // spec §8: opt-in keep
+            } else {
+                try? FileManager.default.removeItem(at: audio.fileURL) // spec §8: discard audio on success
+            }
             history?.save(rawText: transcript.text, cleanedText: cleaned,
                           appBundleID: targetApp.bundleID, appName: targetApp.name,
                           duration: audio.duration, engine: transcript.engineID, status: .completed,
                           cleanupModel: activeLevel == .none ? nil : cleanupModelProvider(),
-                          language: pinnedLanguageProvider())
-            try? FileManager.default.removeItem(at: audio.fileURL) // spec §8: discard audio on success
+                          language: pinnedLanguageProvider(), audioPath: keptPath)
         } catch is CancellationError {
             recorder.discard()
             state = .idle
@@ -272,8 +280,14 @@ final class DictationCoordinator {
 
     private func fail(_ error: Error) {
         if let engineError = error as? EngineError, engineError == .missingAPIKey {
-            notifier?.notify(title: "API key missing",
-                             body: "Add your OpenAI key in Talkie's Settings → Engines.")
+            if let concrete = notifier as? Notifier {
+                concrete.notify(title: "API key missing",
+                                body: "Add your OpenAI key in Talkie's Settings → Engines.",
+                                openSettingsOnTap: true)
+            } else {
+                notifier?.notify(title: "API key missing",
+                                 body: "Add your OpenAI key in Talkie's Settings → Engines.")
+            }
         } else if let audioError = error as? AudioError, case .microphoneDenied = audioError {
             notifier?.notify(title: "Microphone unavailable",
                              body: "Check System Settings → Privacy & Security → Microphone.")
