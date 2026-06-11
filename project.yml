@@ -11,6 +11,9 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
     from: 0.15.2
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
 settings:
   base:
     SWIFT_VERSION: "5.10"
@@ -24,6 +27,19 @@ targets:
     type: application
     platform: macOS
     sources: [Talkie]
+    info:
+      path: Talkie/Info.plist
+      properties:
+        CFBundleDisplayName: Talkie
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+        NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
+        SUFeedURL: "https://updates.example.com/talkie/appcast.xml"  # ⚠️ HUMAN: real feed host (Human inputs #5)
+        SUPublicEDKey: "PASTE-GENERATE-KEYS-PUBLIC-KEY-HERE"          # ⚠️ HUMAN: from generate_keys (Human inputs #4)
+        SUEnableInstallerLauncherService: true  # routes installs through Sparkle's bundled XPC service; required if sandboxing ever lands, harmless without it
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
@@ -31,10 +47,6 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Talkie/Talkie.entitlements
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_LSUIElement: YES
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
-        INFOPLIST_KEY_CFBundleDisplayName: Talkie
       configs:
         Debug:
           CODE_SIGN_STYLE: Automatic
@@ -45,6 +57,7 @@ targets:
     dependencies:
       - package: HotKey
       - package: FluidAudio
+      - package: Sparkle
   TalkieTests:
     type: bundle.unit-test
     platform: macOS
