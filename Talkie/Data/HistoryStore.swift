@@ -128,6 +128,10 @@ final class HistoryStore {
         let totalDuration: TimeInterval
         let dictationsToday: Int
         let streakDays: Int
+        // Spend estimates (PriceBook over completed records — retroactive, no migration)
+        var costTotal: Double = 0
+        var costThisMonth: Double = 0
+        var costByEngine: [String: Double] = [:]
     }
 
     func stats(now: Date = Date(), calendar: Calendar = .current) -> Stats {
@@ -144,10 +148,24 @@ final class HistoryStore {
             guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
             cursor = previous
         }
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? startOfDay
+        var costTotal = 0.0
+        var costThisMonth = 0.0
+        var costByEngine: [String: Double] = [:]
+        for record in completed {
+            let cost = PriceBook.estimate(engine: record.engine, durationSec: record.durationSec,
+                                          cleanupModel: record.cleanupModel, wordCount: record.wordCount)
+            costTotal += cost
+            if record.date >= monthStart { costThisMonth += cost }
+            costByEngine[record.engine, default: 0] += cost
+        }
         return Stats(
             totalWords: completed.reduce(0) { $0 + $1.wordCount },
             totalDuration: completed.reduce(0) { $0 + $1.durationSec },
             dictationsToday: completed.filter { $0.date >= startOfDay }.count,
-            streakDays: streakDays)
+            streakDays: streakDays,
+            costTotal: costTotal,
+            costThisMonth: costThisMonth,
+            costByEngine: costByEngine)
     }
 }
