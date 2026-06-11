@@ -22,7 +22,8 @@ final class CleanupServiceTests: XCTestCase {
             return (HTTPURLResponse(url: request.url!, statusCode: 200,
                                     httpVersion: nil, headerFields: nil)!, Data(body.utf8))
         }
-        let cleaned = try await makeService().clean("um hello uh world", dictionaryTerms: [])
+        let cleaned = try await makeService().clean("um hello uh world", dictionaryTerms: [],
+                                                    level: .high, style: .neutral, pinnedLanguage: nil)
         XCTAssertEqual(cleaned, "Hello, world.")
 
         let request = try XCTUnwrap(captured)
@@ -36,9 +37,28 @@ final class CleanupServiceTests: XCTestCase {
         XCTAssertEqual(messages[1]["content"] as? String, "um hello uh world")
     }
 
+    func testSystemPromptReflectsLevelStyleDictionaryAndLanguage() async throws {
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200,
+                                    httpVersion: nil, headerFields: nil)!,
+                    Data(#"{"choices": [{"message": {"role": "assistant", "content": "ok"}}]}"#.utf8))
+        }
+        _ = try await makeService().clean("transcript", dictionaryTerms: ["Talkie"],
+                                          level: .light, style: .technical, pinnedLanguage: "German")
+        let json = try JSONSerialization.jsonObject(with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let system = (json["messages"] as! [[String: Any]])[0]["content"] as! String
+        XCTAssertTrue(system.contains("camelCase"))                    // technical style
+        XCTAssertFalse(system.contains("filler"))                      // light level
+        XCTAssertTrue(system.contains("Write the output in German"))   // language pin
+        XCTAssertTrue(system.contains("Talkie"))                       // dictionary
+    }
+
     func testMissingKeyThrows() async {
         do {
-            _ = try await makeService(apiKey: nil).clean("text", dictionaryTerms: [])
+            _ = try await makeService(apiKey: nil).clean("text", dictionaryTerms: [],
+                                                         level: .high, style: .neutral, pinnedLanguage: nil)
             XCTFail("expected throw")
         } catch let error as EngineError {
             XCTAssertEqual(error, .missingAPIKey)
@@ -51,7 +71,8 @@ final class CleanupServiceTests: XCTestCase {
              Data(#"{"choices": []}"#.utf8))
         }
         do {
-            _ = try await makeService().clean("text", dictionaryTerms: [])
+            _ = try await makeService().clean("text", dictionaryTerms: [],
+                                              level: .high, style: .neutral, pinnedLanguage: nil)
             XCTFail("expected throw")
         } catch let error as EngineError {
             XCTAssertEqual(error, .invalidResponse)

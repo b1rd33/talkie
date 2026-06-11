@@ -149,7 +149,8 @@ final class DictationCoordinator {
             state = .cleaning
             let cleaned: String
             do {
-                cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: [])
+                cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: [],
+                                                  level: .high, style: .neutral, pinnedLanguage: nil)
             } catch {
                 cleaned = transcript.text // spec §6: raw transcript beats nothing
             }

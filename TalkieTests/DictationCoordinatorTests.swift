@@ -29,10 +29,16 @@ final class DictationCoordinatorTests: XCTestCase {
         }
     }
 
-    struct MockCleanup: CleanupServicing {
-        var result: Result<String, Error> = .success("Clean text.")
-        func clean(_ transcript: String, dictionaryTerms: [String]) async throws -> String {
-            try result.get()
+    final class MockCleanup: CleanupServicing, @unchecked Sendable {
+        var result: Result<String, Error>
+        private(set) var calls: [(terms: [String], level: CleanupLevel, style: StylePreset, language: String?)] = []
+        init(result: Result<String, Error> = .success("Clean text.")) {
+            self.result = result
+        }
+        func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
+                   style: StylePreset, pinnedLanguage: String?) async throws -> String {
+            calls.append((dictionaryTerms, level, style, pinnedLanguage))
+            return try result.get()
         }
     }
 
