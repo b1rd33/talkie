@@ -6,6 +6,8 @@ import SwiftUI
 final class FlowBarPanel {
     private let panel: NSPanel
     private let settings: SettingsStore?
+    private let host: NSHostingView<AnyView>
+    private let makeRoot: () -> AnyView
 
     init(coordinator: DictationCoordinator, recorder: AudioRecorder,
          settings: SettingsStore? = nil,
@@ -23,13 +25,17 @@ final class FlowBarPanel {
         panel.ignoresMouseEvents = false // pill has click targets now (✕, context menu)
         panel.hidesOnDeactivate = false
 
-        let root = FlowBarView(coordinator: coordinator, recorder: recorder,
-                               onHideForHour: onHideForHour,
-                               onHidePermanently: onHidePermanently)
         // .environment makes SettingsStore observable INSIDE the hosting view —
         // pill style/engine badge updates require it (see FlowBarView.settings).
-        let host = settings.map { NSHostingView(rootView: AnyView(root.environment($0))) }
-            ?? NSHostingView(rootView: AnyView(root))
+        let makeRoot: () -> AnyView = {
+            let root = FlowBarView(coordinator: coordinator, recorder: recorder,
+                                   onHideForHour: onHideForHour,
+                                   onHidePermanently: onHidePermanently)
+            return settings.map { AnyView(root.environment($0)) } ?? AnyView(root)
+        }
+        self.makeRoot = makeRoot
+        let host = NSHostingView(rootView: makeRoot())
+        self.host = host
         host.frame = NSRect(x: 0, y: 0, width: 260, height: 56)
         panel.contentView = host
         panel.setContentSize(host.frame.size)
@@ -44,6 +50,13 @@ final class FlowBarPanel {
 
     func setVisible(_ visible: Bool) {
         visible ? panel.orderFrontRegardless() : panel.orderOut(nil)
+    }
+
+    /// Deterministic re-render: reassigning rootView forces NSHostingView to
+    /// rebuild the body with the current pillStyle — no reliance on Observation
+    /// reaching into the hosted tree (live-testing bug: style changes didn't render).
+    func refreshStyle() {
+        host.rootView = makeRoot()
     }
 
     /// Applies PillVisibilityPolicy for the current dictation state: orders the

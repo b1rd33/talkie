@@ -259,6 +259,7 @@ final class AppServices {
         } onChange: { [weak self] in
             Task { @MainActor in self?.trackPillVisibility() }
         }
+        flowBar?.refreshStyle() // deterministic re-render on style change
         applyPillActivity()
     }
 
