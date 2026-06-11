@@ -26,6 +26,7 @@ final class SettingsStore {
     var pillPosition: String { didSet { defaults.set(pillPosition, forKey: "pillPosition") } }
     var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
     var cleanupLevel: String { didSet { defaults.set(cleanupLevel, forKey: "cleanupLevel") } }
+    var customCleanupPrompt: String { didSet { defaults.set(customCleanupPrompt, forKey: "customCleanupPrompt") } }
     var pttShortcut: String? {
         didSet {
             if let pttShortcut { defaults.set(pttShortcut, forKey: "pttShortcut") }
@@ -60,6 +61,7 @@ final class SettingsStore {
         pillPosition = defaults.string(forKey: "pillPosition") ?? "bottomCenter"
         keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
+        customCleanupPrompt = defaults.string(forKey: "customCleanupPrompt") ?? ""
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
         pttShortcut = defaults.string(forKey: "pttShortcut")
         handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")

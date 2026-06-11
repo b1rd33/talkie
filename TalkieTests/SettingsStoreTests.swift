@@ -29,6 +29,7 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         XCTAssertEqual(store.cleanupLevel, "high")
         XCTAssertNil(store.pinnedLanguage)
+        XCTAssertEqual(store.customCleanupPrompt, "")
     }
 
     func testPinnedLanguageRoundTripsThroughNil() {

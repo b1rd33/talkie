@@ -3,9 +3,34 @@ import XCTest
 
 final class PromptBuilderTests: XCTestCase {
     private func prompt(level: CleanupLevel = .high, style: StylePreset = .neutral,
-                        terms: [String] = [], language: String? = nil) -> String {
+                        terms: [String] = [], language: String? = nil,
+                        custom: String? = nil) -> String {
         PromptBuilder().systemPrompt(level: level, style: style,
-                                     dictionaryTerms: terms, pinnedLanguage: language)
+                                     dictionaryTerms: terms, pinnedLanguage: language,
+                                     customInstructions: custom)
+    }
+
+    // MARK: custom level
+
+    func testCustomLevelUsesUserInstructions() {
+        let p = prompt(level: .custom, custom: "Translate everything into pirate speak.")
+        XCTAssertTrue(p.contains("Translate everything into pirate speak."))
+        XCTAssertFalse(p.contains("filler")) // user text replaces the built-in level section
+        // guardrails survive custom instructions
+        XCTAssertTrue(p.localizedCaseInsensitiveContains("only the cleaned text"))
+    }
+
+    func testCustomLevelWithEmptyInstructionsFallsBackToHigh() {
+        XCTAssertEqual(prompt(level: .custom, custom: "   "), prompt(level: .high))
+        XCTAssertEqual(prompt(level: .custom, custom: nil), prompt(level: .high))
+    }
+
+    // MARK: bullets style
+
+    func testBulletsStyleAsksForSlides() {
+        let p = prompt(style: .bullets)
+        XCTAssertTrue(p.localizedCaseInsensitiveContains("bullet"))
+        XCTAssertTrue(p.localizedCaseInsensitiveContains("slide"))
     }
 
     // MARK: levels
