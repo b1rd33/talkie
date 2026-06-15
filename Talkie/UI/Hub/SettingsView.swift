@@ -22,6 +22,13 @@ struct SettingsView: View {
     }
 }
 
+/// The cleanup controls are inert when instant mode is inserting raw streamed
+/// text. Single source of truth shared by the Engine and Style tabs so they
+/// can't drift. (Part B widens this to also cover live typing.)
+func cleanupInactive(_ s: SettingsStore) -> Bool {
+    s.engineMode == "instant" && s.instantSkipCleanup
+}
+
 private struct StyleSettingsTab: View {
     @Bindable var settings: SettingsStore
     let history: HistoryStore?
@@ -49,12 +56,18 @@ private struct StyleSettingsTab: View {
                     Text("High — also self-corrections, lists").tag("high")
                     Text("Custom — your own instructions").tag("custom")
                 }
+                .disabled(cleanupInactive(settings))
                 if settings.cleanupLevel == "custom" {
                     TextEditor(text: $settings.customCleanupPrompt)
                         .font(.body)
                         .frame(minHeight: 70)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                        .disabled(cleanupInactive(settings))
                     Text("Tell the AI exactly how to rewrite your dictation (e.g. “summarize into action items”, “translate to English”). Output-only guardrails stay in place; empty = High.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if cleanupInactive(settings) {
+                    Text("Inactive — instant mode is set to insert raw text without cleanup.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -221,6 +234,10 @@ private struct EngineSettingsTab: View {
                 .pickerStyle(.radioGroup)
                 Text("Instant streams audio while you speak (gpt-realtime-whisper, billed per audio minute) so text lands ~1s after release. Batch waits until release (gpt-4o transcribe models).")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Skip cleanup in instant mode (fastest)", isOn: $settings.instantSkipCleanup)
+                    .disabled(settings.engineMode != "instant")
+                Text("Inserts the raw streamed text immediately, with no cleanup pass.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Local models") {
                 switch downloader.state {
@@ -283,10 +300,15 @@ private struct EngineSettingsTab: View {
                 }
             }
             Section("Cleanup") {
+                if cleanupInactive(settings) {
+                    Text("Disabled — instant mode is inserting raw streamed text.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Picker("Cleanup runs via", selection: $settings.cleanupProvider) {
                     Text("OpenRouter").tag("openrouter")
                     Text("OpenAI (direct)").tag("openai")
                 }
+                .disabled(cleanupInactive(settings))
                 HStack {
                     TextField("Cleanup model", text: $settings.cleanupModel)
                     Menu("Presets") {
@@ -302,6 +324,7 @@ private struct EngineSettingsTab: View {
                     }
                     .frame(width: 90)
                 }
+                .disabled(cleanupInactive(settings))
                 Text(settings.cleanupProvider == "openai"
                      ? "Uses your OpenAI key. gpt-5-family models automatically skip the reasoning pass for speed."
                      : "Uses your OpenRouter key. Latencies measured live on this Mac.")
