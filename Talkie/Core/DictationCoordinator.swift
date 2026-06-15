@@ -59,6 +59,11 @@ final class DictationCoordinator {
     /// Set when cleanup failed and raw ASR text was inserted (spec §6/§10) — the
     /// pill renders a subtle warning while true. Mirrors Phase 3's offlineBadgeVisible.
     private(set) var cleanupDegraded = false
+    /// Human-readable reason cleanup failed, shown as the degraded badge's tooltip.
+    private(set) var cleanupFailureReason: String?
+    /// Auto-clears the degraded badge; cancelled when a new dictation starts so a
+    /// stale warning can't bleed onto the next completion.
+    private var cleanupDegradeResetTask: Task<Void, Never>?
 
     init(recorder: AudioRecording, engine: TranscriptionEngine,
          cleanup: CleanupServicing, inserter: TextInserting,
@@ -105,6 +110,7 @@ final class DictationCoordinator {
             fail(gateError)
             return
         }
+        clearCleanupDegraded() // a fresh dictation starts with a clean slate
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
         activeLevel = cleanupLevelProvider()
@@ -188,6 +194,14 @@ final class DictationCoordinator {
         processingTask = Task { await process() }
     }
 
+    /// Resets the cleanup-degraded badge + reason and cancels its pending auto-clear.
+    private func clearCleanupDegraded() {
+        cleanupDegradeResetTask?.cancel()
+        cleanupDegradeResetTask = nil
+        cleanupDegraded = false
+        cleanupFailureReason = nil
+    }
+
     /// Test helper; also used by the app on quit.
     func waitForIdle() async {
         await processingTask?.value
@@ -255,7 +269,15 @@ final class DictationCoordinator {
                 } catch {
                     cleaned = transcript.text // spec §6: raw transcript beats nothing
                     cleanupDegraded = true    // spec §6/§10: badge the pill with a subtle warning
-                    Task { try? await Task.sleep(for: .seconds(4)); self.cleanupDegraded = false }
+                    cleanupFailureReason = (error as? LocalizedError)?.errorDescription
+                        ?? "Cleanup failed — inserted the raw transcript."
+                    cleanupDegradeResetTask?.cancel()
+                    cleanupDegradeResetTask = Task { [weak self] in
+                        try? await Task.sleep(for: .seconds(4))
+                        guard !Task.isCancelled else { return }
+                        self?.cleanupDegraded = false
+                        self?.cleanupFailureReason = nil
+                    }
                 }
             }
             try Task.checkCancellation() // a cancelled cleanup must not insert raw text

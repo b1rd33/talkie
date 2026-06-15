@@ -306,6 +306,13 @@ private struct EngineSettingsTab: View {
                      ? "Uses your OpenAI key. gpt-5-family models automatically skip the reasoning pass for speed."
                      : "Uses your OpenRouter key. Latencies measured live on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
+                if let warning = CleanupCredentialWarning.message(
+                    cleanupProvider: settings.cleanupProvider,
+                    hasOpenAIKey: !openAIKey.isEmpty,
+                    hasOpenRouterKey: !openRouterKey.isEmpty) {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
         }
         .formStyle(.grouped)
