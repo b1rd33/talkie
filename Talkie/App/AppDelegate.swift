@@ -109,7 +109,7 @@ final class AppServices {
                 entitlementStore.refresh() // keep the displayed `current` honest on every press
                 return entitlementStore.gateError
             },
-            liveSessionFactory: { [history] in
+            liveSessionFactory: { [history] onPartial in
                 guard UserDefaults.standard.string(forKey: "engineMode") == "instant" else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
                 }
@@ -123,7 +123,8 @@ final class AppServices {
                     model: "gpt-realtime-whisper",
                     vocabulary: terms.isEmpty ? nil : terms.joined(separator: ", "),
                     language: UserDefaults.standard.string(forKey: "pinnedLanguage"), // nil = auto-detect
-                    encoder: RealtimePCMEncoder())
+                    encoder: RealtimePCMEncoder(),
+                    onPartial: onPartial)
                 try await session.begin()
                 return session
             })

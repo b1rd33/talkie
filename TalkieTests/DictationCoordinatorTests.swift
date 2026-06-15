@@ -170,9 +170,12 @@ final class DictationCoordinatorTests: XCTestCase {
         var fed = 0
         var finishResult: Result<Transcript, Error> = .success(Transcript(text: "live text", engineID: "realtime"))
         var cancelled = false
+        var onPartial: PartialTranscriptSink?
         func feed(_ samples: [Float]) async { fed += 1 }
         func finish() async throws -> Transcript { try finishResult.get() }
         func cancel() async { cancelled = true }
+        /// Simulate a streamed partial reaching the coordinator's sink.
+        func emit(_ s: String) { onPartial?(s) }
     }
 
     func testInstantModeUsesLiveTranscript() async {
@@ -182,7 +185,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: inserter,
                                                minimumHold: 0,
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         XCTAssertNotNil(recorder.chunkConsumer) // chunks are being forwarded
         await coordinator.dictationKeyReleased()
@@ -199,7 +202,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(), // returns "raw text"
                                                cleanup: MockCleanup(), inserter: inserter,
                                                minimumHold: 0,
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -216,7 +219,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
                                                cleanup: cleanup, inserter: inserter, minimumHold: 0,
                                                instantSkipCleanupProvider: { true },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -237,7 +240,7 @@ final class DictationCoordinatorTests: XCTestCase {
                                                cleanup: cleanup, inserter: inserter, minimumHold: 0,
                                                cleanupLevelProvider: { .high },
                                                instantSkipCleanupProvider: { true },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -251,7 +254,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
                                                cleanup: cleanup, inserter: MockInserter(), minimumHold: 0,
                                                instantSkipCleanupProvider: { false },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -278,7 +281,7 @@ final class DictationCoordinatorTests: XCTestCase {
                                                cleanup: cleanup, inserter: inserter, minimumHold: 0,
                                                cleanupLevelProvider: { .custom },
                                                instantSkipCleanupProvider: { true },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -294,7 +297,7 @@ final class DictationCoordinatorTests: XCTestCase {
                                                cleanup: cleanup, inserter: inserter, minimumHold: 0,
                                                cleanupLevelProvider: { .none },
                                                instantSkipCleanupProvider: { true },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -310,7 +313,7 @@ final class DictationCoordinatorTests: XCTestCase {
                                                minimumHold: 0, history: history,
                                                cleanupModelProvider: { "google/gemini-2.5-flash-lite" },
                                                instantSkipCleanupProvider: { true },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -325,7 +328,7 @@ final class DictationCoordinatorTests: XCTestCase {
                                                minimumHold: 0, history: history,
                                                cleanupModelProvider: { "google/gemini-2.5-flash-lite" },
                                                instantSkipCleanupProvider: { false },
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -338,7 +341,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: MockInserter(),
                                                minimumHold: 10,
-                                               liveSessionFactory: { live })
+                                               liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
@@ -352,7 +355,7 @@ final class DictationCoordinatorTests: XCTestCase {
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: MockInserter(),
                                                minimumHold: 0,
-                                               liveSessionFactory: {
+                                               liveSessionFactory: { _ in
                                                    // simulates speech landing while the socket is still
                                                    // connecting: the tap must already be wired when the
                                                    // factory runs, and the chunk must reach the session
@@ -363,6 +366,64 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
         XCTAssertEqual(live.fed, 1) // the pre-connect chunk was buffered and replayed, not dropped
+    }
+
+    // MARK: live transcript pump (Part B2)
+
+    private func waitForLive(_ coordinator: DictationCoordinator, toEqual expected: String) async {
+        for _ in 0..<50 { // up to ~1s, well past the 80ms pump
+            if coordinator.liveTranscript == expected { return }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    func testLivePartialUpdatesLiveTranscript() async {
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0,
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("hello")
+        live.emit("hello world")
+        await waitForLive(coordinator, toEqual: "hello world")
+        XCTAssertEqual(coordinator.liveTranscript, "hello world") // last-write-wins
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+    }
+
+    func testLiveTranscriptResetsOnNextDictation() async {
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0,
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("hello")
+        await waitForLive(coordinator, toEqual: "hello")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        await coordinator.dictationKeyPressed() // fresh dictation
+        XCTAssertEqual(coordinator.liveTranscript, "") // reset immediately at press
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+    }
+
+    func testLiveTranscriptClearsOnCancel() async {
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0,
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("hello")
+        await waitForLive(coordinator, toEqual: "hello")
+        coordinator.cancel()
+        // next dictation start clears it; cancel stops the pump so it won't re-populate
+        await coordinator.dictationKeyPressed()
+        XCTAssertEqual(coordinator.liveTranscript, "")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
     }
 
     func testExpiredEntitlementBlocksDictationWithErrorPill() async {

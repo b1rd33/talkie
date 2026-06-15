@@ -48,10 +48,16 @@ final class DictationCoordinator {
     private let keepRecordingsProvider: () -> Bool
     private let instantSkipCleanupProvider: () -> Bool
     private let entitlement: (() -> EntitlementError?)?
-    private let liveSessionFactory: (@MainActor () async throws -> LiveDictationSession)?
+    private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
     private var liveFeedTask: Task<Void, Never>?
+    /// The realtime session's `@Sendable` partial sink writes the latest cumulative
+    /// string here from its actor loop; a main-actor pump (no per-delta hop) reads it.
+    private let liveBox = LiveTranscriptBox()
+    private var livePumpTask: Task<Void, Never>?
+    /// Latest streamed text while recording in instant mode (throttled ~12.5 Hz).
+    private(set) var liveTranscript: String = ""
     private var activeTerms: [String] = []
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
@@ -82,7 +88,7 @@ final class DictationCoordinator {
          keepRecordingsProvider: @escaping () -> Bool = { false },
          instantSkipCleanupProvider: @escaping () -> Bool = { false },
          entitlement: (() -> EntitlementError?)? = nil,
-         liveSessionFactory: (@MainActor () async throws -> LiveDictationSession)? = nil) {
+         liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -116,6 +122,8 @@ final class DictationCoordinator {
             return
         }
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
+        liveTranscript = ""     // clear any stale streamed preview
+        liveBox.clear()
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
         activeLevel = cleanupLevelProvider()
@@ -137,8 +145,10 @@ final class DictationCoordinator {
                 liveChunkContinuation = continuation
                 recorder.chunkConsumer = { continuation.yield($0) } // buffers while the socket connects
                 do {
-                    let session = try await liveSessionFactory()
+                    let box = liveBox
+                    let session = try await liveSessionFactory { box.set($0) } // @Sendable: no actor hop
                     liveSession = session
+                    startLivePump() // drain the box to liveTranscript at ~12.5 Hz
                     liveFeedTask = Task { // ONE consumer — replays the backlog, preserves order
                         for await samples in stream { await session.feed(samples) }
                     }
@@ -182,6 +192,26 @@ final class DictationCoordinator {
         recorder.chunkConsumer = nil
         liveChunkContinuation?.finish()
         liveChunkContinuation = nil
+        stopLivePump()
+    }
+
+    /// Drains the lock-box into `liveTranscript` on the main actor at ~12.5 Hz so
+    /// the socket loop never blocks on UI and the pill never re-renders per delta.
+    private func startLivePump() {
+        livePumpTask?.cancel()
+        livePumpTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(80))
+                guard let self else { return }
+                let latest = self.liveBox.get()
+                if latest != self.liveTranscript { self.liveTranscript = latest }
+            }
+        }
+    }
+
+    private func stopLivePump() {
+        livePumpTask?.cancel()
+        livePumpTask = nil
     }
 
     func handsFreeToggled() async {
@@ -404,4 +434,15 @@ final class DictationCoordinator {
             self.state = .idle
         }
     }
+}
+
+/// Thread-safe holder for the latest cumulative partial transcript. The realtime
+/// session's `@Sendable` sink writes from its actor loop; the coordinator's
+/// main-actor pump reads. Monotonic cumulative strings → last-write-wins is correct.
+final class LiveTranscriptBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = ""
+    func set(_ s: String) { lock.lock(); value = s; lock.unlock() }
+    func get() -> String { lock.lock(); defer { lock.unlock() }; return value }
+    func clear() { set("") }
 }
