@@ -207,6 +207,131 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    // MARK: instant skip-cleanup (Part A)
+
+    func testInstantSkipBypassesCleanupWhenRealtimeUsed() async {
+        let live = MockLiveSession() // finishes "live text", engineID "realtime"
+        let cleanup = MockCleanup()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: inserter, minimumHold: 0,
+                                               instantSkipCleanupProvider: { true },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(cleanup.calls.isEmpty)              // no LLM polish
+        XCTAssertEqual(inserter.inserted, ["live text"])  // raw streamed text
+        XCTAssertEqual(coordinator.lastResult?.rawText, "live text")
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testInstantSkipStillCleansWhenLiveFinishFails() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let cleanup = MockCleanup()
+        let inserter = MockInserter()
+        // Falls back to MockEngine ("raw text", engineID "openai" — not realtime),
+        // so skip must NOT apply: cleanup still runs.
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: inserter, minimumHold: 0,
+                                               cleanupLevelProvider: { .high },
+                                               instantSkipCleanupProvider: { true },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(cleanup.calls.count, 1)
+        XCTAssertEqual(inserter.inserted, ["Clean text."])
+    }
+
+    func testInstantSkipOffRunsCleanup() async {
+        let live = MockLiveSession()
+        let cleanup = MockCleanup()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: MockInserter(), minimumHold: 0,
+                                               instantSkipCleanupProvider: { false },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(cleanup.calls.count, 1)
+    }
+
+    func testBatchModeUnaffectedByInstantSkipFlag() async {
+        let cleanup = MockCleanup()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: MockInserter(), minimumHold: 0,
+                                               cleanupLevelProvider: { .high },
+                                               instantSkipCleanupProvider: { true }) // no liveSessionFactory
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(cleanup.calls.count, 1) // batch dictation ignores the instant flag
+    }
+
+    func testInstantSkipCollapsesCustomLevel() async {
+        let live = MockLiveSession()
+        let cleanup = MockCleanup()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: inserter, minimumHold: 0,
+                                               cleanupLevelProvider: { .custom },
+                                               instantSkipCleanupProvider: { true },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(cleanup.calls.isEmpty) // .custom deliberately collapses to raw
+        XCTAssertEqual(inserter.inserted, ["live text"])
+    }
+
+    func testInstantSkipWithLevelAlreadyNone() async {
+        let live = MockLiveSession()
+        let cleanup = MockCleanup()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: inserter, minimumHold: 0,
+                                               cleanupLevelProvider: { .none },
+                                               instantSkipCleanupProvider: { true },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(cleanup.calls.isEmpty)
+        XCTAssertEqual(inserter.inserted, ["live text"])
+    }
+
+    func testInstantSkipRecordsNoCleanupModelInHistory() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0, history: history,
+                                               cleanupModelProvider: { "google/gemini-2.5-flash-lite" },
+                                               instantSkipCleanupProvider: { true },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertNil(history.recent(limit: 1)[0].cleanupModel)
+    }
+
+    func testInstantCleanedDictationRecordsCleanupModel() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0, history: history,
+                                               cleanupModelProvider: { "google/gemini-2.5-flash-lite" },
+                                               instantSkipCleanupProvider: { false },
+                                               liveSessionFactory: { live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(history.recent(limit: 1)[0].cleanupModel, "google/gemini-2.5-flash-lite")
+    }
+
     func testShortHoldCancelsLiveSession() async {
         let live = MockLiveSession()
         let recorder = MockRecorder()
