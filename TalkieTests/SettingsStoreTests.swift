@@ -20,8 +20,17 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.engineMode, "cloud")
         XCTAssertFalse(store.showDockIcon)
         XCTAssertFalse(store.keepRecordings)
+        XCTAssertFalse(store.instantSkipCleanup)
         XCTAssertEqual(store.pillStyle, .bareWaveform)
         XCTAssertEqual(store.pillPosition, "bottomCenter")
+    }
+
+    func testInstantSkipCleanupRoundTrips() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = SettingsStore(defaults: defaults)
+        store.instantSkipCleanup = true
+        XCTAssertTrue(SettingsStore(defaults: defaults).instantSkipCleanup)
     }
 
     func testRetiredPillStylesMigrateToBareWaveform() {
