@@ -46,6 +46,7 @@ final class DictationCoordinator {
     private let pinnedLanguageProvider: () -> String?
     private let cleanupModelProvider: () -> String?
     private let keepRecordingsProvider: () -> Bool
+    private let instantSkipCleanupProvider: () -> Bool
     private let entitlement: (() -> EntitlementError?)?
     private let liveSessionFactory: (@MainActor () async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
@@ -54,6 +55,8 @@ final class DictationCoordinator {
     private var activeTerms: [String] = []
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
+    /// Press-time snapshot of instantSkipCleanup (same contract as activeLevel).
+    private var activeInstantSkipCleanup = false
     /// Bumped after every successful insert — the pill's checkmark flash observes it.
     private(set) var lastCompletedAt: Date?
     /// Set when cleanup failed and raw ASR text was inserted (spec §6/§10) — the
@@ -77,6 +80,7 @@ final class DictationCoordinator {
          pinnedLanguageProvider: @escaping () -> String? = { nil },
          cleanupModelProvider: @escaping () -> String? = { nil },
          keepRecordingsProvider: @escaping () -> Bool = { false },
+         instantSkipCleanupProvider: @escaping () -> Bool = { false },
          entitlement: (() -> EntitlementError?)? = nil,
          liveSessionFactory: (@MainActor () async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
@@ -94,6 +98,7 @@ final class DictationCoordinator {
         self.pinnedLanguageProvider = pinnedLanguageProvider
         self.cleanupModelProvider = cleanupModelProvider
         self.keepRecordingsProvider = keepRecordingsProvider
+        self.instantSkipCleanupProvider = instantSkipCleanupProvider
         self.entitlement = entitlement
         self.liveSessionFactory = liveSessionFactory
     }
@@ -115,6 +120,7 @@ final class DictationCoordinator {
         activeTerms = dictionaryTermsProvider()
         activeLevel = cleanupLevelProvider()
         activeStyle = stylePresetProvider(targetApp.bundleID)
+        activeInstantSkipCleanup = instantSkipCleanupProvider()
         do {
             state = .recording
             recordingStartedAt = Date()
@@ -239,6 +245,10 @@ final class DictationCoordinator {
             let audio = try await recorder.stop()
             audioURL = audio.fileURL
             let transcript: Transcript
+            // Set ONLY on the single success path; a batch fallback below leaves it
+            // false. This is the unambiguous "instant genuinely ran" signal — never
+            // infer it from engineMode (which still says "instant" after a fallback).
+            var usedRealtime = false
             if let liveSession {
                 self.liveSession = nil
                 unhookLiveTap()
@@ -246,6 +256,7 @@ final class DictationCoordinator {
                 liveFeedTask = nil
                 do {
                     transcript = try await liveSession.finish()
+                    usedRealtime = true
                 } catch is CancellationError {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
@@ -257,14 +268,18 @@ final class DictationCoordinator {
             }
             try Task.checkCancellation()
 
+            // Skip cleanup only when instant genuinely ran AND the user asked for it.
+            // Collapses ANY base level (including .custom) to .none — deliberate: the
+            // whole point is to insert the raw streamed text instantly.
+            let effectiveLevel: CleanupLevel = (usedRealtime && activeInstantSkipCleanup) ? .none : activeLevel
             let cleaned: String
-            if activeLevel == .none {
+            if effectiveLevel == .none {
                 cleaned = transcript.text // spec §6: None = raw ASR text, no LLM call
             } else {
                 state = .cleaning
                 do {
                     cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: activeTerms,
-                                                      level: activeLevel, style: activeStyle,
+                                                      level: effectiveLevel, style: activeStyle,
                                                       pinnedLanguage: pinnedLanguageProvider())
                 } catch {
                     cleaned = transcript.text // spec §6: raw transcript beats nothing
@@ -301,7 +316,7 @@ final class DictationCoordinator {
             history?.save(rawText: transcript.text, cleanedText: cleaned,
                           appBundleID: targetApp.bundleID, appName: targetApp.name,
                           duration: audio.duration, engine: transcript.engineID, status: .completed,
-                          cleanupModel: activeLevel == .none ? nil : cleanupModelProvider(),
+                          cleanupModel: effectiveLevel == .none ? nil : cleanupModelProvider(),
                           language: pinnedLanguageProvider(), audioPath: keptPath)
         } catch is CancellationError {
             recorder.discard()
