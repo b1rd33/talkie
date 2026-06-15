@@ -34,7 +34,11 @@ struct FlowBarView: View {
                     } else if settings?.engineMode == "instant" {
                         Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                     }
-                    WaveformCanvasView(recorder: recorder, color: contentForeground)
+                    if showLiveText {
+                        liveTextView
+                    } else {
+                        WaveformCanvasView(recorder: recorder, color: contentForeground)
+                    }
                     Text(recordingStarted, style: .timer) // spec §7: recording timer
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(contentForeground.opacity(0.85))
@@ -101,6 +105,32 @@ struct FlowBarView: View {
                 showCheckmark = false
             }
         }
+    }
+
+    // MARK: live instant-transcript preview
+
+    /// Show the streamed text instead of the waveform once instant has produced any.
+    private var showLiveText: Bool {
+        settings?.engineMode == "instant" && !coordinator.liveTranscript.isEmpty
+    }
+
+    /// The tail of the streaming transcript, fading in at the leading edge and
+    /// scrolling within a fixed width so the pill never grows past 260×56.
+    private var liveTextView: some View {
+        Text(Self.tail(coordinator.liveTranscript, max: 42))
+            .font(.caption)
+            .foregroundStyle(contentForeground)
+            .lineLimit(1)
+            .truncationMode(.head)
+            .frame(maxWidth: 140, alignment: .trailing)
+            .mask(LinearGradient(colors: [.clear, .black, .black],
+                                 startPoint: .leading, endPoint: .trailing))
+            .animation(.spring(duration: 0.25), value: coordinator.liveTranscript)
+    }
+
+    /// Last `max` Characters of `s` (grapheme-safe — never splits an emoji).
+    static func tail(_ s: String, max: Int) -> String {
+        s.count <= max ? s : String(s.suffix(max))
     }
 
     // MARK: idle
