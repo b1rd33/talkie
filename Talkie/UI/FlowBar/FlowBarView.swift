@@ -10,63 +10,41 @@ struct FlowBarView: View {
     var onHideForHour: () -> Void = {}
     var onHidePermanently: () -> Void = {}
 
-    @State private var levels: [Float] = Array(repeating: 0, count: 24)
     @State private var showCheckmark = false
     @State private var recordingStarted = Date()
-    private let timer = Timer.publish(every: 1.0 / 24, on: .main, in: .common).autoconnect()
+
+    private var style: PillStyle { settings?.pillStyle ?? .default }
+    /// Chromeless styles float their content (waveform + text) with only a drop
+    /// shadow; the others wrap it in a capsule. Bare waveform is the new default.
+    private var isChromeless: Bool { style == .bareWaveform || style == .hidden }
+    /// Foreground that reads on any wallpaper: `.primary` follows the system
+    /// light/dark appearance for chromeless; white on the dark capsule styles.
+    private var contentForeground: Color { isChromeless ? .primary : .white }
 
     var body: some View {
         Group {
             switch coordinator.state {
             case .idle:
-                if showCheckmark {
-                    pill(background: .green.opacity(0.85)) {
-                        Image(systemName: "checkmark")
-                            .font(.caption.bold()).foregroundStyle(.white)
-                    }
-                } else {
-                    // Idle look depends on the chosen style. hidden renders nothing
-                    // (the panel is ordered out anyway); the visible styles get their
-                    // own idle treatment in later phases — interim: a slim notch.
-                    switch settings?.pillStyle ?? .default {
-                    case .hidden:
-                        Color.clear.frame(width: 1, height: 1)
-                    default:
-                        Capsule().fill(.black.opacity(0.55))
-                            .frame(width: 56, height: 7)
-                    }
-                }
+                if showCheckmark { successView } else { idleView }
             case .recording:
-                pill {
-                    HStack(spacing: 8) {
-                        if settings?.engineMode == "instant" {
-                            Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
-                        }
-                        HStack(spacing: 2.5) {
-                            ForEach(levels.indices, id: \.self) { i in
-                                Capsule().fill(.white)
-                                    .frame(width: 2.5, height: max(3, CGFloat(levels[i]) * 26))
-                            }
-                        }
-                        Text(recordingStarted, style: .timer) // spec §7: recording timer
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.85))
-                        cancelButton
+                activePill {
+                    if settings?.engineMode == "instant" {
+                        Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                     }
+                    WaveformCanvasView(recorder: recorder, color: contentForeground)
+                    Text(recordingStarted, style: .timer) // spec §7: recording timer
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(contentForeground.opacity(0.85))
+                    cancelButton
                 }
             case .transcribing, .cleaning, .inserting:
-                pill {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small).tint(.white)
-                        Text("Polishing…").font(.caption).foregroundStyle(.white.opacity(0.85))
-                        cancelButton
-                    }
+                activePill {
+                    ProgressView().controlSize(.small).tint(contentForeground)
+                    Text("Polishing…").font(.caption).foregroundStyle(contentForeground.opacity(0.85))
+                    cancelButton
                 }
             case .error(let message):
-                pill(background: .red.opacity(0.85)) {
-                    Text(message).font(.caption).foregroundStyle(.white)
-                        .lineLimit(1).truncationMode(.tail)
-                }
+                errorView(message)
             }
         }
         .frame(width: 260, height: 56, alignment: .bottom)
@@ -104,11 +82,6 @@ struct FlowBarView: View {
             Button("Hide for 1 hour") { onHideForHour() }
             Button("Hide permanently") { onHidePermanently() }
         }
-        .onReceive(timer) { _ in
-            guard coordinator.state == .recording else { return }
-            levels.removeFirst()
-            levels.append(recorder.latestLevel)
-        }
         .onChange(of: coordinator.state) { _, newState in
             if newState == .recording { recordingStarted = .now }
         }
@@ -122,24 +95,91 @@ struct FlowBarView: View {
         }
     }
 
+    // MARK: idle
+
+    @ViewBuilder private var idleView: some View {
+        switch style {
+        case .hidden:
+            Color.clear.frame(width: 1, height: 1) // panel is ordered out anyway
+        case .bareWaveform:
+            // Three faint dots — a calm "listening soon" hint, not a hard shape.
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Circle().fill(Color.primary.opacity(0.4)).frame(width: 4, height: 4)
+                }
+            }
+            .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+        default: // frostedGlass, dynamicIsland — interim slim notch until their phases
+            Capsule().fill(.black.opacity(0.55)).frame(width: 56, height: 7)
+        }
+    }
+
+    // MARK: success / error
+
+    @ViewBuilder private var successView: some View {
+        if isChromeless {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(.green)
+                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                .transition(.scale.combined(with: .opacity))
+        } else {
+            content(tint: .green.opacity(0.85)) {
+                Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+            }
+        }
+    }
+
+    @ViewBuilder private func errorView(_ message: String) -> some View {
+        if isChromeless {
+            HStack(spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                Text(message).foregroundStyle(.primary).lineLimit(1).truncationMode(.tail)
+            }
+            .font(.caption)
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+        } else {
+            content(tint: .red.opacity(0.85)) {
+                Text(message).font(.caption).foregroundStyle(.white)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+        }
+    }
+
     /// .plain draws no focusable bezel; the panel is .nonactivatingPanel, so the
     /// click is handled here while the target app keeps key status and its caret.
     private var cancelButton: some View {
         Button { coordinator.cancel() } label: {
             Image(systemName: "xmark")
                 .font(.caption.bold())
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(contentForeground.opacity(0.85))
         }
         .buttonStyle(.plain)
         .help("Cancel dictation")
     }
 
-    private func pill(background: Color = .black.opacity(0.78),
-                      @ViewBuilder content: () -> some View) -> some View {
-        content()
-            .padding(.horizontal, 16)
-            .frame(height: 34)
-            .background(background, in: Capsule())
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+    // MARK: chrome
+
+    /// The active-state row of content, wrapped per style: chromeless styles get
+    /// only a drop shadow; the others get the dark capsule.
+    private func activePill(@ViewBuilder content: () -> some View) -> some View {
+        self.content(tint: .black.opacity(0.78)) {
+            HStack(spacing: 8) { content() }
+        }
+    }
+
+    @ViewBuilder
+    private func content(tint: Color, @ViewBuilder _ inner: () -> some View) -> some View {
+        if isChromeless {
+            inner()
+                .frame(height: 34)
+                .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
+        } else {
+            inner()
+                .padding(.horizontal, 16)
+                .frame(height: 34)
+                .background(tint, in: Capsule())
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+        }
     }
 }
