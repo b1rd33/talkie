@@ -24,6 +24,8 @@ final class SettingsStore {
     /// "bottomCenter" | "bottomLeft" | "bottomRight" | "topCenter"
     var pillPosition: String { didSet { defaults.set(pillPosition, forKey: "pillPosition") } }
     var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
+    /// Instant streaming inserts the raw streamed text with no cleanup LLM pass.
+    var instantSkipCleanup: Bool { didSet { defaults.set(instantSkipCleanup, forKey: "instantSkipCleanup") } }
     var cleanupLevel: String { didSet { defaults.set(cleanupLevel, forKey: "cleanupLevel") } }
     var customCleanupPrompt: String { didSet { defaults.set(customCleanupPrompt, forKey: "customCleanupPrompt") } }
     var pttShortcut: String? {
@@ -59,6 +61,7 @@ final class SettingsStore {
         pillStyle = PillStyle(migrating: defaults.string(forKey: "pillStyle"))
         pillPosition = defaults.string(forKey: "pillPosition") ?? "bottomCenter"
         keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
+        instantSkipCleanup = defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
         customCleanupPrompt = defaults.string(forKey: "customCleanupPrompt") ?? ""
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
