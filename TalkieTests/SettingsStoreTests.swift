@@ -20,8 +20,33 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.engineMode, "cloud")
         XCTAssertFalse(store.showDockIcon)
         XCTAssertFalse(store.keepRecordings)
-        XCTAssertEqual(store.pillStyle, "classic")
+        XCTAssertEqual(store.pillStyle, .bareWaveform)
         XCTAssertEqual(store.pillPosition, "bottomCenter")
+    }
+
+    func testRetiredPillStylesMigrateToBareWaveform() {
+        for legacy in ["classic", "dot", "compact", "totally-unknown"] {
+            let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+            defaults.set(legacy, forKey: "pillStyle")
+            let store = SettingsStore(defaults: defaults)
+            XCTAssertEqual(store.pillStyle, .bareWaveform, legacy)
+            // Migration is persisted normalized so `defaults read` no longer shows the legacy value.
+            XCTAssertEqual(defaults.string(forKey: "pillStyle"), "bareWaveform", legacy)
+        }
+    }
+
+    func testHiddenPillStyleSurvivesMigration() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        defaults.set("hidden", forKey: "pillStyle")
+        XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, .hidden)
+    }
+
+    func testPillStyleRoundTrips() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = SettingsStore(defaults: defaults)
+        store.pillStyle = .frostedGlass
+        XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, .frostedGlass)
     }
 
     func testStyleDefaults() {
