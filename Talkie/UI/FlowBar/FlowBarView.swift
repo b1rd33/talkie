@@ -28,7 +28,10 @@ struct FlowBarView: View {
                 if showCheckmark { successView } else { idleView }
             case .recording:
                 activePill {
-                    if settings?.engineMode == "instant" {
+                    if style == .dynamicIsland {
+                        // The island's iconic leading "live" dot.
+                        Circle().fill(.red).frame(width: 7, height: 7)
+                    } else if settings?.engineMode == "instant" {
                         Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                     }
                     WaveformCanvasView(recorder: recorder, color: contentForeground)
@@ -47,10 +50,12 @@ struct FlowBarView: View {
                 errorView(message)
             }
         }
-        .frame(width: 260, height: 56, alignment: .bottom)
-        .padding(.bottom, 2)
-        .animation(.spring(duration: 0.25), value: coordinator.state)
-        .animation(.spring(duration: 0.25), value: showCheckmark)
+        // Dynamic Island docks at the top of the panel (which PillLayout pins to
+        // top-center near the notch); every other style sits at the bottom.
+        .frame(width: 260, height: 56, alignment: style == .dynamicIsland ? .top : .bottom)
+        .padding(style == .dynamicIsland ? .top : .bottom, 2)
+        .animation(.spring(duration: 0.3), value: coordinator.state)
+        .animation(.spring(duration: 0.3), value: showCheckmark)
         .overlay(alignment: .topTrailing) {
             // Phase 3's offline-fallback badge (spec §10) — re-applied on top of
             // this full replacement; do not drop it.
@@ -115,8 +120,15 @@ struct FlowBarView: View {
                 .frame(width: 60, height: 11)
                 .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
-        case .dynamicIsland: // interim slim notch until its phase
-            Capsule().fill(.black.opacity(0.55)).frame(width: 56, height: 7)
+        case .dynamicIsland:
+            // A small black pill that reads as an extension of the camera notch;
+            // it grows into the full island when a dictation starts.
+            Capsule().fill(.black)
+                .frame(width: 96, height: 20)
+                .overlay(alignment: .trailing) {
+                    Circle().fill(.white.opacity(0.18)).frame(width: 6, height: 6).padding(.trailing, 8)
+                }
+                .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
         }
     }
 
