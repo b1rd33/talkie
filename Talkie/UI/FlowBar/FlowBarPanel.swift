@@ -72,7 +72,7 @@ final class FlowBarPanel {
     /// panel in/out and gates mouse participation so an idle, invisible pill is
     /// never hit-tested (crash 2026-06-11).
     func applyActivity(state: DictationState, recentlyCompleted: Bool) {
-        let style = settings?.pillStyle ?? "classic"
+        let style = settings?.pillStyle ?? .default
         let show = PillVisibilityPolicy.shouldShowPanel(
             state: state, style: style,
             showFlowBar: settings?.showFlowBar ?? true,
@@ -86,8 +86,10 @@ final class FlowBarPanel {
     /// panel.frame, which is transiently zero around rootView swaps.
     func reposition() {
         guard let screen = NSScreen.main else { return }
-        let origin = PillLayout.origin(position: settings?.pillPosition ?? "bottomCenter",
-                                       screenFrame: screen.visibleFrame)
+        let position = PillLayout.effectivePosition(
+            style: settings?.pillStyle ?? .default,
+            requested: settings?.pillPosition ?? "bottomCenter")
+        let origin = PillLayout.origin(position: position, screenFrame: screen.visibleFrame)
         panel.setFrame(NSRect(origin: origin, size: PillLayout.panelSize), display: true)
     }
 }

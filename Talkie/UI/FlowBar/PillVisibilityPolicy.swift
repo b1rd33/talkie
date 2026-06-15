@@ -11,22 +11,23 @@ enum PillVisibilityPolicy {
     /// Should the panel be on screen at all?
     /// hidden/compact styles exist only while a dictation is active (plus the
     /// ~1s green-checkmark flash right after completion).
-    static func shouldShowPanel(state: DictationState, style: String,
+    static func shouldShowPanel(state: DictationState, style: PillStyle,
                                 showFlowBar: Bool, recentlyCompleted: Bool) -> Bool {
         guard showFlowBar else { return false }
         switch style {
-        case "hidden", "compact":
+        case .hidden:
             return state != .idle || recentlyCompleted
-        default: // classic, dot — always present
+        default: // bareWaveform, dynamicIsland, frostedGlass — always present
             return true
         }
     }
 
     /// Should the panel participate in hit-testing?
-    /// Only when something is clickable: the active pill's ✕ / context menu,
-    /// or classic's idle hover-mic + right-click menu.
-    static func shouldAcceptMouse(state: DictationState, style: String) -> Bool {
-        if state != .idle { return true }
-        return style == "classic"
+    /// Only while active (the pill's ✕ / context menu). At idle the redesigned
+    /// pill is a calm, click-through indicator — ignoring the mouse there also
+    /// keeps AppKit from ever hit-testing it (the 2026-06-11 crash was an idle
+    /// hit-test of a degenerate view).
+    static func shouldAcceptMouse(state: DictationState, style: PillStyle) -> Bool {
+        state != .idle
     }
 }

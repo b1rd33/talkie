@@ -12,7 +12,6 @@ struct FlowBarView: View {
 
     @State private var levels: [Float] = Array(repeating: 0, count: 24)
     @State private var showCheckmark = false
-    @State private var hovering = false
     @State private var recordingStarted = Date()
     private let timer = Timer.publish(every: 1.0 / 24, on: .main, in: .common).autoconnect()
 
@@ -26,27 +25,15 @@ struct FlowBarView: View {
                             .font(.caption.bold()).foregroundStyle(.white)
                     }
                 } else {
-                    // Idle look depends on the chosen style:
-                    // classic = slim notch (+ mic on hover), dot = small dot,
-                    // hidden/compact = nothing until a dictation starts.
-                    switch settings?.pillStyle ?? "classic" {
-                    case "hidden", "compact":
+                    // Idle look depends on the chosen style. hidden renders nothing
+                    // (the panel is ordered out anyway); the visible styles get their
+                    // own idle treatment in later phases — interim: a slim notch.
+                    switch settings?.pillStyle ?? .default {
+                    case .hidden:
                         Color.clear.frame(width: 1, height: 1)
-                    case "dot":
-                        Circle().fill(.black.opacity(0.55)).frame(width: 8, height: 8)
-                    default: // classic — spec §7: idle slim notch, mic glyph on hover
-                        Group {
-                            if hovering {
-                                pill {
-                                    Image(systemName: "mic.fill")
-                                        .font(.caption).foregroundStyle(.white.opacity(0.85))
-                                }
-                            } else {
-                                Capsule().fill(.black.opacity(0.55))
-                                    .frame(width: 56, height: 7)
-                            }
-                        }
-                        .onHover { hovering = $0 }
+                    default:
+                        Capsule().fill(.black.opacity(0.55))
+                            .frame(width: 56, height: 7)
                     }
                 }
             case .recording:
@@ -61,11 +48,9 @@ struct FlowBarView: View {
                                     .frame(width: 2.5, height: max(3, CGFloat(levels[i]) * 26))
                             }
                         }
-                        if settings?.pillStyle != "compact" { // compact: bars only, no timer
-                            Text(recordingStarted, style: .timer) // spec §7: recording timer
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.85))
-                        }
+                        Text(recordingStarted, style: .timer) // spec §7: recording timer
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.85))
                         cancelButton
                     }
                 }

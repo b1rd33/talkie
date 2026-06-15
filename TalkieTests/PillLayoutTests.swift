@@ -53,6 +53,19 @@ final class PillLayoutTests: XCTestCase {
         XCTAssertEqual(origin.y, inset.maxY - 56 - 12)
     }
 
+    func testDynamicIslandForcesTopCenterRegardlessOfRequest() {
+        for requested in ["bottomCenter", "bottomLeft", "bottomRight", "topCenter"] {
+            XCTAssertEqual(PillLayout.effectivePosition(style: .dynamicIsland, requested: requested),
+                           "topCenter", requested)
+        }
+    }
+
+    func testOtherStylesHonorRequestedPosition() {
+        for style in [PillStyle.bareWaveform, .frostedGlass, .hidden] {
+            XCTAssertEqual(PillLayout.effectivePosition(style: style, requested: "bottomLeft"), "bottomLeft")
+        }
+    }
+
     func testPanelSizeConstantMatchesTheDesignedPill() {
         // reposition() must never read the live panel frame (it can be zero
         // mid-refreshStyle); this constant is the single source of truth.

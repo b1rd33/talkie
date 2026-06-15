@@ -12,6 +12,13 @@ enum PillLayout {
     static let panelSize = CGSize(width: 260, height: 56)
     static let margin: CGFloat = 12
 
+    /// The position actually used for a style. Dynamic Island is conceptually
+    /// docked at the top center near the camera notch, so it ignores the user's
+    /// requested position; every other style honors it.
+    static func effectivePosition(style: PillStyle, requested: String) -> String {
+        style == .dynamicIsland ? "topCenter" : requested
+    }
+
     static func origin(position: String, panelSize: CGSize = panelSize,
                        screenFrame: CGRect, margin: CGFloat = margin) -> CGPoint {
         switch position {

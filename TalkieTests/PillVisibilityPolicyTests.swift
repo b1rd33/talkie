@@ -6,49 +6,48 @@ final class PillVisibilityPolicyTests: XCTestCase {
 
     func testMasterToggleOffNeverShows() {
         XCTAssertFalse(PillVisibilityPolicy.shouldShowPanel(
-            state: .recording, style: "classic", showFlowBar: false, recentlyCompleted: false))
+            state: .recording, style: .bareWaveform, showFlowBar: false, recentlyCompleted: false))
     }
 
-    func testClassicAndDotStayVisibleWhenIdle() {
-        for style in ["classic", "dot"] {
+    func testVisibleStylesStayVisibleWhenIdle() {
+        for style in [PillStyle.bareWaveform, .dynamicIsland, .frostedGlass] {
             XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
-                state: .idle, style: style, showFlowBar: true, recentlyCompleted: false), style)
+                state: .idle, style: style, showFlowBar: true, recentlyCompleted: false), "\(style)")
         }
     }
 
-    func testHiddenAndCompactOrderOutWhenIdle() {
+    func testHiddenOrdersOutWhenIdle() {
         // The crash trigger: an idle panel with nothing clickable must not exist at all.
-        for style in ["hidden", "compact"] {
-            XCTAssertFalse(PillVisibilityPolicy.shouldShowPanel(
-                state: .idle, style: style, showFlowBar: true, recentlyCompleted: false), style)
-        }
+        XCTAssertFalse(PillVisibilityPolicy.shouldShowPanel(
+            state: .idle, style: .hidden, showFlowBar: true, recentlyCompleted: false))
     }
 
     func testHiddenShowsWhileActiveAndDuringCheckmarkFlash() {
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
-            state: .recording, style: "hidden", showFlowBar: true, recentlyCompleted: false))
+            state: .recording, style: .hidden, showFlowBar: true, recentlyCompleted: false))
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
-            state: .transcribing, style: "hidden", showFlowBar: true, recentlyCompleted: false))
+            state: .transcribing, style: .hidden, showFlowBar: true, recentlyCompleted: false))
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
-            state: .error("x"), style: "hidden", showFlowBar: true, recentlyCompleted: false))
+            state: .error("x"), style: .hidden, showFlowBar: true, recentlyCompleted: false))
         // ≤1s after a completed dictation the green checkmark still flashes
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
-            state: .idle, style: "hidden", showFlowBar: true, recentlyCompleted: true))
+            state: .idle, style: .hidden, showFlowBar: true, recentlyCompleted: true))
     }
 
     // MARK: mouse participation
 
-    func testMouseIgnoredWhenIdleExceptClassic() {
-        XCTAssertTrue(PillVisibilityPolicy.shouldAcceptMouse(state: .idle, style: "classic")) // hover mic + context menu
-        for style in ["dot", "hidden", "compact"] {
-            XCTAssertFalse(PillVisibilityPolicy.shouldAcceptMouse(state: .idle, style: style), style)
+    func testMouseIgnoredWhenIdleForAllStyles() {
+        // The redesigned idle pill is a calm, click-through indicator: ignoring
+        // mouse at idle also means AppKit never hit-tests it (crash-safe).
+        for style in PillStyle.allCases {
+            XCTAssertFalse(PillVisibilityPolicy.shouldAcceptMouse(state: .idle, style: style), "\(style)")
         }
     }
 
     func testMouseAcceptedWhileActiveForAllStyles() {
-        for style in ["classic", "dot", "hidden", "compact"] {
-            XCTAssertTrue(PillVisibilityPolicy.shouldAcceptMouse(state: .recording, style: style), style)
-            XCTAssertTrue(PillVisibilityPolicy.shouldAcceptMouse(state: .cleaning, style: style), style)
+        for style in PillStyle.allCases {
+            XCTAssertTrue(PillVisibilityPolicy.shouldAcceptMouse(state: .recording, style: style), "\(style)")
+            XCTAssertTrue(PillVisibilityPolicy.shouldAcceptMouse(state: .cleaning, style: style), "\(style)")
         }
     }
 }

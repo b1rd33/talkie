@@ -19,9 +19,8 @@ final class SettingsStore {
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
     var showDockIcon: Bool { didSet { defaults.set(showDockIcon, forKey: "showDockIcon") } }
-    /// "classic" (notch when idle) | "dot" (small dot) | "hidden" (invisible until active)
-    /// | "compact" (hidden idle + smaller active pill).
-    var pillStyle: String { didSet { defaults.set(pillStyle, forKey: "pillStyle") } }
+    /// The Flow Bar pill's visual style (see PillStyle). Persisted as its raw value.
+    var pillStyle: PillStyle { didSet { defaults.set(pillStyle.rawValue, forKey: "pillStyle") } }
     /// "bottomCenter" | "bottomLeft" | "bottomRight" | "topCenter"
     var pillPosition: String { didSet { defaults.set(pillPosition, forKey: "pillPosition") } }
     var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
@@ -57,7 +56,7 @@ final class SettingsStore {
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
         engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
-        pillStyle = defaults.string(forKey: "pillStyle") ?? "classic"
+        pillStyle = PillStyle(migrating: defaults.string(forKey: "pillStyle"))
         pillPosition = defaults.string(forKey: "pillPosition") ?? "bottomCenter"
         keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
@@ -65,5 +64,8 @@ final class SettingsStore {
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
         pttShortcut = defaults.string(forKey: "pttShortcut")
         handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")
+        // Persist the migrated pill style so a retired raw value (classic/dot/
+        // compact) is normalized on disk and never re-read.
+        defaults.set(pillStyle.rawValue, forKey: "pillStyle")
     }
 }

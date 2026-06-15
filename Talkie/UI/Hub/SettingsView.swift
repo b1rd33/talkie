@@ -164,10 +164,10 @@ private struct GeneralSettingsTab: View {
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
                 Picker("Pill style", selection: $settings.pillStyle) {
-                    Text("Classic — slim notch when idle").tag("classic")
-                    Text("Dot — tiny dot when idle").tag("dot")
-                    Text("Hidden — appears only while dictating").tag("hidden")
-                    Text("Compact — hidden idle, smaller pill").tag("compact")
+                    Text("Bare waveform — chromeless, dots when idle").tag(PillStyle.bareWaveform)
+                    Text("Dynamic Island — docked top-center").tag(PillStyle.dynamicIsland)
+                    Text("Frosted glass — translucent capsule").tag(PillStyle.frostedGlass)
+                    Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
                 }
                 Picker("Pill position", selection: $settings.pillPosition) {
                     Text("Bottom center").tag("bottomCenter")
