@@ -350,6 +350,34 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.cleanupDegraded)      // spec §6/§10: subtle pill warning
     }
 
+    func testCleanupFailureStoresReason() async {
+        let cleanup = MockCleanup(result: .failure(EngineError.missingAPIKey))
+        let (coordinator, _, _) = makeCoordinator(cleanup: cleanup)
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertNotNil(coordinator.cleanupFailureReason)
+        XCTAssertEqual(coordinator.cleanupFailureReason, EngineError.missingAPIKey.errorDescription)
+    }
+
+    func testNextDictationClearsStaleDegradedState() async {
+        let cleanup = MockCleanup(result: .failure(EngineError.invalidResponse))
+        let (coordinator, _, _) = makeCoordinator(cleanup: cleanup)
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(coordinator.cleanupDegraded)
+
+        // Starting a fresh dictation must clear the stale badge immediately, so it
+        // can't bleed onto the next completion's checkmark.
+        await coordinator.dictationKeyPressed()
+        XCTAssertEqual(coordinator.state, .recording)
+        XCTAssertFalse(coordinator.cleanupDegraded)
+        XCTAssertNil(coordinator.cleanupFailureReason)
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+    }
+
     final class MockNotifier: Notifying {
         var titles: [String] = []
         func notify(title: String, body: String) { titles.append(title) }

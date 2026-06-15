@@ -98,12 +98,21 @@ struct FlowBarView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            // spec §6/§10: cleanup failed → raw text was inserted + subtle warning
+            // spec §6/§10: cleanup failed → raw text was inserted. A labeled "raw"
+            // badge (not a bare triangle) makes the degraded state legible; the
+            // tooltip carries the actual cause captured by the coordinator.
             if coordinator.cleanupDegraded {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2).foregroundStyle(.yellow)
-                    .offset(y: -4)
-                    .help("Cleanup failed — inserted the raw transcript")
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("raw")
+                }
+                .font(.system(size: 9, weight: .semibold))
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(.yellow.opacity(0.9), in: Capsule())
+                .foregroundStyle(.black.opacity(0.8))
+                .offset(y: -4)
+                .help(coordinator.cleanupFailureReason
+                      ?? "Cleanup failed — inserted the raw transcript.")
             }
         }
         .contextMenu {
