@@ -63,6 +63,16 @@ final class DictationCoordinatorTests: XCTestCase {
         func insert(_ text: String) async throws { inserted.append(text) }
     }
 
+    @MainActor
+    final class MockLiveInserter: LiveTextInserting {
+        var typedUpTo: [String] = []
+        var resetCount = 0
+        var viable = true
+        func reset() { resetCount += 1 }
+        @discardableResult
+        func type(upTo accumulated: String) throws -> Bool { typedUpTo.append(accumulated); return viable }
+    }
+
     private func makeCoordinator(
         recorder: MockRecorder? = nil,
         engine: MockEngine = MockEngine(),
@@ -366,6 +376,92 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
         XCTAssertEqual(live.fed, 1) // the pre-connect chunk was buffered and replayed, not dropped
+    }
+
+    // MARK: live typing (Part B4)
+
+    func testLiveTypeSkipsFinalInsert() async {
+        let live = MockLiveSession() // finishes "live text"
+        let liveInserter = MockLiveInserter()
+        let inserter = MockInserter()
+        let cleanup = MockCleanup()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: cleanup, inserter: inserter, minimumHold: 0,
+                                               cleanupLevelProvider: { .high }, // exercise the real level path
+                                               liveTypeProvider: { true },
+                                               liveInserter: liveInserter,
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(inserter.inserted.isEmpty)          // final paste skipped — text was typed
+        XCTAssertTrue(cleanup.calls.isEmpty)              // level forced to .none
+        XCTAssertEqual(liveInserter.typedUpTo.last, "live text") // flushed the final transcript
+        XCTAssertEqual(coordinator.lastResult?.cleanedText, "live text") // raw == typed
+    }
+
+    func testLiveTypeStillSavesHistoryAndLastResult() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0, history: history,
+                                               liveTypeProvider: { true },
+                                               liveInserter: MockLiveInserter(),
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(history.recent(limit: 1)[0].status, .completed)
+        XCTAssertNotNil(coordinator.lastResult)
+        XCTAssertNotNil(coordinator.lastCompletedAt)
+    }
+
+    func testLiveTypeOffUsesNormalInsert() async {
+        let live = MockLiveSession()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               liveTypeProvider: { false },
+                                               liveInserter: MockLiveInserter(),
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["Clean text."]) // normal cleanup + paste
+    }
+
+    func testLiveTypeBatchFallbackPastesBatchResult() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let inserter = MockInserter()
+        // MockEngine returns "raw text"; live typing was on but realtime failed, so the
+        // batch result must still be pasted (not skipped).
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               liveTypeProvider: { true },
+                                               liveInserter: MockLiveInserter(),
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["raw text"]) // batch raw delivered (level forced .none)
+    }
+
+    func testLiveTypeFallsBackToInsertWhenNotViable() async {
+        let live = MockLiveSession()
+        let liveInserter = MockLiveInserter()
+        liveInserter.viable = false // e.g. Accessibility not trusted
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               liveTypeProvider: { true },
+                                               liveInserter: liveInserter,
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["live text"]) // AX bail → normal insert of raw text
     }
 
     // MARK: live transcript pump (Part B2)

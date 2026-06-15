@@ -105,6 +105,10 @@ final class AppServices {
             instantSkipCleanupProvider: {
                 UserDefaults.standard.object(forKey: "instantSkipCleanup") as? Bool ?? false
             },
+            liveTypeProvider: {
+                UserDefaults.standard.object(forKey: "instantLiveType") as? Bool ?? false
+            },
+            liveInserter: LiveTextInserter(),
             entitlement: {
                 entitlementStore.refresh() // keep the displayed `current` honest on every press
                 return entitlementStore.gateError

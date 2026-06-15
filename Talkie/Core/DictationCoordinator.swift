@@ -47,6 +47,8 @@ final class DictationCoordinator {
     private let cleanupModelProvider: () -> String?
     private let keepRecordingsProvider: () -> Bool
     private let instantSkipCleanupProvider: () -> Bool
+    private let liveTypeProvider: () -> Bool
+    private let liveInserter: LiveTextInserting?
     private let entitlement: (() -> EntitlementError?)?
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
@@ -63,6 +65,9 @@ final class DictationCoordinator {
     private var activeStyle: StylePreset = .neutral
     /// Press-time snapshot of instantSkipCleanup (same contract as activeLevel).
     private var activeInstantSkipCleanup = false
+    /// Press-time snapshot of instantLiveType; whether a live session was created.
+    private var activeLiveType = false
+    private var liveTapActive = false
     /// Bumped after every successful insert — the pill's checkmark flash observes it.
     private(set) var lastCompletedAt: Date?
     /// Set when cleanup failed and raw ASR text was inserted (spec §6/§10) — the
@@ -87,6 +92,8 @@ final class DictationCoordinator {
          cleanupModelProvider: @escaping () -> String? = { nil },
          keepRecordingsProvider: @escaping () -> Bool = { false },
          instantSkipCleanupProvider: @escaping () -> Bool = { false },
+         liveTypeProvider: @escaping () -> Bool = { false },
+         liveInserter: LiveTextInserting? = nil,
          entitlement: (() -> EntitlementError?)? = nil,
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
@@ -105,6 +112,8 @@ final class DictationCoordinator {
         self.cleanupModelProvider = cleanupModelProvider
         self.keepRecordingsProvider = keepRecordingsProvider
         self.instantSkipCleanupProvider = instantSkipCleanupProvider
+        self.liveTypeProvider = liveTypeProvider
+        self.liveInserter = liveInserter
         self.entitlement = entitlement
         self.liveSessionFactory = liveSessionFactory
     }
@@ -124,11 +133,14 @@ final class DictationCoordinator {
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
         liveTranscript = ""     // clear any stale streamed preview
         liveBox.clear()
+        liveInserter?.reset()
+        liveTapActive = false
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
         activeLevel = cleanupLevelProvider()
         activeStyle = stylePresetProvider(targetApp.bundleID)
         activeInstantSkipCleanup = instantSkipCleanupProvider()
+        activeLiveType = liveTypeProvider()
         do {
             state = .recording
             recordingStartedAt = Date()
@@ -148,6 +160,7 @@ final class DictationCoordinator {
                     let box = liveBox
                     let session = try await liveSessionFactory { box.set($0) } // @Sendable: no actor hop
                     liveSession = session
+                    liveTapActive = true
                     startLivePump() // drain the box to liveTranscript at ~12.5 Hz
                     liveFeedTask = Task { // ONE consumer — replays the backlog, preserves order
                         for await samples in stream { await session.feed(samples) }
@@ -204,7 +217,13 @@ final class DictationCoordinator {
                 try? await Task.sleep(for: .milliseconds(80))
                 guard let self else { return }
                 let latest = self.liveBox.get()
-                if latest != self.liveTranscript { self.liveTranscript = latest }
+                if latest != self.liveTranscript {
+                    self.liveTranscript = latest
+                    // Live typing rides the same throttle — coalesced, never per-delta
+                    // keystrokes. Best-effort: a secure-field throw is ignored here and
+                    // surfaces on the final flush in process().
+                    if self.activeLiveType { try? self.liveInserter?.type(upTo: latest) }
+                }
             }
         }
     }
@@ -298,10 +317,11 @@ final class DictationCoordinator {
             }
             try Task.checkCancellation()
 
-            // Skip cleanup only when instant genuinely ran AND the user asked for it.
-            // Collapses ANY base level (including .custom) to .none — deliberate: the
-            // whole point is to insert the raw streamed text instantly.
-            let effectiveLevel: CleanupLevel = (usedRealtime && activeInstantSkipCleanup) ? .none : activeLevel
+            // Skip cleanup only when instant genuinely ran AND the user asked for it,
+            // OR when live-typing was attempted (text is already in the document; it
+            // can't be re-polished). Collapses ANY base level (incl. .custom) to .none.
+            let liveTypeAttempted = activeLiveType && liveTapActive
+            let effectiveLevel: CleanupLevel = ((usedRealtime && activeInstantSkipCleanup) || liveTypeAttempted) ? .none : activeLevel
             let cleaned: String
             if effectiveLevel == .none {
                 cleaned = transcript.text // spec §6: None = raw ASR text, no LLM call
@@ -328,7 +348,19 @@ final class DictationCoordinator {
             try Task.checkCancellation() // a cancelled cleanup must not insert raw text
 
             state = .inserting
-            try await inserter.insert(cleaned)
+            // Live typing already streamed the text into the document — skip the
+            // final paste. (effectiveLevel is .none here, so cleaned == raw, matching
+            // what was typed.) Fall back to a normal insert if typing wasn't viable
+            // (AX not trusted) or realtime fell back to batch (B-7: deliver the batch
+            // result rather than leave the user with only partial realtime text).
+            let liveTypeDelivered = activeLiveType && usedRealtime
+            if liveTypeDelivered, let liveInserter {
+                stopLivePump() // no in-flight pump append racing the final flush
+                let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
+                if !viable { try await inserter.insert(cleaned) }
+            } else {
+                try await inserter.insert(cleaned)
+            }
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
             lastCompletedAt = Date()
