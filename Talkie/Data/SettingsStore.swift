@@ -26,6 +26,14 @@ final class SettingsStore {
     var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
     /// Instant streaming inserts the raw streamed text with no cleanup LLM pass.
     var instantSkipCleanup: Bool { didSet { defaults.set(instantSkipCleanup, forKey: "instantSkipCleanup") } }
+    /// Type the streamed text into the focused app live while speaking. Implies
+    /// instantSkipCleanup — you can't re-polish text already typed into a document.
+    var instantLiveType: Bool {
+        didSet {
+            defaults.set(instantLiveType, forKey: "instantLiveType")
+            if instantLiveType { instantSkipCleanup = true }
+        }
+    }
     var cleanupLevel: String { didSet { defaults.set(cleanupLevel, forKey: "cleanupLevel") } }
     var customCleanupPrompt: String { didSet { defaults.set(customCleanupPrompt, forKey: "customCleanupPrompt") } }
     var pttShortcut: String? {
@@ -62,6 +70,7 @@ final class SettingsStore {
         pillPosition = defaults.string(forKey: "pillPosition") ?? "bottomCenter"
         keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
         instantSkipCleanup = defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
+        instantLiveType = defaults.object(forKey: "instantLiveType") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
         customCleanupPrompt = defaults.string(forKey: "customCleanupPrompt") ?? ""
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")

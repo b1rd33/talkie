@@ -33,6 +33,14 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(SettingsStore(defaults: defaults).instantSkipCleanup)
     }
 
+    func testEnablingLiveTypeForcesSkipCleanup() {
+        let store = SettingsStore(defaults: UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!)
+        store.instantSkipCleanup = false
+        store.instantLiveType = true
+        XCTAssertTrue(store.instantSkipCleanup) // can't re-polish already-typed text
+        XCTAssertTrue(store.instantLiveType)
+    }
+
     func testRetiredPillStylesMigrateToBareWaveform() {
         for legacy in ["classic", "dot", "compact", "totally-unknown"] {
             let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!

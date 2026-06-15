@@ -26,7 +26,7 @@ struct SettingsView: View {
 /// text. Single source of truth shared by the Engine and Style tabs so they
 /// can't drift. (Part B widens this to also cover live typing.)
 func cleanupInactive(_ s: SettingsStore) -> Bool {
-    s.engineMode == "instant" && s.instantSkipCleanup
+    s.engineMode == "instant" && (s.instantSkipCleanup || s.instantLiveType)
 }
 
 private struct StyleSettingsTab: View {
@@ -235,8 +235,12 @@ private struct EngineSettingsTab: View {
                 Text("Instant streams audio while you speak (gpt-realtime-whisper, billed per audio minute) so text lands ~1s after release. Batch waits until release (gpt-4o transcribe models).")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Skip cleanup in instant mode (fastest)", isOn: $settings.instantSkipCleanup)
-                    .disabled(settings.engineMode != "instant")
+                    .disabled(settings.engineMode != "instant" || settings.instantLiveType)
                 Text("Inserts the raw streamed text immediately, with no cleanup pass.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Type live into the app while speaking", isOn: $settings.instantLiveType)
+                    .disabled(settings.engineMode != "instant")
+                Text("Types raw text as you speak — skips cleanup. Needs Accessibility access.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Local models") {
