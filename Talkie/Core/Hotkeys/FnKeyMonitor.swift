@@ -21,14 +21,22 @@ final class FnKeyMonitor {
 
     /// True while we're discarding a startup `.function` replay. macOS delivers an
     /// initial flagsChanged reflecting the current modifier state right after the
-    /// monitors install; if fn reads as down then, that down (and the release that
-    /// settles it) are noise, not a real press — they once started a phantom
-    /// dictation at every launch (2026-06).
+    /// monitors install; if fn reads as down then — or a stray `.function` event
+    /// arrives within the startup grace window — that down (and the release that
+    /// settles it) are noise, not a real press. They once started a phantom
+    /// dictation at launch (2026-06); the bug is racy, so we guard both the
+    /// already-down case and the just-after-launch window.
     private var awaitingNeutral = false
+    private var startedAt: Date?
+    /// A real fn press can't physically happen this soon after the monitors
+    /// install at launch, so any press inside this window is a replay.
+    static let startupGrace: TimeInterval = 0.7
 
     /// Sample the current fn state when monitoring begins. If fn is already down,
-    /// ignore events until the key settles back to neutral.
-    func primeStartupState(fnDown: Bool) {
+    /// ignore events until the key settles back to neutral; either way, arm the
+    /// startup grace window.
+    func primeStartupState(fnDown: Bool, at now: Date = Date()) {
+        startedAt = now
         if fnDown {
             isDown = true
             awaitingNeutral = true
@@ -41,10 +49,10 @@ final class FnKeyMonitor {
     /// Pure transition logic, unit-testable without NSEvent.
     func handleFlagsChanged(fnDown: Bool, at now: Date = Date()) {
         guard fnDown != isDown else { return }
-        isDown = fnDown
         if awaitingNeutral {
             // Still draining the startup replay; consume the settle-to-neutral
             // transition without firing or seeding double-tap state.
+            isDown = fnDown
             if !fnDown {
                 awaitingNeutral = false
                 downAt = nil
@@ -52,6 +60,14 @@ final class FnKeyMonitor {
             }
             return
         }
+        // A press inside the startup grace window is a replay: swallow it and the
+        // release that follows.
+        if fnDown, let startedAt, now.timeIntervalSince(startedAt) < Self.startupGrace {
+            isDown = true
+            awaitingNeutral = true
+            return
+        }
+        isDown = fnDown
         if fnDown {
             downAt = now
             onPress()

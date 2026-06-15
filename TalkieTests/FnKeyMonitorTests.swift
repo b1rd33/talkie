@@ -60,23 +60,43 @@ final class FnKeyMonitorTests: XCTestCase {
     func testStartupPrimedWhileFnDownIgnoresUntilNeutral() {
         // fn read as already down when monitoring starts → the replayed down and
         // the following release are startup noise and must fire nothing.
-        monitor.primeStartupState(fnDown: true)
-        monitor.handleFlagsChanged(fnDown: true)  // stale replay of the existing state
-        monitor.handleFlagsChanged(fnDown: false) // settles to neutral
+        let t0 = Date()
+        monitor.primeStartupState(fnDown: true, at: t0)
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(0.01))  // stale replay
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(0.02)) // settles to neutral
         XCTAssertEqual(presses, 0)
         XCTAssertEqual(releases, 0)
 
-        // A genuine press after settling works normally.
-        monitor.handleFlagsChanged(fnDown: true)
-        monitor.handleFlagsChanged(fnDown: false)
+        // A genuine press past the startup grace window works normally.
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(1.0))
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(1.1))
         XCTAssertEqual(presses, 1)
         XCTAssertEqual(releases, 1)
     }
 
     func testStartupPrimedNeutralPreservesBehavior() {
-        monitor.primeStartupState(fnDown: false)
-        monitor.handleFlagsChanged(fnDown: true)
-        monitor.handleFlagsChanged(fnDown: false)
+        // A press well past the startup grace window fires normally.
+        let t0 = Date()
+        monitor.primeStartupState(fnDown: false, at: t0)
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(1.0))
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(1.1))
+        XCTAssertEqual(presses, 1)
+        XCTAssertEqual(releases, 1)
+    }
+
+    func testStartupGraceWindowSwallowsReplayedPress() {
+        // fn read as neutral at start, but a stray .function replay lands within
+        // the grace window — it (and its release) must fire nothing.
+        let t0 = Date()
+        monitor.primeStartupState(fnDown: false, at: t0)
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(0.05))
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(0.15))
+        XCTAssertEqual(presses, 0)
+        XCTAssertEqual(releases, 0)
+
+        // A genuine press after the grace window works.
+        monitor.handleFlagsChanged(fnDown: true, at: t0.addingTimeInterval(1.0))
+        monitor.handleFlagsChanged(fnDown: false, at: t0.addingTimeInterval(1.1))
         XCTAssertEqual(presses, 1)
         XCTAssertEqual(releases, 1)
     }
