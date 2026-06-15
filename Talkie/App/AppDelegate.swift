@@ -22,7 +22,6 @@ final class AppServices {
     let licenseManager: LicenseManager
     let entitlements: EntitlementStore
     let onboarding = OnboardingWindow()
-    private(set) var updater: UpdaterService?
     private(set) var flowBar: FlowBarPanel?
 
     private init() {
@@ -168,7 +167,6 @@ final class AppServices {
     }
 
     func startUI() {
-        updater = UpdaterService()
         flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder,
                                settings: settings,
                                onHideForHour: { [weak self] in self?.hidePillTemporarily() },

@@ -4,6 +4,13 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+# Debug/Release are the XcodeGen defaults, restated so ReleaseAdhoc can be added.
+# ReleaseAdhoc = a free, account-less distribution build (ad-hoc signed, hardened
+# runtime off) for sharing a zip; it does NOT touch the paid Developer-ID Release.
+configs:
+  Debug: debug
+  Release: release
+  ReleaseAdhoc: release
 packages:
   HotKey:
     url: https://github.com/soffes/HotKey
@@ -11,9 +18,6 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
     from: 0.15.2
-  Sparkle:
-    url: https://github.com/sparkle-project/Sparkle
-    from: 2.6.0
 settings:
   base:
     SWIFT_VERSION: "5.10"
@@ -37,9 +41,6 @@ targets:
         LSUIElement: true
         NSPrincipalClass: NSApplication
         NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
-        SUFeedURL: "https://updates.example.com/talkie/appcast.xml"  # ⚠️ HUMAN: real feed host (Human inputs #5)
-        SUPublicEDKey: "PASTE-GENERATE-KEYS-PUBLIC-KEY-HERE"          # ⚠️ HUMAN: from generate_keys (Human inputs #4)
-        SUEnableInstallerLauncherService: true  # routes installs through Sparkle's bundled XPC service; required if sandboxing ever lands, harmless without it
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
@@ -55,10 +56,16 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
           DEVELOPMENT_TEAM: YOURTEAMID  # ⚠️ HUMAN: real Team ID (Human inputs #1)
+        # Account-less distribution: ad-hoc signature, hardened runtime OFF so the
+        # ad-hoc-signed embedded frameworks (FluidAudio/HotKey) still load.
+        ReleaseAdhoc:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
+          DEVELOPMENT_TEAM: ""
+          ENABLE_HARDENED_RUNTIME: NO
     dependencies:
       - package: HotKey
       - package: FluidAudio
-      - package: Sparkle
   TalkieTests:
     type: bundle.unit-test
     platform: macOS

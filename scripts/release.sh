@@ -1,8 +1,9 @@
 #!/bin/bash
 # Talkie release pipeline: archive → Developer ID export → verify → notarize →
-# staple → DMG + Sparkle zip. Safe to re-run; wipes build/ first.
+# staple → DMG + zip. Safe to re-run; wipes build/ first. (Paid Developer-ID
+# path; the free, account-less path is scripts/build-release-adhoc.sh.)
 #
-# One-time setup (⚠️ HUMAN — docs/release-checklist.md "One-time setup"):
+# One-time setup (⚠️ HUMAN — requires a paid Apple Developer account):
 #   1. "Developer ID Application" certificate in the login keychain
 #   2. xcrun notarytool store-credentials talkie-notary \
 #        --apple-id <appleID> --team-id <teamID> --password <app-specific password>
@@ -54,7 +55,7 @@ xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl -a -vv "$APP"
 
-echo "==> Re-zipping the stapled app (this zip feeds the Sparkle appcast)"
+echo "==> Re-zipping the stapled app"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
@@ -67,10 +68,7 @@ hdiutil create -volname Talkie -srcfolder "$STAGING" -format UDZO -ov "$DMG"
 
 echo ""
 echo "Release artifacts:"
-echo "  Website download:  $DMG"
-echo "  Sparkle update:    $ZIP"
+echo "  Download (DMG):  $DMG"
+echo "  Download (zip):  $ZIP"
 echo ""
-echo "Appcast: copy the zip into your updates folder and run Sparkle's"
-echo "generate_appcast over it (signs with the EdDSA key from the Keychain),"
-echo "then upload appcast.xml + zip to the SUFeedURL host."
-echo "Exact commands: docs/release-checklist.md step 6."
+echo "Attach one to a GitHub Release. Updates are manual (no auto-update)."
