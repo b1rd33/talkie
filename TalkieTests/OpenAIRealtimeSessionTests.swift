@@ -60,6 +60,31 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         XCTAssertTrue(sent.last!.contains("input_audio_buffer.commit"))
     }
 
+    func testPartialSinkReceivesCumulativeDeltas() async throws {
+        let transport = FakeTransport()
+        transport.inbox = [
+            Data(#"{"type":"input_audio_buffer.committed"}"#.utf8),
+            Data(#"{"type":"conversation.item.input_audio_transcription.delta","delta":"hello "}"#.utf8),
+            Data(#"{"type":"conversation.item.input_audio_transcription.delta","delta":"world"}"#.utf8),
+            Data(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":"hello world"}"#.utf8),
+        ]
+        let lock = NSLock()
+        var partials: [String] = []
+        let done = expectation(description: "completed echo")
+        let session = OpenAIRealtimeSession(transport: transport, model: "m", vocabulary: nil, language: nil,
+                                            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+                                            onPartial: { s in
+                                                lock.lock(); partials.append(s); let n = partials.count; lock.unlock()
+                                                if n == 3 { done.fulfill() }
+                                            })
+        try await session.begin()
+        await session.feed([0.1, 0.2, 0.3])
+        _ = try await session.finish()
+        await fulfillment(of: [done], timeout: 2)
+        lock.lock(); let captured = partials; lock.unlock()
+        XCTAssertEqual(captured, ["hello ", "hello world", "hello world"]) // cumulative + completed echo
+    }
+
     func testServerErrorSurfacesFromFinish() async throws {
         let transport = FakeTransport()
         transport.inbox = [Data(#"{"type":"error","error":{"message":"session expired"}}"#.utf8)]
