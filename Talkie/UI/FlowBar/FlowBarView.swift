@@ -72,12 +72,15 @@ struct FlowBarView: View {
             if coordinator.cleanupDegraded {
                 HStack(spacing: 3) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                    Text("raw")
+                    Text("RAW")
                 }
-                .font(.system(size: 9, weight: .semibold))
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background(.yellow.opacity(0.9), in: Capsule())
-                .foregroundStyle(.black.opacity(0.8))
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.yellow)
+                // A subtle dark backing + shadow so the yellow stays legible on
+                // any wallpaper without filling the badge yellow.
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(.black.opacity(0.35), in: Capsule())
+                .shadow(color: .black.opacity(0.5), radius: 1.5, y: 0.5)
                 .offset(y: -4)
                 .help(coordinator.cleanupFailureReason
                       ?? "Cleanup failed — inserted the raw transcript.")
