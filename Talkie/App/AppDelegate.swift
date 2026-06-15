@@ -102,6 +102,9 @@ final class AppServices {
             keepRecordingsProvider: {
                 UserDefaults.standard.object(forKey: "keepRecordings") as? Bool ?? false
             },
+            instantSkipCleanupProvider: {
+                UserDefaults.standard.object(forKey: "instantSkipCleanup") as? Bool ?? false
+            },
             entitlement: {
                 entitlementStore.refresh() // keep the displayed `current` honest on every press
                 return entitlementStore.gateError
