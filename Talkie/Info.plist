@@ -28,11 +28,5 @@
 	<string>Talkie listens while you hold the dictation key so it can transcribe your speech.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://updates.example.com/talkie/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>PASTE-GENERATE-KEYS-PUBLIC-KEY-HERE</string>
 </dict>
 </plist>

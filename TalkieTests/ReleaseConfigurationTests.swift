@@ -34,15 +34,6 @@ final class ReleaseConfigurationTests: XCTestCase {
                        "sandbox must stay OFF — AX insertion is incompatible (see Talkie.entitlements)")
     }
 
-    func testSparkleFeedConfiguration() throws {
-        let feed = try XCTUnwrap(info["SUFeedURL"] as? String, "SUFeedURL missing from Info.plist")
-        let url = try XCTUnwrap(URL(string: feed))
-        XCTAssertEqual(url.scheme, "https", "Sparkle requires an HTTPS feed")
-        XCTAssertEqual((feed as NSString).pathExtension, "xml")
-        let publicKey = try XCTUnwrap(info["SUPublicEDKey"] as? String, "SUPublicEDKey missing")
-        XCTAssertFalse(publicKey.isEmpty)
-    }
-
     func testPlistMigrationKeepsMenuBarOnlyAndMicUsage() {
         XCTAssertEqual(info["LSUIElement"] as? Bool, true)
         XCTAssertEqual((info["NSMicrophoneUsageDescription"] as? String)?.isEmpty, false)

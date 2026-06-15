@@ -83,8 +83,8 @@ On a NEW macOS user account (or a clean VM):
 
 ## Updates
 
-- [ ] Menu bar → "Check for Updates…" against the live appcast → "You're up
-      to date!" (or offers the newer build, which downloads, installs, and
-      relaunches)
+- [ ] Updates are manual: download the new zip, replace `Talkie.app`. After an
+      ad-hoc update, re-grant Accessibility if dictation only copies to clipboard
+      (see docs/install-free.md).
 
 Result: PASS / FAIL — blockers filed: ____________________
