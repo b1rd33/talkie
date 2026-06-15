@@ -27,10 +27,14 @@ final class FlowBarPanel {
 
         // .environment makes SettingsStore observable INSIDE the hosting view —
         // pill style/engine badge updates require it (see FlowBarView.settings).
+        // The borderless panel doesn't reliably propagate effectiveAppearance to
+        // SwiftUI, so .primary stayed black in Dark mode; inject the resolved
+        // system colorScheme explicitly and refresh it on theme changes.
         let makeRoot: () -> AnyView = {
             let root = FlowBarView(coordinator: coordinator, recorder: recorder,
                                    onHideForHour: onHideForHour,
                                    onHidePermanently: onHidePermanently)
+                .environment(\.colorScheme, Self.systemColorScheme())
             return settings.map { AnyView(root.environment($0)) } ?? AnyView(root)
         }
         self.makeRoot = makeRoot
@@ -45,10 +49,24 @@ final class FlowBarPanel {
         reposition()
         panel.orderFrontRegardless()
 
+        // Rebuild with the new colorScheme when the user switches Light/Dark.
+        DistributedNotificationCenter.default.addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.refreshStyle() }
+        }
+
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reposition() }
         }
+    }
+
+    /// The current system appearance as a SwiftUI ColorScheme. Reads the global
+    /// AppleInterfaceStyle ("Dark" when dark, absent when light) — the borderless
+    /// accessory panel's effectiveAppearance doesn't track the system reliably.
+    static func systemColorScheme() -> ColorScheme {
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
     }
 
     func setVisible(_ visible: Bool) {
