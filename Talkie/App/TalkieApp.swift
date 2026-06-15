@@ -5,6 +5,12 @@ import SwiftUI
 struct TalkieApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    init() {
+        // Stop the Settings scene from auto-restoring; its restored Pill style
+        // picker would otherwise replay a stale selection over the user's choice.
+        SettingsSceneRestoration.clear()
+    }
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarContent()
