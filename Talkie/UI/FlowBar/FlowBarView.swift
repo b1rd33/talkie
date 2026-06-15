@@ -18,8 +18,8 @@ struct FlowBarView: View {
     /// shadow; the others wrap it in a capsule. Bare waveform is the new default.
     private var isChromeless: Bool { style == .bareWaveform || style == .hidden }
     /// Foreground that reads on any wallpaper: `.primary` follows the system
-    /// light/dark appearance for chromeless; white on the dark capsule styles.
-    private var contentForeground: Color { isChromeless ? .primary : .white }
+    /// light/dark appearance for chromeless + glass; white on the dark capsule.
+    private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
 
     var body: some View {
         Group {
@@ -109,7 +109,13 @@ struct FlowBarView: View {
                 }
             }
             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-        default: // frostedGlass, dynamicIsland — interim slim notch until their phases
+        case .frostedGlass:
+            // A small translucent glass lozenge that picks up the desktop behind it.
+            Capsule().fill(.ultraThinMaterial)
+                .frame(width: 60, height: 11)
+                .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        case .dynamicIsland: // interim slim notch until its phase
             Capsule().fill(.black.opacity(0.55)).frame(width: 56, height: 7)
         }
     }
@@ -124,8 +130,9 @@ struct FlowBarView: View {
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
                 .transition(.scale.combined(with: .opacity))
         } else {
-            content(tint: .green.opacity(0.85)) {
-                Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+            content(accent: .green) {
+                Image(systemName: "checkmark").font(.caption.bold())
+                    .foregroundStyle(style == .frostedGlass ? AnyShapeStyle(.green) : AnyShapeStyle(.white))
             }
         }
     }
@@ -139,8 +146,9 @@ struct FlowBarView: View {
             .font(.caption)
             .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
         } else {
-            content(tint: .red.opacity(0.85)) {
-                Text(message).font(.caption).foregroundStyle(.white)
+            content(accent: .red) {
+                Text(message).font(.caption)
+                    .foregroundStyle(style == .frostedGlass ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
                     .lineLimit(1).truncationMode(.tail)
             }
         }
@@ -161,24 +169,36 @@ struct FlowBarView: View {
     // MARK: chrome
 
     /// The active-state row of content, wrapped per style: chromeless styles get
-    /// only a drop shadow; the others get the dark capsule.
+    /// only a drop shadow; frosted glass a translucent capsule; dynamic island a
+    /// dark capsule (interim until its phase).
     private func activePill(@ViewBuilder content: () -> some View) -> some View {
-        self.content(tint: .black.opacity(0.78)) {
+        self.content(accent: nil) {
             HStack(spacing: 8) { content() }
         }
     }
 
+    /// `accent` nil = the style's neutral background (material or dark capsule);
+    /// a color = a tinted background for success (green) / error (red).
     @ViewBuilder
-    private func content(tint: Color, @ViewBuilder _ inner: () -> some View) -> some View {
-        if isChromeless {
+    private func content(accent: Color?, @ViewBuilder _ inner: () -> some View) -> some View {
+        switch style {
+        case .bareWaveform, .hidden:
             inner()
                 .frame(height: 34)
                 .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
-        } else {
+        case .frostedGlass:
             inner()
                 .padding(.horizontal, 16)
                 .frame(height: 34)
-                .background(tint, in: Capsule())
+                .background(accent.map { AnyShapeStyle($0.opacity(0.55)) } ?? AnyShapeStyle(.ultraThinMaterial),
+                            in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+        case .dynamicIsland:
+            inner()
+                .padding(.horizontal, 16)
+                .frame(height: 34)
+                .background(accent?.opacity(0.85) ?? .black.opacity(0.78), in: Capsule())
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
         }
     }
