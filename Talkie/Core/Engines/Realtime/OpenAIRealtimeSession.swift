@@ -7,6 +7,11 @@ protocol LiveDictationSession: Sendable {
     func cancel() async
 }
 
+/// Receives the cumulative partial transcript as it streams in. Synchronous and
+/// non-isolated — the receive loop must never await UI work, so the sink just
+/// hands the latest full string to a lock-box the coordinator pumps to the UI.
+typealias PartialTranscriptSink = @Sendable (String) -> Void
+
 /// One live Realtime transcription session: begin → feed (many) → finish | cancel.
 /// Deltas accumulate as they arrive; finish() commits the buffer and waits for the
 /// completed transcript. Errors surface on finish()/begin() — the coordinator
@@ -18,18 +23,21 @@ actor OpenAIRealtimeSession {
     private let language: String?
     private let encoder: RealtimePCMEncoder
 
+    private let onPartial: PartialTranscriptSink?
     private var receiveLoop: Task<Void, Never>?
     private var accumulated = ""
     private var completedTranscript: String?
     private var serverError: String?
     private var finishContinuation: CheckedContinuation<String, Error>?
 
-    init(transport: RealtimeTransport, model: String, vocabulary: String?, language: String?, encoder: RealtimePCMEncoder) {
+    init(transport: RealtimeTransport, model: String, vocabulary: String?, language: String?,
+         encoder: RealtimePCMEncoder, onPartial: PartialTranscriptSink? = nil) {
         self.transport = transport
         self.model = model
         self.vocabulary = vocabulary
         self.language = language
         self.encoder = encoder
+        self.onPartial = onPartial
     }
 
     func begin() async throws {
@@ -88,9 +96,11 @@ actor OpenAIRealtimeSession {
             switch event {
             case .transcriptDelta(let delta):
                 accumulated += delta
+                onPartial?(accumulated) // cumulative; synchronous, no MainActor hop
             case .transcriptCompleted(let transcript):
                 let final = transcript.isEmpty ? accumulated : transcript
                 completedTranscript = final
+                onPartial?(final)
                 finishContinuation?.resume(returning: final)
                 finishContinuation = nil
                 return
