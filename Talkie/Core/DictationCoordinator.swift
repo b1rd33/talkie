@@ -208,13 +208,13 @@ final class DictationCoordinator {
         stopLivePump()
     }
 
-    /// Drains the lock-box into `liveTranscript` on the main actor at ~12.5 Hz so
+    /// Drains the lock-box into `liveTranscript` on the main actor at ~25 Hz so
     /// the socket loop never blocks on UI and the pill never re-renders per delta.
     private func startLivePump() {
         livePumpTask?.cancel()
         livePumpTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(80))
+                try? await Task.sleep(for: .milliseconds(40))
                 guard let self else { return }
                 let latest = self.liveBox.get()
                 if latest != self.liveTranscript {
@@ -222,7 +222,15 @@ final class DictationCoordinator {
                     // Live typing rides the same throttle — coalesced, never per-delta
                     // keystrokes. Best-effort: a secure-field throw is ignored here and
                     // surfaces on the final flush in process().
-                    if self.activeLiveType { try? self.liveInserter?.type(upTo: latest) }
+                    //
+                    // Only type while focus is still on the press-time target. If the
+                    // user (or the system) moves focus mid-dictation, pause typing so
+                    // keystrokes never land in the wrong app; resume when focus returns.
+                    // The preview (liveTranscript) keeps updating regardless.
+                    if self.activeLiveType,
+                       self.frontmostApp().bundleID == self.targetApp.bundleID {
+                        try? self.liveInserter?.type(upTo: latest)
+                    }
                 }
             }
         }
@@ -317,11 +325,12 @@ final class DictationCoordinator {
             }
             try Task.checkCancellation()
 
-            // Skip cleanup only when instant genuinely ran AND the user asked for it,
-            // OR when live-typing was attempted (text is already in the document; it
-            // can't be re-polished). Collapses ANY base level (incl. .custom) to .none.
+            // Skip cleanup only when the user asked (instantSkipCleanup) and instant
+            // genuinely ran. Live typing alone no longer forces raw: with cleanup on,
+            // the live-typed raw is erased and replaced by the cleaned text below.
+            // Collapses ANY base level (incl. .custom) to .none when skipping.
             let liveTypeAttempted = activeLiveType && liveTapActive
-            let effectiveLevel: CleanupLevel = ((usedRealtime && activeInstantSkipCleanup) || liveTypeAttempted) ? .none : activeLevel
+            let effectiveLevel: CleanupLevel = (activeInstantSkipCleanup && (usedRealtime || liveTypeAttempted)) ? .none : activeLevel
             let cleaned: String
             if effectiveLevel == .none {
                 cleaned = transcript.text // spec §6: None = raw ASR text, no LLM call
@@ -348,16 +357,22 @@ final class DictationCoordinator {
             try Task.checkCancellation() // a cancelled cleanup must not insert raw text
 
             state = .inserting
-            // Live typing already streamed the text into the document — skip the
-            // final paste. (effectiveLevel is .none here, so cleaned == raw, matching
-            // what was typed.) Fall back to a normal insert if typing wasn't viable
-            // (AX not trusted) or realtime fell back to batch (B-7: deliver the batch
-            // result rather than leave the user with only partial realtime text).
             let liveTypeDelivered = activeLiveType && usedRealtime
             if liveTypeDelivered, let liveInserter {
-                stopLivePump() // no in-flight pump append racing the final flush
-                let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
-                if !viable { try await inserter.insert(cleaned) }
+                stopLivePump() // no in-flight pump append racing the final delivery
+                if effectiveLevel == .none {
+                    // Raw kept (skip-cleanup): cleaned == raw == what was typed. Flush
+                    // the final suffix the pump may have missed; fall back to a normal
+                    // insert if typing wasn't viable (AX not trusted) or realtime fell
+                    // back to batch (B-7: deliver the result, not partial realtime text).
+                    let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
+                    if !viable { try await inserter.insert(cleaned) }
+                } else {
+                    // Cleanup ran: erase the live-typed raw and replace it with the
+                    // cleaned text. If erase isn't viable (AX/secure), still deliver it.
+                    _ = try? liveInserter.eraseTyped()
+                    try await inserter.insert(cleaned)
+                }
             } else {
                 try await inserter.insert(cleaned)
             }
