@@ -108,10 +108,7 @@ final class AppServices {
                 UserDefaults.standard.object(forKey: "instantLiveType") as? Bool ?? false
             },
             liveInserter: LiveTextInserter(),
-            entitlement: {
-                entitlementStore.refresh() // keep the displayed `current` honest on every press
-                return entitlementStore.gateError
-            },
+            entitlement: nil, // Talkie is free — dictation is never gated by a trial/license.
             liveSessionFactory: { [history] onPartial in
                 guard UserDefaults.standard.string(forKey: "engineMode") == "instant" else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
@@ -123,7 +120,7 @@ final class AppServices {
                 let terms = history?.dictionaryTermStrings() ?? []
                 let session = OpenAIRealtimeSession(
                     transport: OpenAIRealtimeTransport(apiKey: key),
-                    model: "gpt-realtime-whisper",
+                    model: "gpt-4o-mini-transcribe",
                     vocabulary: terms.isEmpty ? nil : terms.joined(separator: ", "),
                     language: UserDefaults.standard.string(forKey: "pinnedLanguage"), // nil = auto-detect
                     encoder: RealtimePCMEncoder(),
@@ -137,10 +134,11 @@ final class AppServices {
     /// no entitlement yet (never licensed AND trial never started) OR a required
     /// permission is missing (spec §7 / §9).
     func showOnboardingIfNeeded() {
-        let needsEntitlement = !licenseManager.isLicensed && !entitlements.trialHasStarted
+        // Talkie is free — onboarding is driven purely by missing permissions now,
+        // not by entitlement (no trial/license to start).
         let micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let axTrusted = AXIsProcessTrusted()
-        guard needsEntitlement || !micGranted || !axTrusted else { return }
+        guard !micGranted || !axTrusted else { return }
         showOnboarding()
     }
 

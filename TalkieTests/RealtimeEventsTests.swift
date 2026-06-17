@@ -13,6 +13,7 @@ final class RealtimeEventsTests: XCTestCase {
         XCTAssertTrue(json.contains("gpt-realtime-whisper"))
         XCTAssertTrue(json.contains("Talkie, Archiev"))
         XCTAssertTrue(json.contains(#""language":"de""#)) // spec §3: pinned language reaches the ASR
+        XCTAssertTrue(json.contains(#""server_vad""#)) // VAD segments speech so deltas stream mid-hold
     }
 
     func testAudioAppendEncodesBase64() throws {
@@ -37,7 +38,24 @@ final class RealtimeEventsTests: XCTestCase {
         guard case .error(let message) = error else { return XCTFail("wrong case") }
         XCTAssertTrue(message.contains("bad session"))
 
-        let other = try RealtimeServerEvent.decode(Data(#"{"type":"input_audio_buffer.committed"}"#.utf8))
+        // speech_started/stopped carry no transcript — still ignored.
+        let other = try RealtimeServerEvent.decode(Data(#"{"type":"input_audio_buffer.speech_started"}"#.utf8))
         guard case .ignored = other else { return XCTFail("wrong case") }
+    }
+
+    func testSegmentCommittedDecodes() throws {
+        let event = try RealtimeServerEvent.decode(Data(#"{"type":"input_audio_buffer.committed"}"#.utf8))
+        guard case .segmentCommitted = event else { return XCTFail("expected .segmentCommitted, got \(event)") }
+    }
+
+    func testCommitEmptyErrorDecodesSeparately() throws {
+        // The trailing finish() commit on an already-drained buffer — benign, not a real error.
+        let empty = try RealtimeServerEvent.decode(Data(#"{"type":"error","error":{"code":"input_audio_buffer_commit_empty","message":"buffer too small"}}"#.utf8))
+        guard case .commitEmpty = empty else { return XCTFail("expected .commitEmpty, got \(empty)") }
+
+        // A different error code still surfaces as a real error.
+        let real = try RealtimeServerEvent.decode(Data(#"{"type":"error","error":{"code":"session_expired","message":"session expired"}}"#.utf8))
+        guard case .error(let message) = real else { return XCTFail("expected .error, got \(real)") }
+        XCTAssertTrue(message.contains("session expired"))
     }
 }
