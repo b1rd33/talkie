@@ -7,6 +7,27 @@ struct SettingsView: View {
     @Bindable var settings: SettingsStore
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Settings mode", selection: $settings.simpleMode) {
+                Text("Simple").tag(true)
+                Text("Advanced").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 220)
+            .padding(8)
+            Divider()
+            if settings.simpleMode {
+                SimpleSettingsView(keychain: keychain, settings: settings,
+                                   profiles: AppServices.shared.profiles)
+            } else {
+                devTabs
+            }
+        }
+        .frame(width: 560, height: 480)
+    }
+
+    private var devTabs: some View {
         TabView {
             ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
                 .tabItem { Label("Profiles", systemImage: "person.crop.circle") }
@@ -20,7 +41,6 @@ struct SettingsView: View {
             // Talkie is free — no License tab. (LicenseSettingsTab kept in the
             // codebase so paid licensing can be re-enabled later.)
         }
-        .frame(width: 560, height: 480)
     }
 }
 
@@ -117,15 +137,6 @@ private struct StyleSettingsTab: View {
     @State private var newBundleID = ""
     @State private var newPreset: StylePreset = .neutral
 
-    /// ISO-639-1 codes — sent to the ASR API verbatim; the cleanup prompt gets
-    /// the English name via Locale (see AppServices wiring).
-    private static let languages: [(name: String, code: String?)] = [
-        ("Auto-detect", nil), ("English", "en"), ("German", "de"), ("French", "fr"),
-        ("Spanish", "es"), ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"),
-        ("Polish", "pl"), ("Russian", "ru"), ("Ukrainian", "uk"), ("Turkish", "tr"),
-        ("Japanese", "ja"), ("Korean", "ko"), ("Chinese", "zh"), ("Hindi", "hi"),
-    ]
-
     var body: some View {
         Form {
             Section("Cleanup") {
@@ -153,7 +164,7 @@ private struct StyleSettingsTab: View {
             }
             Section("Language") {
                 Picker("Output language", selection: $settings.pinnedLanguage) {
-                    ForEach(Self.languages, id: \.code) { language in
+                    ForEach(SupportedLanguages.all, id: \.code) { language in
                         Text(language.name).tag(language.code)
                     }
                 }

@@ -97,6 +97,16 @@ final class DictationProfileTests: XCTestCase {
         XCTAssertFalse(a.samePipeline(as: b)) // a pipeline field differs
     }
 
+    func testSimpleDescriptionDistinctForBuiltInsGenericForCustom() {
+        for p in DictationProfile.builtIns {
+            XCTAssertFalse(p.simpleDescription.isEmpty)
+            XCTAssertNotEqual(p.simpleDescription, "Your custom settings.")
+        }
+        var custom = DictationProfile.instant
+        custom.id = UUID(); custom.builtIn = false
+        XCTAssertEqual(custom.simpleDescription, "Your custom settings.")
+    }
+
     func testCodableRoundTrip() throws {
         let data = try JSONEncoder().encode(DictationProfile.bestAccuracy)
         let decoded = try JSONDecoder().decode(DictationProfile.self, from: data)
