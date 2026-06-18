@@ -335,6 +335,7 @@ private struct EngineSettingsTab: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if let warning = CleanupCredentialWarning.message(
                     cleanupProvider: settings.cleanupProvider,
+                    cleanupModel: settings.cleanupModel,
                     hasOpenAIKey: !openAIKey.isEmpty,
                     hasOpenRouterKey: !openRouterKey.isEmpty) {
                     Label(warning, systemImage: "exclamationmark.triangle.fill")

@@ -30,4 +30,47 @@ final class CleanupCredentialWarningTests: XCTestCase {
         XCTAssertNil(CleanupCredentialWarning.message(
             cleanupProvider: "something-else", hasOpenAIKey: false, hasOpenRouterKey: true))
     }
+
+    // MARK: provider/model mispairing (silent cleanup degradation)
+
+    func testOpenAIProviderWithOpenRouterStyleModelWarns() {
+        // openai/gpt-5.4-nano is the OpenRouter-routed name; sent to OpenAI's API it
+        // 404s and cleanup silently degrades to raw text.
+        let msg = CleanupCredentialWarning.message(
+            cleanupProvider: "openai", cleanupModel: "openai/gpt-5.4-nano",
+            hasOpenAIKey: true, hasOpenRouterKey: true)
+        XCTAssertNotNil(msg)
+        XCTAssertTrue(msg!.contains("openai/gpt-5.4-nano"))
+    }
+
+    func testOpenRouterProviderWithOpenAIStyleModelWarns() {
+        let msg = CleanupCredentialWarning.message(
+            cleanupProvider: "openrouter", cleanupModel: "gpt-5.4-nano",
+            hasOpenAIKey: true, hasOpenRouterKey: true)
+        XCTAssertNotNil(msg)
+        XCTAssertTrue(msg!.contains("gpt-5.4-nano"))
+    }
+
+    func testMatchedProviderAndModelAreSilent() {
+        XCTAssertNil(CleanupCredentialWarning.message(
+            cleanupProvider: "openai", cleanupModel: "gpt-5.4-nano",
+            hasOpenAIKey: true, hasOpenRouterKey: true))
+        XCTAssertNil(CleanupCredentialWarning.message(
+            cleanupProvider: "openrouter", cleanupModel: "google/gemini-2.5-flash-lite",
+            hasOpenAIKey: true, hasOpenRouterKey: true))
+    }
+
+    func testMissingKeyTakesPriorityOverMismatch() {
+        let msg = CleanupCredentialWarning.message(
+            cleanupProvider: "openai", cleanupModel: "openai/gpt-5.4-nano",
+            hasOpenAIKey: false, hasOpenRouterKey: true)
+        XCTAssertNotNil(msg)
+        XCTAssertTrue(msg!.contains("no OpenAI key"))
+    }
+
+    func testEmptyModelDoesNotTriggerMismatch() {
+        XCTAssertNil(CleanupCredentialWarning.message(
+            cleanupProvider: "openai", cleanupModel: "",
+            hasOpenAIKey: true, hasOpenRouterKey: true))
+    }
 }
