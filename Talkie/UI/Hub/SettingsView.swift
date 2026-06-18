@@ -221,7 +221,7 @@ private struct EngineSettingsTab: View {
     @State private var openAIKey: String = ""
     @State private var openRouterKey: String = ""
 
-    private static let transcriptionPresets = ["gpt-4o-mini-transcribe", "gpt-4o-transcribe"] // whisper-1 retired from OpenAI's lineup
+    private static let transcriptionPresets = ModelPresets.transcription // shared source of truth (whisper-1 retired)
 
     var body: some View {
         Form {
