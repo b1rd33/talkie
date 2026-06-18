@@ -74,7 +74,10 @@ private struct ProfilesSettingsTab: View {
                         Button("Save") { profiles.saveCurrentSettingsToSelected(from: settings) }
                             .disabled(!isModified(from: selected))
                         Spacer()
-                        Button("Delete", role: .destructive) { profiles.delete(selected.id) }
+                        Button("Delete", role: .destructive) {
+                            profiles.delete(selected.id)
+                            profiles.selectedProfile?.apply(to: settings) // keep live settings in sync with the fallback
+                        }
                     }
                 }
             }

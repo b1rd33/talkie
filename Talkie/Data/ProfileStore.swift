@@ -41,10 +41,20 @@ final class ProfileStore {
     func saveAsNewProfile(named name: String, from settings: SettingsStore) -> DictationProfile {
         var profile = DictationProfile(snapshot: settings)
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        profile.name = trimmed.isEmpty ? "My Settings" : trimmed
+        profile.name = uniqueCustomName(trimmed.isEmpty ? "My Settings" : trimmed)
         customProfiles.append(profile)
         selectedProfileID = profile.id
         return profile
+    }
+
+    /// Appends " 2", " 3", … if a custom profile already uses `base`, so the picker
+    /// never shows two indistinguishable rows.
+    private func uniqueCustomName(_ base: String) -> String {
+        let existing = Set(customProfiles.map(\.name))
+        guard existing.contains(base) else { return base }
+        var n = 2
+        while existing.contains("\(base) \(n)") { n += 1 }
+        return "\(base) \(n)"
     }
 
     /// Saves the current settings into the selected CUSTOM profile (keeps its id/name).

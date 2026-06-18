@@ -126,6 +126,17 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.customProfiles.count, 1)
     }
 
+    func testSaveAsDedupsDisplayNames() {
+        let d = suite()
+        let s = settings(d)
+        let store = ProfileStore(defaults: d)
+        let first = store.saveAsNewProfile(named: "Mine", from: s)
+        let second = store.saveAsNewProfile(named: "Mine", from: s)
+        XCTAssertEqual(first.name, "Mine")
+        XCTAssertEqual(second.name, "Mine 2") // deduped
+        XCTAssertNotEqual(first.id, second.id)
+    }
+
     func testSaveCurrentSettingsUpdatesSelectedCustom() {
         let d = suite()
         let s = settings(d)
