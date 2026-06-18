@@ -7,6 +7,27 @@ struct SettingsView: View {
     @Bindable var settings: SettingsStore
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Settings mode", selection: $settings.simpleMode) {
+                Text("Simple").tag(true)
+                Text("Advanced").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 220)
+            .padding(8)
+            Divider()
+            if settings.simpleMode {
+                SimpleSettingsView(keychain: keychain, settings: settings,
+                                   profiles: AppServices.shared.profiles)
+            } else {
+                devTabs
+            }
+        }
+        .frame(width: 560, height: 480)
+    }
+
+    private var devTabs: some View {
         TabView {
             ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
                 .tabItem { Label("Profiles", systemImage: "person.crop.circle") }
@@ -20,7 +41,6 @@ struct SettingsView: View {
             // Talkie is free — no License tab. (LicenseSettingsTab kept in the
             // codebase so paid licensing can be re-enabled later.)
         }
-        .frame(width: 560, height: 480)
     }
 }
 

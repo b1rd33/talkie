@@ -24,6 +24,8 @@ final class SettingsStore {
     /// "bottomCenter" | "bottomLeft" | "bottomRight" | "topCenter"
     var pillPosition: String { didSet { defaults.set(pillPosition, forKey: "pillPosition") } }
     var keepRecordings: Bool { didSet { defaults.set(keepRecordings, forKey: "keepRecordings") } }
+    /// Settings window mode: Simple (profile-driven, default) vs Advanced (all knobs).
+    var simpleMode: Bool { didSet { defaults.set(simpleMode, forKey: "simpleMode") } }
     /// Instant streaming inserts the raw streamed text with no cleanup LLM pass.
     var instantSkipCleanup: Bool { didSet { defaults.set(instantSkipCleanup, forKey: "instantSkipCleanup") } }
     /// Type the streamed text into the focused app live while speaking. Implies
@@ -69,6 +71,7 @@ final class SettingsStore {
         pillStyle = PillStyle(migrating: defaults.string(forKey: "pillStyle"))
         pillPosition = defaults.string(forKey: "pillPosition") ?? "bottomCenter"
         keepRecordings = defaults.object(forKey: "keepRecordings") as? Bool ?? false
+        simpleMode = defaults.object(forKey: "simpleMode") as? Bool ?? true
         instantSkipCleanup = defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
         instantLiveType = defaults.object(forKey: "instantLiveType") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
