@@ -36,6 +36,29 @@ final class ProfileStore {
     func add(_ profile: DictationProfile) { customProfiles.append(profile) }
     func select(_ id: UUID) { selectedProfileID = id }
 
+    /// Creates a new custom profile from the current settings, selects it, returns it.
+    @discardableResult
+    func saveAsNewProfile(named name: String, from settings: SettingsStore) -> DictationProfile {
+        var profile = DictationProfile(snapshot: settings)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.name = trimmed.isEmpty ? "My Settings" : trimmed
+        customProfiles.append(profile)
+        selectedProfileID = profile.id
+        return profile
+    }
+
+    /// Saves the current settings into the selected CUSTOM profile (keeps its id/name).
+    /// No-op for built-ins (immutable) or when nothing is selected.
+    func saveCurrentSettingsToSelected(from settings: SettingsStore) {
+        guard let id = selectedProfileID,
+              let idx = customProfiles.firstIndex(where: { $0.id == id }) else { return }
+        var updated = DictationProfile(snapshot: settings)
+        updated.id = customProfiles[idx].id
+        updated.name = customProfiles[idx].name
+        updated.builtIn = false
+        customProfiles[idx] = updated
+    }
+
     /// Removes a custom profile; if it was selected, falls back to Private/Offline.
     /// Built-ins can't be deleted.
     func delete(_ id: UUID) {

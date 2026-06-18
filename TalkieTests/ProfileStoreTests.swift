@@ -114,6 +114,42 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedProfileID, DictationProfile.privateOffline.id)
     }
 
+    func testSaveAsNewProfileCapturesSettingsAndSelects() {
+        let d = suite()
+        let s = settings(d)
+        s.engineMode = "cloud"; s.cleanupLevel = "high"; s.cleanupProvider = "openai"
+        let store = ProfileStore(defaults: d)
+        let saved = store.saveAsNewProfile(named: "  Work  ", from: s)
+        XCTAssertEqual(saved.name, "Work") // trimmed
+        XCTAssertEqual(store.selectedProfileID, saved.id)
+        XCTAssertEqual(store.selectedProfile?.cleanupLevel, "high")
+        XCTAssertEqual(store.customProfiles.count, 1)
+    }
+
+    func testSaveCurrentSettingsUpdatesSelectedCustom() {
+        let d = suite()
+        let s = settings(d)
+        let store = ProfileStore(defaults: d)
+        let saved = store.saveAsNewProfile(named: "Mine", from: s)
+        s.cleanupLevel = "medium" // fine-tune after saving
+        store.saveCurrentSettingsToSelected(from: s)
+        XCTAssertEqual(store.selectedProfile?.id, saved.id) // same profile id/name
+        XCTAssertEqual(store.selectedProfile?.name, "Mine")
+        XCTAssertEqual(store.selectedProfile?.cleanupLevel, "medium") // updated
+        XCTAssertEqual(store.customProfiles.count, 1) // updated in place, not duplicated
+    }
+
+    func testSaveCurrentSettingsIsNoOpForBuiltIn() {
+        let d = suite()
+        let s = settings(d)
+        let store = ProfileStore(defaults: d)
+        store.select(DictationProfile.bestAccuracy.id) // a built-in
+        s.cleanupLevel = "light"
+        store.saveCurrentSettingsToSelected(from: s)
+        XCTAssertTrue(store.customProfiles.isEmpty) // built-ins are immutable
+        XCTAssertEqual(store.selectedProfileID, DictationProfile.bestAccuracy.id)
+    }
+
     func testDeleteNonSelectedKeepsSelection() {
         let store = ProfileStore(defaults: suite())
         var a = DictationProfile.instant; a.id = UUID(); a.name = "A"; a.builtIn = false
