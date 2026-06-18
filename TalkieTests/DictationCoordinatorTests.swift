@@ -60,7 +60,9 @@ final class DictationCoordinatorTests: XCTestCase {
 
     final class MockInserter: TextInserting {
         var inserted: [String] = []
+        var copied: [String] = []
         func insert(_ text: String) async throws { inserted.append(text) }
+        func copyToClipboard(_ text: String) { copied.append(text) }
     }
 
     @MainActor
@@ -535,6 +537,45 @@ final class DictationCoordinatorTests: XCTestCase {
         await waitForLive(coordinator, toEqual: "away back")
         XCTAssertEqual(liveInserter.typedUpTo.last, "away back") // typing resumed
         coordinator.cancel()
+    }
+
+    func testFinalDeliveryGoesToClipboardWhenFocusLeftTarget() async {
+        // Focus switched away before release — the final insert must NOT paste into the
+        // new frontmost app; it lands on the clipboard with a notification instead.
+        var frontmost: (bundleID: String?, name: String?) = ("com.target.app", "Target")
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               frontmostApp: { frontmost })
+        await coordinator.dictationKeyPressed()    // targetApp = com.target.app
+        frontmost = ("com.apple.finder", "Finder") // user switched apps mid-dictation
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.copied, ["Clean text."]) // clipboard fallback
+        XCTAssertTrue(inserter.inserted.isEmpty)         // never pasted into Finder
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testEraseFailureFallsBackToClipboardNotDuplicate() async {
+        // Live typing + cleanup, but erase isn't viable (AX lost) — must NOT insert cleaned
+        // on top of the raw (duplicate); falls back to the clipboard.
+        let live = MockLiveSession()
+        let liveInserter = MockLiveInserter()
+        liveInserter.viable = false // type() and eraseTyped() both return false
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               cleanupLevelProvider: { .medium },
+                                               instantSkipCleanupProvider: { false },
+                                               liveTypeProvider: { true },
+                                               liveInserter: liveInserter,
+                                               liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertEqual(liveInserter.eraseCount, 1)        // erase attempted
+        XCTAssertEqual(inserter.copied, ["Clean text."])  // clipboard fallback, not insert
+        XCTAssertTrue(inserter.inserted.isEmpty)          // no duplicate insert
     }
 
     // MARK: live transcript pump (Part B2)
