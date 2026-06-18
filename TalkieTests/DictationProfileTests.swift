@@ -88,6 +88,15 @@ final class DictationProfileTests: XCTestCase {
         XCTAssertTrue(DictationProfile.builtIns.allSatisfy(\.builtIn))
     }
 
+    func testSamePipelineIgnoresIdentityButTracksFields() {
+        var a = DictationProfile.instant
+        var b = DictationProfile.instant
+        b.id = UUID(); b.name = "Copy"; b.builtIn = false
+        XCTAssertTrue(a.samePipeline(as: b)) // identity differs, pipeline identical
+        b.cleanupLevel = "high"
+        XCTAssertFalse(a.samePipeline(as: b)) // a pipeline field differs
+    }
+
     func testCodableRoundTrip() throws {
         let data = try JSONEncoder().encode(DictationProfile.bestAccuracy)
         let decoded = try JSONDecoder().decode(DictationProfile.self, from: data)
