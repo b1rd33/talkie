@@ -55,14 +55,27 @@ private struct ProfilesSettingsTab: View {
                 if let selected = profiles.selectedProfile {
                     Label(Self.keyText(selected.requiredKey), systemImage: "key")
                         .font(.caption).foregroundStyle(.secondary)
+                    if isModified(from: selected) {
+                        HStack {
+                            Text("Modified from “\(selected.name)”.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Reapply") { selected.apply(to: settings) }
+                        }
+                    }
                 }
             }
             Section {
-                Text("Picking a profile sets the engine, transcription, and cleanup together. The other tabs still let you fine-tune; pick a profile again to reset to a known-good combination.")
+                Text("Picking a profile sets the engine, transcription, and cleanup together as a known-good combination. The other tabs still let you fine-tune — Reapply resets to the profile.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// True when live settings have drifted from the selected profile's pipeline.
+    private func isModified(from selected: DictationProfile) -> Bool {
+        !DictationProfile(snapshot: settings).samePipeline(as: selected)
     }
 
     private static func keyText(_ key: RequiredKey) -> String {

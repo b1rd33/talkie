@@ -68,6 +68,17 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.customProfiles.count, 1)
     }
 
+    func testMigrationReMigratesWhenSelectedIdIsStale() {
+        // A persisted selectedProfileID that no longer matches any profile (e.g. custom
+        // JSON failed to decode) must re-migrate rather than leave a dangling selection.
+        let d = suite()
+        let store = ProfileStore(defaults: d)
+        store.selectedProfileID = UUID() // stale — no matching built-in or custom
+        store.migrateIfNeeded(from: settings(d))
+        XCTAssertNotNil(store.selectedProfile)
+        XCTAssertEqual(store.selectedProfile?.name, "My Settings")
+    }
+
     func testMigrationIsNoOpOnceSelected() {
         let d = suite()
         let s = settings(d)
