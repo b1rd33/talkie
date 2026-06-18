@@ -50,7 +50,10 @@ final class ProfileStore {
     /// selected. (`shapeMatches` stays available for a future "your settings resemble
     /// built-in X — switch?" hint in Dev mode.)
     func migrateIfNeeded(from settings: SettingsStore) {
-        guard selectedProfileID == nil else { return }
+        // Re-migrate when there's no VALID selection — covers first run AND a stale id
+        // (e.g. custom-profile JSON that failed to decode), so the picker never points
+        // at a non-existent profile.
+        guard selectedProfile == nil else { return }
         let snapshot = DictationProfile(snapshot: settings)
         customProfiles.append(snapshot)
         selectedProfileID = snapshot.id
