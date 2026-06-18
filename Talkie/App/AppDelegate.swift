@@ -10,6 +10,7 @@ final class AppServices {
 
     let keychain = KeychainStore()
     let settings = SettingsStore()
+    let profiles = ProfileStore()
     let fnMonitor = FnKeyMonitor()
     let escMonitor = EscKeyMonitor()
     let recorder = AudioRecorder()
@@ -165,6 +166,10 @@ final class AppServices {
     }
 
     func startUI() {
+        // One-time: capture the user's current flat settings as a "My Settings"
+        // profile (verbatim) and select it. No apply — settings are unchanged; this
+        // just populates the profile picker so the selection matches live settings.
+        profiles.migrateIfNeeded(from: settings)
         flowBar = FlowBarPanel(coordinator: coordinator, recorder: recorder,
                                settings: settings,
                                onHideForHour: { [weak self] in self?.hidePillTemporarily() },
