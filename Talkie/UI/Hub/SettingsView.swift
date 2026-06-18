@@ -37,6 +37,8 @@ func cleanupInactive(_ s: SettingsStore) -> Bool {
 private struct ProfilesSettingsTab: View {
     @Bindable var settings: SettingsStore
     let profiles: ProfileStore
+    @State private var showSaveAs = false
+    @State private var newName = ""
 
     var body: some View {
         Form {
@@ -66,11 +68,30 @@ private struct ProfilesSettingsTab: View {
                 }
             }
             Section {
-                Text("Picking a profile sets the engine, transcription, and cleanup together as a known-good combination. The other tabs still let you fine-tune — Reapply resets to the profile.")
+                HStack {
+                    Button("Save as new profile…") { newName = ""; showSaveAs = true }
+                    if let selected = profiles.selectedProfile, !selected.builtIn {
+                        Button("Save") { profiles.saveCurrentSettingsToSelected(from: settings) }
+                            .disabled(!isModified(from: selected))
+                        Spacer()
+                        Button("Delete", role: .destructive) {
+                            profiles.delete(selected.id)
+                            profiles.selectedProfile?.apply(to: settings) // keep live settings in sync with the fallback
+                        }
+                    }
+                }
+            }
+            Section {
+                Text("Picking a profile sets the engine, transcription, and cleanup together as a known-good combination. Fine-tune in the other tabs, then Save into a custom profile or Reapply to reset. Built-in profiles can't be edited or deleted.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+        .alert("Save as new profile", isPresented: $showSaveAs) {
+            TextField("Profile name", text: $newName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { profiles.saveAsNewProfile(named: newName, from: settings) }
+        }
     }
 
     /// True when live settings have drifted from the selected profile's pipeline.
