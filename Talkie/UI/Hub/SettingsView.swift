@@ -137,15 +137,6 @@ private struct StyleSettingsTab: View {
     @State private var newBundleID = ""
     @State private var newPreset: StylePreset = .neutral
 
-    /// ISO-639-1 codes — sent to the ASR API verbatim; the cleanup prompt gets
-    /// the English name via Locale (see AppServices wiring).
-    private static let languages: [(name: String, code: String?)] = [
-        ("Auto-detect", nil), ("English", "en"), ("German", "de"), ("French", "fr"),
-        ("Spanish", "es"), ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"),
-        ("Polish", "pl"), ("Russian", "ru"), ("Ukrainian", "uk"), ("Turkish", "tr"),
-        ("Japanese", "ja"), ("Korean", "ko"), ("Chinese", "zh"), ("Hindi", "hi"),
-    ]
-
     var body: some View {
         Form {
             Section("Cleanup") {
@@ -173,7 +164,7 @@ private struct StyleSettingsTab: View {
             }
             Section("Language") {
                 Picker("Output language", selection: $settings.pinnedLanguage) {
-                    ForEach(Self.languages, id: \.code) { language in
+                    ForEach(SupportedLanguages.all, id: \.code) { language in
                         Text(language.name).tag(language.code)
                     }
                 }
