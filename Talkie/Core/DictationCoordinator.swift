@@ -357,8 +357,15 @@ final class DictationCoordinator {
             try Task.checkCancellation() // a cancelled cleanup must not insert raw text
 
             state = .inserting
+            // Never post a keystroke into an app other than the press-time target: if
+            // focus left before release (the user switched apps), leave the text on the
+            // clipboard and notify instead of pasting/typing into the wrong app.
+            let onTarget = frontmostApp().bundleID == targetApp.bundleID
             let liveTypeDelivered = activeLiveType && usedRealtime
-            if liveTypeDelivered, let liveInserter {
+            if !onTarget {
+                stopLivePump()
+                inserter.copyToClipboard(cleaned)
+            } else if liveTypeDelivered, let liveInserter {
                 stopLivePump() // no in-flight pump append racing the final delivery
                 if effectiveLevel == .none {
                     // Raw kept (skip-cleanup): cleaned == raw == what was typed. Flush
@@ -368,10 +375,12 @@ final class DictationCoordinator {
                     let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
                     if !viable { try await inserter.insert(cleaned) }
                 } else {
-                    // Cleanup ran: erase the live-typed raw and replace it with the
-                    // cleaned text. If erase isn't viable (AX/secure), still deliver it.
-                    _ = try? liveInserter.eraseTyped()
-                    try await inserter.insert(cleaned)
+                    // Cleanup ran: erase the live-typed raw and replace it with the cleaned
+                    // text. Only insert cleaned when the erase actually succeeded — otherwise
+                    // we'd leave the raw AND add cleaned (duplicate); fall back to clipboard.
+                    let erased = (try? liveInserter.eraseTyped()) ?? false
+                    if erased { try await inserter.insert(cleaned) }
+                    else { inserter.copyToClipboard(cleaned) }
                 }
             } else {
                 try await inserter.insert(cleaned)
