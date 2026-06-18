@@ -153,4 +153,19 @@ extension DictationProfile {
             && requiredKey == other.requiredKey
             && cleanupRuns == other.cleanupRuns
     }
+
+    /// Exact pipeline equality, ignoring identity (id/name/builtIn). Used to detect
+    /// when live settings have been fine-tuned away from the selected profile.
+    func samePipeline(as other: DictationProfile) -> Bool {
+        engineMode == other.engineMode
+            && instantSkipCleanup == other.instantSkipCleanup
+            && instantLiveType == other.instantLiveType
+            && transcriptionProvider == other.transcriptionProvider
+            && transcriptionModel == other.transcriptionModel
+            && openrouterTranscriptionModel == other.openrouterTranscriptionModel
+            && cleanupLevel == other.cleanupLevel
+            && cleanupProvider == other.cleanupProvider
+            && cleanupModel == other.cleanupModel
+            && customCleanupPrompt == other.customCleanupPrompt
+    }
 }
