@@ -14,6 +14,10 @@ enum InsertionError: Error, Equatable, LocalizedError {
 @MainActor
 protocol TextInserting: AnyObject {
     func insert(_ text: String) async throws
+    /// Leave text on the clipboard and notify, without posting any keystroke — used
+    /// when the press-time target app is no longer focused, so a paste/erase can never
+    /// land in the wrong app.
+    func copyToClipboard(_ text: String)
 }
 
 /// Inserts text into the frontmost app (spec §5), tiered:
@@ -72,6 +76,16 @@ final class TextInserter: TextInserting {
         }
         try await Task.sleep(for: restoreDelay) // let the target app read it
         pasteboardGuard.restoreIfUnchanged()
+    }
+
+    func copyToClipboard(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(trimmed, forType: .string)
+        notifier?.notify(title: "Copied — press ⌘V",
+                         body: "You switched apps mid-dictation — the text is on your clipboard.")
     }
 
     private static func postCmdV() -> Bool {

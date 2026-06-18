@@ -3,7 +3,9 @@ import AVFoundation
 import ApplicationServices
 
 enum OnboardingStep: Int, CaseIterable {
-    case welcome, trialOrLicense, microphone, accessibility, fnKey, engineChoice, practice, done
+    // Talkie is free — no trial/license step. (TrialOrLicenseStep is kept below,
+    // unused, so re-enabling paid licensing later is a one-line change.)
+    case welcome, microphone, accessibility, fnKey, engineChoice, practice, done
 }
 
 struct OnboardingView: View {
@@ -31,8 +33,6 @@ struct OnboardingView: View {
         switch step {
         case .welcome:
             WelcomeStep()
-        case .trialOrLicense:
-            TrialOrLicenseStep(entitlements: entitlements, advance: next)
         case .microphone:
             MicrophoneStep()
         case .accessibility:
@@ -61,8 +61,7 @@ struct OnboardingView: View {
             if step == .done {
                 Button("Start dictating") { onFinished() }
                     .keyboardShortcut(.defaultAction)
-            } else if step != .trialOrLicense {
-                // The trial/license step provides its own actions.
+            } else {
                 Button("Continue") { next() }
                     .keyboardShortcut(.defaultAction)
             }

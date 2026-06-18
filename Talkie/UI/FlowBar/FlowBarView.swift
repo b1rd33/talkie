@@ -21,6 +21,18 @@ struct FlowBarView: View {
     /// light/dark appearance for chromeless + glass; white on the dark capsule.
     private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
 
+    /// Per-phase progress label — the coordinator already distinguishes these states,
+    /// so surface them instead of a single lumped "Polishing…" (lets the user see when
+    /// cleanup is actually running).
+    private var statusLabel: String {
+        switch coordinator.state {
+        case .transcribing: "Transcribing…"
+        case .cleaning: "Cleaning…"
+        case .inserting: "Inserting…"
+        default: "Polishing…"
+        }
+    }
+
     var body: some View {
         Group {
             switch coordinator.state {
@@ -34,11 +46,9 @@ struct FlowBarView: View {
                     } else if settings?.engineMode == "instant" {
                         Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
                     }
-                    if showLiveText {
-                        liveTextView
-                    } else {
-                        WaveformCanvasView(recorder: recorder, color: contentForeground)
-                    }
+                    // Always show the waveform during recording — user prefers no live
+                    // transcript in the pill; the cleaned text is inserted at the end.
+                    WaveformCanvasView(recorder: recorder, color: contentForeground)
                     Text(recordingStarted, style: .timer) // spec §7: recording timer
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(contentForeground.opacity(0.85))
@@ -47,7 +57,7 @@ struct FlowBarView: View {
             case .transcribing, .cleaning, .inserting:
                 activePill {
                     ProgressView().controlSize(.small).tint(contentForeground)
-                    Text("Polishing…").font(.caption).foregroundStyle(contentForeground.opacity(0.85))
+                    Text(statusLabel).font(.caption).foregroundStyle(contentForeground.opacity(0.85))
                     cancelButton
                 }
             case .error(let message):
@@ -107,28 +117,11 @@ struct FlowBarView: View {
         }
     }
 
-    // MARK: live instant-transcript preview
-
-    /// Show the streamed text instead of the waveform once instant has produced any.
-    private var showLiveText: Bool {
-        settings?.engineMode == "instant" && !coordinator.liveTranscript.isEmpty
-    }
-
-    /// The tail of the streaming transcript, fading in at the leading edge and
-    /// scrolling within a fixed width so the pill never grows past 260×56.
-    private var liveTextView: some View {
-        Text(Self.tail(coordinator.liveTranscript, max: 42))
-            .font(.caption)
-            .foregroundStyle(contentForeground)
-            .lineLimit(1)
-            .truncationMode(.head)
-            .frame(maxWidth: 140, alignment: .trailing)
-            .mask(LinearGradient(colors: [.clear, .black, .black],
-                                 startPoint: .leading, endPoint: .trailing))
-            .animation(.spring(duration: 0.25), value: coordinator.liveTranscript)
-    }
+    // MARK: pill text helper
 
     /// Last `max` Characters of `s` (grapheme-safe — never splits an emoji).
+    /// Kept (with tests) for the upcoming settings redesign; the pill currently always
+    /// shows the waveform during recording (user preference: no transcript in the pill).
     static func tail(_ s: String, max: Int) -> String {
         s.count <= max ? s : String(s.suffix(max))
     }

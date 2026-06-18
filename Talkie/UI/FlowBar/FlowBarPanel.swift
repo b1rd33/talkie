@@ -103,7 +103,13 @@ final class FlowBarPanel {
     /// changes). Sets the full frame from PillLayout's constant size — never from
     /// panel.frame, which is transiently zero around rootView swaps.
     func reposition() {
-        guard let screen = NSScreen.main else { return }
+        // NSScreen.main is nil when the app is inactive with no key window — which can
+        // happen transiently at launch for a menu-bar accessory app. Without the
+        // fallback, reposition() silently no-ops then and the pill stays at its .zero
+        // origin until a later reposition — the most plausible cause of the intermittent
+        // "wrong position at launch, fixed after I open Settings" report. On a single
+        // display screens.first is the same screen; when .main is non-nil this is a no-op.
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let position = PillLayout.effectivePosition(
             style: settings?.pillStyle ?? .default,
             requested: settings?.pillPosition ?? "bottomCenter")

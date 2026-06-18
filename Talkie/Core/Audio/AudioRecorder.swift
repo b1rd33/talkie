@@ -36,7 +36,16 @@ final class AudioSink {
     private var samples: [Float] = [] // ~77 MB at the 20-min session cap (16k × 4 bytes/s)
     private var converter: AVAudioConverter?
     private var sourceFormat: AVAudioFormat?
-    private(set) var latestLevel: Float = 0
+    private let levelLock = NSLock()
+    private var _latestLevel: Float = 0
+    /// Thread-safe: written on the audio tap thread, read on the main thread by the
+    /// waveform timer (~30 Hz). Guarded so the cross-thread read isn't a data race.
+    var latestLevel: Float {
+        levelLock.lock(); defer { levelLock.unlock() }; return _latestLevel
+    }
+    private func setLevel(_ value: Float) {
+        levelLock.lock(); _latestLevel = value; levelLock.unlock()
+    }
 
     /// Streaming hook: every converted 16kHz mono chunk is forwarded here as it
     /// arrives (used by Instant mode). Called on the tap thread — consumer must
@@ -80,9 +89,9 @@ final class AudioSink {
             }
             var sum: Float = 0
             for i in 0..<n { sum += ptr[i] * ptr[i] }
-            latestLevel = min(1, sqrt(sum / Float(n)) * 5) // scaled RMS for UI bars (+25% per user feedback: bars too shy at arm's length)
+            setLevel(min(1, sqrt(sum / Float(n)) * 10)) // scaled RMS for UI bars (bumped 5→10 per user: more sensitive/reactive)
         } else {
-            latestLevel = 0
+            setLevel(0)
         }
     }
 
