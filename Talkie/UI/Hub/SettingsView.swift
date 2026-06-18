@@ -8,6 +8,8 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
+                .tabItem { Label("Profiles", systemImage: "person.crop.circle") }
             GeneralSettingsTab(settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
             EngineSettingsTab(keychain: keychain, settings: settings,
@@ -27,6 +29,50 @@ struct SettingsView: View {
 /// can't drift. (Part B widens this to also cover live typing.)
 func cleanupInactive(_ s: SettingsStore) -> Bool {
     s.engineMode == "instant" && (s.instantSkipCleanup || s.instantLiveType)
+}
+
+/// Profile picker: selecting a profile applies its whole pipeline (engine + providers
+/// + models + cleanup) as one consistent unit, so the invalid mixes (e.g. OpenAI
+/// provider + an OpenRouter-prefixed model) can't happen. Built-ins + custom profiles.
+private struct ProfilesSettingsTab: View {
+    @Bindable var settings: SettingsStore
+    let profiles: ProfileStore
+
+    var body: some View {
+        Form {
+            Section("Profile") {
+                Picker("Active profile", selection: Binding(
+                    get: { profiles.selectedProfileID ?? DictationProfile.privateOffline.id },
+                    set: { id in
+                        guard let p = profiles.allProfiles.first(where: { $0.id == id }) else { return }
+                        p.apply(to: settings) // writes the whole pipeline consistently
+                        profiles.select(p.id)
+                    })) {
+                    ForEach(profiles.allProfiles) { p in
+                        Text(p.builtIn ? p.name : "\(p.name) (custom)").tag(p.id)
+                    }
+                }
+                if let selected = profiles.selectedProfile {
+                    Label(Self.keyText(selected.requiredKey), systemImage: "key")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Text("Picking a profile sets the engine, transcription, and cleanup together. The other tabs still let you fine-tune; pick a profile again to reset to a known-good combination.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private static func keyText(_ key: RequiredKey) -> String {
+        switch key {
+        case .none: "No API key needed — runs on-device."
+        case .openAI: "Needs your OpenAI key."
+        case .openRouter: "Needs your OpenRouter key."
+        case .both: "Needs both your OpenAI and OpenRouter keys."
+        }
+    }
 }
 
 private struct StyleSettingsTab: View {
