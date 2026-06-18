@@ -21,6 +21,18 @@ struct FlowBarView: View {
     /// light/dark appearance for chromeless + glass; white on the dark capsule.
     private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
 
+    /// Per-phase progress label — the coordinator already distinguishes these states,
+    /// so surface them instead of a single lumped "Polishing…" (lets the user see when
+    /// cleanup is actually running).
+    private var statusLabel: String {
+        switch coordinator.state {
+        case .transcribing: "Transcribing…"
+        case .cleaning: "Cleaning…"
+        case .inserting: "Inserting…"
+        default: "Polishing…"
+        }
+    }
+
     var body: some View {
         Group {
             switch coordinator.state {
@@ -45,7 +57,7 @@ struct FlowBarView: View {
             case .transcribing, .cleaning, .inserting:
                 activePill {
                     ProgressView().controlSize(.small).tint(contentForeground)
-                    Text("Polishing…").font(.caption).foregroundStyle(contentForeground.opacity(0.85))
+                    Text(statusLabel).font(.caption).foregroundStyle(contentForeground.opacity(0.85))
                     cancelButton
                 }
             case .error(let message):
