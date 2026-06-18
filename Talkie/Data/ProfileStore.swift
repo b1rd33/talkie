@@ -43,18 +43,17 @@ final class ProfileStore {
         if selectedProfileID == id { selectedProfileID = DictationProfile.privateOffline.id }
     }
 
-    /// One-time migration of an existing install: when nothing is selected yet, map the
-    /// current flat settings onto a built-in by SHAPE (not exact models), or wrap them
-    /// verbatim in a custom "My Settings" profile, and select it. No-op once selected.
+    /// One-time migration of an existing install: when nothing is selected yet, wrap the
+    /// current flat settings VERBATIM in a custom "My Settings" profile and select it.
+    /// Verbatim (not snap-to-built-in) so migration never silently changes a user's tuned
+    /// config, and the selected profile always matches the live settings. No-op once
+    /// selected. (`shapeMatches` stays available for a future "your settings resemble
+    /// built-in X — switch?" hint in Dev mode.)
     func migrateIfNeeded(from settings: SettingsStore) {
         guard selectedProfileID == nil else { return }
         let snapshot = DictationProfile(snapshot: settings)
-        if let match = DictationProfile.builtIns.first(where: { snapshot.shapeMatches($0) }) {
-            selectedProfileID = match.id
-        } else {
-            customProfiles.append(snapshot)
-            selectedProfileID = snapshot.id
-        }
+        customProfiles.append(snapshot)
+        selectedProfileID = snapshot.id
     }
 
     /// First-run auto-selection from the "which key do you have?" answer.
