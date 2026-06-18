@@ -232,7 +232,7 @@ private struct EngineSettingsTab: View {
                     Text("On this Mac — free, offline").tag("local")
                 }
                 .pickerStyle(.radioGroup)
-                Text("Instant streams audio while you speak (gpt-realtime-whisper, billed per audio minute) so text lands ~1s after release. Batch waits until release (gpt-4o transcribe models).")
+                Text("Instant streams audio while you speak (gpt-4o-mini-transcribe, billed per audio minute) so text lands ~1s after release. Batch waits until release (gpt-4o transcribe models).")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Skip cleanup in instant mode (fastest)", isOn: $settings.instantSkipCleanup)
                     .disabled(settings.engineMode != "instant" || settings.instantLiveType)
@@ -333,7 +333,8 @@ private struct EngineSettingsTab: View {
                      ? "Uses your OpenAI key. gpt-5-family models automatically skip the reasoning pass for speed."
                      : "Uses your OpenRouter key. Latencies measured live on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
-                if let warning = CleanupCredentialWarning.message(
+                if !cleanupInactive(settings),
+                   let warning = CleanupCredentialWarning.message(
                     cleanupProvider: settings.cleanupProvider,
                     cleanupModel: settings.cleanupModel,
                     hasOpenAIKey: !openAIKey.isEmpty,
