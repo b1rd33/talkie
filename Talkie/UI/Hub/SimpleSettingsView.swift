@@ -11,12 +11,6 @@ struct SimpleSettingsView: View {
     @State private var openAIKey = ""
     @State private var openRouterKey = ""
 
-    private static let languages: [(name: String, code: String?)] = [
-        ("Auto-detect", nil), ("English", "en"), ("German", "de"), ("French", "fr"),
-        ("Spanish", "es"), ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"),
-        ("Polish", "pl"), ("Japanese", "ja"), ("Korean", "ko"), ("Chinese", "zh"),
-    ]
-
     var body: some View {
         Form {
             Section("What do you want?") {
@@ -43,7 +37,7 @@ struct SimpleSettingsView: View {
                 Picker("Language", selection: Binding(
                     get: { settings.pinnedLanguage },
                     set: { settings.pinnedLanguage = $0 })) {
-                    ForEach(Self.languages, id: \.code) { lang in
+                    ForEach(SupportedLanguages.all, id: \.code) { lang in
                         Text(lang.name).tag(lang.code)
                     }
                 }
@@ -60,14 +54,20 @@ struct SimpleSettingsView: View {
     }
 
     @ViewBuilder private var keyFields: some View {
-        switch profiles.selectedProfile?.requiredKey ?? .none {
+        let selected = profiles.selectedProfile
+        // Local profiles need the on-device models; without them EngineRouter falls back
+        // to the cloud (needing a key the profile claims none). Surface this for ANY
+        // local profile, independent of requiredKey (covers local + cleanup too).
+        let localModelsMissing = (selected?.engineMode == "local") && !FluidAudioBackend.modelsPresent
+        if localModelsMissing {
+            Label("On-device models aren't downloaded yet — run the Setup Assistant to enable offline mode (otherwise Talkie falls back to the cloud).",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.orange)
+            Button("Open Setup Assistant…") { AppServices.shared.showOnboarding() }
+        }
+        switch selected?.requiredKey ?? .none {
         case .none:
-            if profiles.selectedProfile?.engineMode == "local" && !FluidAudioBackend.modelsPresent {
-                Label("On-device models aren't downloaded yet — run the Setup Assistant to enable offline mode.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.orange)
-                Button("Open Setup Assistant…") { AppServices.shared.showOnboarding() }
-            } else {
+            if !localModelsMissing {
                 Label("No API key needed — runs on your Mac.", systemImage: "checkmark.seal")
                     .font(.caption).foregroundStyle(.green)
             }
