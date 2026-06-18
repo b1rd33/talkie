@@ -47,20 +47,25 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.customProfiles.count, 1)
     }
 
-    func testMigrationTweakedModelStillMatchesBuiltIn() {
+    func testMigrationPreservesTunedConfigVerbatim() {
+        // A tuned config that happens to share a built-in's shape must still be preserved
+        // EXACTLY (not snapped to the built-in's models/level), so migration never
+        // silently downgrades the user's settings.
         let d = suite()
         let s = settings(d)
-        // Best Accuracy shape (cloud / all-OpenAI / cleanup on) but a different model.
-        s.engineMode = "cloud"
-        s.transcriptionProvider = "openai"
-        s.transcriptionModel = "gpt-4o-mini-transcribe" // bestAccuracy pins gpt-4o-transcribe
+        s.engineMode = "instant"
+        s.instantSkipCleanup = false
         s.cleanupProvider = "openai"
-        s.cleanupModel = "gpt-5.4-nano"                  // bestAccuracy pins gpt-5.4-mini
-        s.cleanupLevel = "high"
+        s.cleanupModel = "gpt-5.4-mini" // Instant built-in pins gpt-5.4-nano
+        s.cleanupLevel = "high"         // Instant built-in pins medium
         let store = ProfileStore(defaults: d)
         store.migrateIfNeeded(from: s)
-        XCTAssertEqual(store.selectedProfileID, DictationProfile.bestAccuracy.id)
-        XCTAssertTrue(store.customProfiles.isEmpty) // matched a built-in, no custom wrap
+        let selected = store.selectedProfile
+        XCTAssertEqual(selected?.name, "My Settings")
+        XCTAssertEqual(selected?.builtIn, false)
+        XCTAssertEqual(selected?.cleanupModel, "gpt-5.4-mini") // exact value preserved
+        XCTAssertEqual(selected?.cleanupLevel, "high")
+        XCTAssertEqual(store.customProfiles.count, 1)
     }
 
     func testMigrationIsNoOpOnceSelected() {
