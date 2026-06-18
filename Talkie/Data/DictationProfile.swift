@@ -127,6 +127,18 @@ extension DictationProfile {
 
     /// First-run default is Private/Offline (no key required).
     static let builtIns: [DictationProfile] = [privateOffline, liveTyping, instant, bestAccuracy, cheapestCloud]
+
+    /// One-line, plain-language description for Simple mode's intent line.
+    var simpleDescription: String {
+        switch id {
+        case Self.privateOffline.id: "Runs entirely on your Mac — no internet, no API key."
+        case Self.liveTyping.id: "Types the words into the app as you speak (no cleanup)."
+        case Self.instant.id: "Streams as you speak, then tidies it up."
+        case Self.bestAccuracy.id: "Highest quality — transcribes, then polishes."
+        case Self.cheapestCloud.id: "Low-cost cloud transcription and cleanup."
+        default: "Your custom settings."
+        }
+    }
 }
 
 // MARK: - Migration helpers
