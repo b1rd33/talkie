@@ -128,3 +128,29 @@ extension DictationProfile {
     /// First-run default is Private/Offline (no key required).
     static let builtIns: [DictationProfile] = [privateOffline, liveTyping, instant, bestAccuracy, cheapestCloud]
 }
+
+// MARK: - Migration helpers
+
+extension DictationProfile {
+    /// A custom profile capturing the current flat settings verbatim (for migration
+    /// of existing installs). Named "My Settings".
+    init(snapshot s: SettingsStore) {
+        self.init(
+            id: UUID(), name: "My Settings", builtIn: false,
+            engineMode: s.engineMode, instantSkipCleanup: s.instantSkipCleanup,
+            instantLiveType: s.instantLiveType, transcriptionProvider: s.transcriptionProvider,
+            transcriptionModel: s.transcriptionModel,
+            openrouterTranscriptionModel: s.openrouterTranscriptionModel,
+            cleanupLevel: s.cleanupLevel, cleanupProvider: s.cleanupProvider,
+            cleanupModel: s.cleanupModel, customCleanupPrompt: s.customCleanupPrompt)
+    }
+
+    /// Same pipeline SHAPE — engine mode, required key (in-use providers), and whether
+    /// cleanup runs — ignoring exact model strings. Used to map flat settings onto a
+    /// built-in during migration so minor model tweaks still resolve to the built-in.
+    func shapeMatches(_ other: DictationProfile) -> Bool {
+        engineMode == other.engineMode
+            && requiredKey == other.requiredKey
+            && cleanupRuns == other.cleanupRuns
+    }
+}
