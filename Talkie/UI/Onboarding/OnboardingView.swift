@@ -278,7 +278,7 @@ private struct KeyChoiceStep: View {
     let downloader: ModelDownloader
     let profiles: ProfileStore
 
-    @State private var choice: KeyChoice = .neither
+    @State private var choice: KeyChoice?
     @State private var openAIKey = ""
     @State private var openRouterKey = ""
 
@@ -288,26 +288,20 @@ private struct KeyChoiceStep: View {
                 .font(.title2.bold())
             Text("Pick what you have — Talkie sets up a matching profile. You can change it anytime in Settings → Profiles.")
                 .foregroundStyle(.secondary)
-            Picker("Key choice", selection: Binding(get: { choice }, set: { select($0) })) {
-                Text("I have an OpenAI key — fast, accurate cloud").tag(KeyChoice.openAI)
-                Text("I have an OpenRouter key — cheapest cloud").tag(KeyChoice.openRouter)
-                Text("Neither — run offline on this Mac").tag(KeyChoice.neither)
+            Picker("Key choice", selection: Binding(
+                get: { choice },
+                set: { if let c = $0 { select(c) } })) {
+                Text("I have an OpenAI key — fast, accurate cloud").tag(Optional(KeyChoice.openAI))
+                Text("I have an OpenRouter key — cheapest cloud").tag(Optional(KeyChoice.openRouter))
+                Text("Neither — run offline on this Mac").tag(Optional(KeyChoice.neither))
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
 
-            switch choice {
-            case .openAI:
-                SecureField("OpenAI API key (sk-…)", text: $openAIKey)
-                    .onChange(of: openAIKey) { _, new in keychain.write(new, for: .openAIKey) }
-                keyHint
-            case .openRouter:
-                SecureField("OpenRouter API key (sk-or-…)", text: $openRouterKey)
-                    .onChange(of: openRouterKey) { _, new in keychain.write(new, for: .openRouterKey) }
-                keyHint
-            case .neither:
-                offlineModels
-            }
+            // Key fields follow the SELECTED PROFILE's actual requiredKey (not just the
+            // radio) so a migrated two-key "My Settings" (.both) shows BOTH fields rather
+            // than hiding the OpenRouter one.
+            keyFields
         }
         .onAppear {
             openAIKey = keychain.read(.openAIKey) ?? ""
@@ -316,6 +310,34 @@ private struct KeyChoiceStep: View {
         }
     }
 
+    @ViewBuilder private var keyFields: some View {
+        let selected = profiles.selectedProfile
+        if selected?.engineMode == "local" {
+            offlineModels
+        } else {
+            switch selected?.requiredKey ?? .none {
+            case .openAI:
+                openAIField; keyHint
+            case .openRouter:
+                openRouterField; keyHint
+            case .both:
+                openAIField; openRouterField
+                Text("This setup uses OpenAI for transcription and OpenRouter for cleanup.")
+                    .font(.caption).foregroundStyle(.secondary)
+            case .none:
+                EmptyView()
+            }
+        }
+    }
+
+    private var openAIField: some View {
+        SecureField("OpenAI API key (sk-…)", text: $openAIKey)
+            .onChange(of: openAIKey) { _, new in keychain.write(new, for: .openAIKey) }
+    }
+    private var openRouterField: some View {
+        SecureField("OpenRouter API key (sk-or-…)", text: $openRouterKey)
+            .onChange(of: openRouterKey) { _, new in keychain.write(new, for: .openRouterKey) }
+    }
     private var keyHint: some View {
         Text("Keys live in your Keychain and are used only from this Mac.")
             .font(.caption).foregroundStyle(.secondary)
@@ -351,13 +373,17 @@ private struct KeyChoiceStep: View {
         profiles.select(profile.id)
     }
 
-    /// The choice matching the currently-selected profile, so the radio reflects state
-    /// on appear without re-applying (which would clobber a migrated "My Settings").
-    private func inferredChoice() -> KeyChoice {
-        switch profiles.selectedProfile?.requiredKey {
+    /// The radio choice matching the selected profile, so it reflects state on appear
+    /// without re-applying (which would clobber a migrated "My Settings"). Returns nil
+    /// for a two-key (.both) or otherwise non-firstRun profile, leaving the radio
+    /// unselected while the key fields still show what's actually needed.
+    private func inferredChoice() -> KeyChoice? {
+        guard let profile = profiles.selectedProfile else { return nil }
+        switch profile.requiredKey {
+        case .openAI: return .openAI
         case .openRouter: return .openRouter
-        case .none: return .neither
-        default: return .openAI // .openAI or .both
+        case .none: return profile.engineMode == "local" ? .neither : nil
+        case .both: return nil
         }
     }
 }
