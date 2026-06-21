@@ -389,12 +389,13 @@ private struct KeyChoiceStep: View {
     /// for a two-key (.both) or otherwise non-firstRun profile, leaving the radio
     /// unselected while the key fields still show what's actually needed.
     private func inferredChoice() -> KeyChoice? {
-        guard let profile = profiles.selectedProfile else { return nil }
-        switch profile.requiredKey {
-        case .openAI: return .openAI
-        case .openRouter: return .openRouter
-        case .none: return profile.engineMode == "local" ? .neither : nil
-        case .both: return nil
+        // Pre-select a radio only when the current profile is EXACTLY that choice's
+        // first-run profile, so the "sets up X" label can't misname the selection
+        // (e.g. Best Accuracy or a custom profile won't light the "Instant" radio).
+        // Anything else (Best Accuracy, custom, migrated two-key) → no radio + caption.
+        guard let id = profiles.selectedProfileID else { return nil }
+        return [KeyChoice.openAI, .openRouter, .neither].first {
+            ProfileStore.firstRunProfile(forKeyChoice: $0).id == id
         }
     }
 }
