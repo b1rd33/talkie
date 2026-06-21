@@ -291,12 +291,23 @@ private struct KeyChoiceStep: View {
             Picker("Key choice", selection: Binding(
                 get: { choice },
                 set: { if let c = $0 { select(c) } })) {
-                Text("I have an OpenAI key — fast, accurate cloud").tag(Optional(KeyChoice.openAI))
-                Text("I have an OpenRouter key — cheapest cloud").tag(Optional(KeyChoice.openRouter))
-                Text("Neither — run offline on this Mac").tag(Optional(KeyChoice.neither))
+                Text("I have an OpenAI key — sets up \(ProfileStore.firstRunProfile(forKeyChoice: .openAI).name)")
+                    .tag(Optional(KeyChoice.openAI))
+                Text("I have an OpenRouter key — sets up \(ProfileStore.firstRunProfile(forKeyChoice: .openRouter).name)")
+                    .tag(Optional(KeyChoice.openRouter))
+                Text("Neither — run offline (\(ProfileStore.firstRunProfile(forKeyChoice: .neither).name))")
+                    .tag(Optional(KeyChoice.neither))
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+
+            // When the current profile doesn't map to one radio option (e.g. a migrated
+            // two-key "My Settings"), nothing is pre-selected — say what's in effect so
+            // the screen doesn't read as "nothing's set up."
+            if choice == nil, let selected = profiles.selectedProfile {
+                Text("Keeping your current setup: \(selected.name) — \(selected.keyRequirementShort).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             // Key fields follow the SELECTED PROFILE's actual requiredKey (not just the
             // radio) so a migrated two-key "My Settings" (.both) shows BOTH fields rather
@@ -378,12 +389,13 @@ private struct KeyChoiceStep: View {
     /// for a two-key (.both) or otherwise non-firstRun profile, leaving the radio
     /// unselected while the key fields still show what's actually needed.
     private func inferredChoice() -> KeyChoice? {
-        guard let profile = profiles.selectedProfile else { return nil }
-        switch profile.requiredKey {
-        case .openAI: return .openAI
-        case .openRouter: return .openRouter
-        case .none: return profile.engineMode == "local" ? .neither : nil
-        case .both: return nil
+        // Pre-select a radio only when the current profile is EXACTLY that choice's
+        // first-run profile, so the "sets up X" label can't misname the selection
+        // (e.g. Best Accuracy or a custom profile won't light the "Instant" radio).
+        // Anything else (Best Accuracy, custom, migrated two-key) → no radio + caption.
+        guard let id = profiles.selectedProfileID else { return nil }
+        return [KeyChoice.openAI, .openRouter, .neither].first {
+            ProfileStore.firstRunProfile(forKeyChoice: $0).id == id
         }
     }
 }

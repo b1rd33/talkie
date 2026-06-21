@@ -22,7 +22,7 @@ struct SimpleSettingsView: View {
                         profiles.select(p.id)
                     })) {
                     ForEach(profiles.allProfiles) { p in
-                        Text(p.builtIn ? p.name : "\(p.name) (custom)").tag(p.id)
+                        Text(p.displaySummary).tag(p.id)
                     }
                 }
                 .labelsHidden()
