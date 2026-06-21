@@ -13,6 +13,7 @@ struct OnboardingView: View {
     let keychain: KeychainStore
     let settings: SettingsStore
     let modelDownloader: ModelDownloader
+    let profiles: ProfileStore
     var onFinished: () -> Void = {}
 
     @State private var step: OnboardingStep = .welcome
@@ -40,7 +41,8 @@ struct OnboardingView: View {
         case .fnKey:
             FnKeyStep()
         case .engineChoice:
-            EngineChoiceStep(keychain: keychain, settings: settings, downloader: modelDownloader)
+            KeyChoiceStep(keychain: keychain, settings: settings,
+                          downloader: modelDownloader, profiles: profiles)
         case .practice:
             PracticeStep()
         case .done:
@@ -267,60 +269,95 @@ private struct FnKeyStep: View {
     }
 }
 
-private struct EngineChoiceStep: View {
+/// First-run engine/key choice, profile-driven: picking what you have selects and
+/// applies a matching profile (`ProfileStore.firstRunProfile`), then shows only the
+/// relevant key field or the offline model download. Changeable later in Settings.
+private struct KeyChoiceStep: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
     let downloader: ModelDownloader
+    let profiles: ProfileStore
 
+    @State private var choice: KeyChoice = .neither
     @State private var openAIKey = ""
     @State private var openRouterKey = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Choose your engine")
+            Text("How should Talkie work?")
                 .font(.title2.bold())
-            Picker("Transcription runs", selection: $settings.engineMode) {
-                Text("In the cloud (OpenAI)").tag("cloud")
-                Text("On this Mac (Parakeet)").tag("local")
+            Text("Pick what you have — Talkie sets up a matching profile. You can change it anytime in Settings → Profiles.")
+                .foregroundStyle(.secondary)
+            Picker("Key choice", selection: Binding(get: { choice }, set: { select($0) })) {
+                Text("I have an OpenAI key — fast, accurate cloud").tag(KeyChoice.openAI)
+                Text("I have an OpenRouter key — cheapest cloud").tag(KeyChoice.openRouter)
+                Text("Neither — run offline on this Mac").tag(KeyChoice.neither)
             }
             .pickerStyle(.radioGroup)
-            if settings.engineMode == "cloud" {
+            .labelsHidden()
+
+            switch choice {
+            case .openAI:
                 SecureField("OpenAI API key (sk-…)", text: $openAIKey)
                     .onChange(of: openAIKey) { _, new in keychain.write(new, for: .openAIKey) }
-                SecureField("OpenRouter API key for cleanup (sk-or-…)", text: $openRouterKey)
+                keyHint
+            case .openRouter:
+                SecureField("OpenRouter API key (sk-or-…)", text: $openRouterKey)
                     .onChange(of: openRouterKey) { _, new in keychain.write(new, for: .openRouterKey) }
-                Text("Keys live in your Keychain and are used only from this Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                switch downloader.state {
-                case .ready:
-                    Label("Local models downloaded.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                case .downloading:
-                    ProgressView(value: downloader.progress) {
-                        Text("Downloading models… \(Int(downloader.progress * 100))%")
-                    }
-                case .failed(let message):
-                    Text(message).foregroundStyle(.red)
-                    Button("Retry download") { Task { await downloader.download() } }
-                case .idle:
-                    if FluidAudioBackend.modelsPresent {
-                        Label("Local models downloaded.", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Download models (~2 GB)") { Task { await downloader.download() } }
-                            .buttonStyle(.borderedProminent)
-                    }
-                }
-                Text("Tip: add an OpenRouter key later for AI cleanup — without one, raw transcripts are inserted.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                keyHint
+            case .neither:
+                offlineModels
             }
         }
         .onAppear {
             openAIKey = keychain.read(.openAIKey) ?? ""
             openRouterKey = keychain.read(.openRouterKey) ?? ""
+            choice = inferredChoice() // reflect current selection without overriding it
+        }
+    }
+
+    private var keyHint: some View {
+        Text("Keys live in your Keychain and are used only from this Mac.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder private var offlineModels: some View {
+        switch downloader.state {
+        case .ready:
+            Label("Local models downloaded.", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .downloading:
+            ProgressView(value: downloader.progress) {
+                Text("Downloading models… \(Int(downloader.progress * 100))%")
+            }
+        case .failed(let message):
+            Text(message).foregroundStyle(.red)
+            Button("Retry download") { Task { await downloader.download() } }
+        case .idle:
+            if FluidAudioBackend.modelsPresent {
+                Label("Local models downloaded.", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            } else {
+                Button("Download models (~2 GB)") { Task { await downloader.download() } }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    /// Selects + applies the profile matching the choice (engine + providers + models
+    /// + cleanup), so the rest of the app is consistent with what the user picked.
+    private func select(_ newChoice: KeyChoice) {
+        choice = newChoice
+        let profile = ProfileStore.firstRunProfile(forKeyChoice: newChoice)
+        profile.apply(to: settings)
+        profiles.select(profile.id)
+    }
+
+    /// The choice matching the currently-selected profile, so the radio reflects state
+    /// on appear without re-applying (which would clobber a migrated "My Settings").
+    private func inferredChoice() -> KeyChoice {
+        switch profiles.selectedProfile?.requiredKey {
+        case .openRouter: return .openRouter
+        case .none: return .neither
+        default: return .openAI // .openAI or .both
         }
     }
 }
