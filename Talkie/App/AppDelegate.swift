@@ -146,7 +146,7 @@ final class AppServices {
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
         onboarding.show(entitlements: entitlements, keychain: keychain,
-                        settings: settings, modelDownloader: modelDownloader)
+                        settings: settings, modelDownloader: modelDownloader, profiles: profiles)
     }
 
     private var pillReshowTask: Task<Void, Never>?

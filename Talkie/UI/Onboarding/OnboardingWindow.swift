@@ -10,7 +10,7 @@ final class OnboardingWindow {
     private var window: NSWindow?
 
     func show(entitlements: EntitlementStore, keychain: KeychainStore,
-              settings: SettingsStore, modelDownloader: ModelDownloader) {
+              settings: SettingsStore, modelDownloader: ModelDownloader, profiles: ProfileStore) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -18,6 +18,7 @@ final class OnboardingWindow {
         }
         let view = OnboardingView(entitlements: entitlements, keychain: keychain,
                                   settings: settings, modelDownloader: modelDownloader,
+                                  profiles: profiles,
                                   onFinished: { [weak self] in self?.close() })
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hosting)
