@@ -107,6 +107,19 @@ final class DictationProfileTests: XCTestCase {
         XCTAssertEqual(custom.simpleDescription, "Your custom settings.")
     }
 
+    func testDisplaySummaryIsSelfContainedAndDistinct() {
+        // Built-ins: name + their description; all rows distinct.
+        let summaries = DictationProfile.builtIns.map(\.displaySummary)
+        XCTAssertEqual(Set(summaries).count, summaries.count) // no two rows identical
+        XCTAssertTrue(DictationProfile.instant.displaySummary.contains("Instant"))
+        XCTAssertTrue(DictationProfile.instant.displaySummary.contains("—")) // has a detail
+        // Custom: marked (custom) + shows the key it needs.
+        var custom = DictationProfile.bestAccuracy
+        custom.id = UUID(); custom.name = "Work"; custom.builtIn = false
+        XCTAssertTrue(custom.displaySummary.contains("Work (custom)"))
+        XCTAssertTrue(custom.displaySummary.contains("needs OpenAI"))
+    }
+
     func testCodableRoundTrip() throws {
         let data = try JSONEncoder().encode(DictationProfile.bestAccuracy)
         let decoded = try JSONDecoder().decode(DictationProfile.self, from: data)
