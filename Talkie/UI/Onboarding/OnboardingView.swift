@@ -291,12 +291,23 @@ private struct KeyChoiceStep: View {
             Picker("Key choice", selection: Binding(
                 get: { choice },
                 set: { if let c = $0 { select(c) } })) {
-                Text("I have an OpenAI key — fast, accurate cloud").tag(Optional(KeyChoice.openAI))
-                Text("I have an OpenRouter key — cheapest cloud").tag(Optional(KeyChoice.openRouter))
-                Text("Neither — run offline on this Mac").tag(Optional(KeyChoice.neither))
+                Text("I have an OpenAI key — sets up \(ProfileStore.firstRunProfile(forKeyChoice: .openAI).name)")
+                    .tag(Optional(KeyChoice.openAI))
+                Text("I have an OpenRouter key — sets up \(ProfileStore.firstRunProfile(forKeyChoice: .openRouter).name)")
+                    .tag(Optional(KeyChoice.openRouter))
+                Text("Neither — run offline (\(ProfileStore.firstRunProfile(forKeyChoice: .neither).name))")
+                    .tag(Optional(KeyChoice.neither))
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+
+            // When the current profile doesn't map to one radio option (e.g. a migrated
+            // two-key "My Settings"), nothing is pre-selected — say what's in effect so
+            // the screen doesn't read as "nothing's set up."
+            if choice == nil, let selected = profiles.selectedProfile {
+                Text("Keeping your current setup: \(selected.name) — \(selected.keyRequirementShort).")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             // Key fields follow the SELECTED PROFILE's actual requiredKey (not just the
             // radio) so a migrated two-key "My Settings" (.both) shows BOTH fields rather

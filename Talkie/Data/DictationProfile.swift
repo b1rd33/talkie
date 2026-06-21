@@ -128,6 +128,25 @@ extension DictationProfile {
     /// First-run default is Private/Offline (no key required).
     static let builtIns: [DictationProfile] = [privateOffline, liveTyping, instant, bestAccuracy, cheapestCloud]
 
+    /// Short key requirement, for picker rows: "needs OpenAI", "no key needed", etc.
+    var keyRequirementShort: String {
+        switch requiredKey {
+        case .none: "no key needed"
+        case .openAI: "needs OpenAI"
+        case .openRouter: "needs OpenRouter"
+        case .both: "needs OpenAI + OpenRouter"
+        }
+    }
+
+    /// Self-contained one-line label for picker rows, so profiles are distinguishable
+    /// at a glance — Picker rows render only their text (no subtitles in menu/radio
+    /// styles). Built-ins show their intent; custom profiles show the key they need.
+    var displaySummary: String {
+        let label = builtIn ? name : "\(name) (custom)"
+        let detail = builtIn ? simpleDescription : keyRequirementShort
+        return "\(label) — \(detail)"
+    }
+
     /// One-line, plain-language description for Simple mode's intent line.
     var simpleDescription: String {
         switch id {
