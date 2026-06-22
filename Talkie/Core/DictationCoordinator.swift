@@ -131,22 +131,24 @@ final class DictationCoordinator {
     /// spawning a Task per callback let them interleave across those awaits and corrupt
     /// shared state (the hands-free double-tap race). Serializing through one drainer
     /// guarantees each gesture's handler runs to completion before the next starts.
-    private var gestureQueue: [HotkeyGesture] = []
+    private var gestureQueue: [(gesture: HotkeyGesture, at: Date)] = []
     private var gestureTask: Task<Void, Never>?
 
     /// Enqueue a hotkey gesture for ordered handling. Safe to call from any sync
-    /// hotkey callback; all mutation here is main-actor isolated.
-    func handleGesture(_ gesture: HotkeyGesture) {
-        gestureQueue.append(gesture)
+    /// hotkey callback; all mutation here is main-actor isolated. `at` captures the
+    /// physical event time at enqueue so handlers measure real hold duration rather
+    /// than how long the queue (incl. recorder startup) took to reach them.
+    func handleGesture(_ gesture: HotkeyGesture, at: Date = Date()) {
+        gestureQueue.append((gesture, at))
         guard gestureTask == nil else { return } // a drainer is already running
         gestureTask = Task { [weak self] in
             guard let self else { return }
             while !self.gestureQueue.isEmpty {
                 let next = self.gestureQueue.removeFirst()
-                switch next {
-                case .press: await self.dictationKeyPressed()
-                case .release: await self.dictationKeyReleased()
-                case .toggleHandsFree: await self.handsFreeToggled()
+                switch next.gesture {
+                case .press: await self.dictationKeyPressed(at: next.at)
+                case .release: await self.dictationKeyReleased(at: next.at)
+                case .toggleHandsFree: await self.handsFreeToggled(at: next.at)
                 }
             }
             self.gestureTask = nil
@@ -158,15 +160,14 @@ final class DictationCoordinator {
         await gestureTask?.value
     }
 
-    func dictationKeyPressed() async {
+    func dictationKeyPressed(at pressedAt: Date = Date()) async {
         // Hands-free is a symmetric double-tap toggle (start AND stop via
         // handsFreeToggled). A single press must NOT stop it — otherwise the two
         // presses of a stop-double-tap bounce it off-then-on. So while hands-free
         // is recording, a stray press falls through to the guard below and no-ops.
         guard state == .idle || isErrorState else { return } // one dictation in flight
         if let entitlement, let gateError = entitlement() {
-            isHandsFree = false // a gated hands-free attempt must not stay armed (Phase 2 flag)
-            fail(gateError)
+            fail(gateError) // fail() disarms hands-free
             return
         }
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
@@ -182,7 +183,7 @@ final class DictationCoordinator {
         activeLiveType = liveTypeProvider()
         do {
             state = .recording
-            recordingStartedAt = Date()
+            recordingStartedAt = pressedAt
             try await recorder.start()
             guard state == .recording else {
                 // Released or cancelled while the engine was starting — the discard
@@ -222,9 +223,11 @@ final class DictationCoordinator {
         }
     }
 
-    func dictationKeyReleased() async {
+    func dictationKeyReleased(at releasedAt: Date = Date()) async {
         guard state == .recording, !isHandsFree else { return }
-        let heldFor = Date().timeIntervalSince(recordingStartedAt ?? Date())
+        // Measure physical hold (release event time − press event time), NOT handler
+        // run time — the serial queue may have delayed this handler behind a slow start.
+        let heldFor = releasedAt.timeIntervalSince(recordingStartedAt ?? releasedAt)
         if heldFor < minimumHold {
             capTask?.cancel()
             recorder.discard()
@@ -280,13 +283,13 @@ final class DictationCoordinator {
         livePumpTask = nil
     }
 
-    func handsFreeToggled() async {
+    func handsFreeToggled(at: Date = Date()) async {
         if state == .recording, isHandsFree {
             isHandsFree = false
             beginProcessing()
         } else if state == .idle || isErrorState {
             isHandsFree = true
-            await dictationKeyPressed()
+            await dictationKeyPressed(at: at)
         }
     }
 
@@ -312,6 +315,9 @@ final class DictationCoordinator {
     /// Cancels the in-flight dictation: recording is discarded; transcription and
     /// cleanup are interrupted cooperatively. Inserting is past the point of no return.
     func cancel() {
+        // Drop any gestures queued behind the one being cancelled, so a pending
+        // toggle/press can't start a fresh dictation after the user aborted.
+        gestureQueue.removeAll()
         switch state {
         case .recording:
             processingTask?.cancel() // a release may already have queued process() — kill it pre-start
@@ -509,6 +515,7 @@ final class DictationCoordinator {
     }
 
     private func fail(_ error: Error) {
+        isHandsFree = false // any failure disarms hands-free, else the next PTT inherits it
         if let engineError = error as? EngineError, engineError == .missingAPIKey {
             if let concrete = notifier as? Notifier {
                 concrete.notify(title: "API key missing",

@@ -283,6 +283,55 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle, "stop double-tap must end stopped, not recording")
     }
 
+    /// HIGH (codex): the serial queue runs `.press` (incl. slow recorder/socket
+    /// startup) before `.release`, so startup latency must NOT be counted as hold
+    /// time. With per-event timestamps, a quick double-tap stays a double-tap even
+    /// when startup is slow — taps are discarded and hands-free activates.
+    func testHandsFreeStartToleratesSlowStartup() async {
+        let recorder = MockRecorder()
+        recorder.startDelay = .milliseconds(120) // each start() is slower than minimumHold
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0.05)
+        let t0 = Date()
+        coordinator.handleGesture(.press, at: t0)                                  // physical taps are quick...
+        coordinator.handleGesture(.release, at: t0.addingTimeInterval(0.01))
+        coordinator.handleGesture(.press, at: t0.addingTimeInterval(0.05))
+        coordinator.handleGesture(.release, at: t0.addingTimeInterval(0.06))
+        coordinator.handleGesture(.toggleHandsFree, at: t0.addingTimeInterval(0.06)) // ...even though startup is slow
+        await coordinator.waitForGestures()
+        XCTAssertEqual(recorder.stopped, 0, "quick taps must be discarded, not processed as holds")
+        XCTAssertTrue(coordinator.isHandsFree, "quick double-tap must activate hands-free despite slow startup")
+        XCTAssertEqual(coordinator.state, .recording)
+    }
+
+    /// MEDIUM (codex): Esc/cancel must flush queued gestures so a pending toggle
+    /// can't start a new dictation after the user aborted.
+    func testCancelFlushesQueuedGestures() async {
+        let (coordinator, _, _) = makeCoordinator()
+        coordinator.handleGesture(.press)        // queued, drainer not yet run
+        coordinator.handleGesture(.release)
+        coordinator.handleGesture(.toggleHandsFree)
+        coordinator.cancel()                     // abort: drop everything pending
+        await coordinator.waitForGestures()
+        await coordinator.waitForIdle()
+        XCTAssertFalse(coordinator.isHandsFree, "queued toggle must not survive a cancel")
+        XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    /// MEDIUM (codex): a failed hands-free start must not leave hands-free armed,
+    /// or the next push-to-talk inherits it and its release is ignored.
+    func testFailedHandsFreeStartResetsHandsFree() async {
+        let recorder = MockRecorder()
+        recorder.startError = EngineError.requestFailed(status: 0, message: "mic")
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 0)
+        await coordinator.handsFreeToggled()     // arms hands-free, then start() throws
+        XCTAssertFalse(coordinator.isHandsFree, "a failed hands-free start must disarm hands-free")
+        guard case .error = coordinator.state else { return XCTFail("expected error state, got \(coordinator.state)") }
+    }
+
     // MARK: instant skip-cleanup (Part A)
 
     func testInstantSkipBypassesCleanupWhenRealtimeUsed() async {
