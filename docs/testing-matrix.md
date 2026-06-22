@@ -41,7 +41,7 @@ app never loses focus.
       History shows a cancelled row
 - [ ] Esc during "Polishing…" → same
 - [ ] Hands-free: double-tap `fn` starts; releasing `fn` mid-session does NOT
-      stop it; a single `fn` tap (or second double-tap) stops and processes
+      stop it; a single `fn` tap is IGNORED; a second double-tap stops and processes
 - [ ] ⇧⌥V re-pastes the last dictation at the current cursor
 - [ ] Sub-300ms `fn` tap → nothing recorded, no error
 
