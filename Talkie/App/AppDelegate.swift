@@ -174,9 +174,11 @@ final class AppServices {
                                settings: settings,
                                onHideForHour: { [weak self] in self?.hidePillTemporarily() },
                                onHidePermanently: { [weak self] in self?.settings.showFlowBar = false })
-        fnMonitor.onPress = { [coordinator] in Task { await coordinator.dictationKeyPressed() } }
-        fnMonitor.onRelease = { [coordinator] in Task { await coordinator.dictationKeyReleased() } }
-        fnMonitor.onDoubleTap = { [coordinator] in Task { await coordinator.handsFreeToggled() } }
+        // Route through the serial gesture queue so press/release/double-tap can't
+        // interleave across their async handlers (the hands-free double-tap race).
+        fnMonitor.onPress = { [coordinator] in coordinator.handleGesture(.press) }
+        fnMonitor.onRelease = { [coordinator] in coordinator.handleGesture(.release) }
+        fnMonitor.onDoubleTap = { [coordinator] in coordinator.handleGesture(.toggleHandsFree) }
         fnMonitor.start()
         escMonitor.onEsc = { [coordinator] in coordinator.cancel() }
         trackDictationActivity()
@@ -253,10 +255,10 @@ final class AppServices {
 
     private func rebindCustomShortcuts() {
         shortcuts.bindPushToTalk(settings.pttShortcut.flatMap(ShortcutSpec.init(storage:)),
-                                 onPress: { [coordinator] in Task { await coordinator.dictationKeyPressed() } },
-                                 onRelease: { [coordinator] in Task { await coordinator.dictationKeyReleased() } })
+                                 onPress: { [coordinator] in coordinator.handleGesture(.press) },
+                                 onRelease: { [coordinator] in coordinator.handleGesture(.release) })
         shortcuts.bindHandsFree(settings.handsFreeShortcut.flatMap(ShortcutSpec.init(storage:)),
-                                onToggle: { [coordinator] in Task { await coordinator.handsFreeToggled() } })
+                                onToggle: { [coordinator] in coordinator.handleGesture(.toggleHandsFree) })
     }
 
     /// Re-arming observation loop: pill visibility follows Settings → Appearance.

@@ -225,6 +225,64 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
     }
 
+    // MARK: hands-free double-tap (symmetric toggle, Model A)
+
+    /// Model A: a single tap must be IGNORED while hands-free is recording — only a
+    /// double-tap toggles. (Old behavior let a single press stop hands-free, which
+    /// collided with double-tap-to-stop and bounced it off-then-on.)
+    func testSingleTapDuringHandsFreeIsIgnored() async {
+        let (coordinator, recorder, _) = makeCoordinator()
+        await coordinator.handsFreeToggled()                 // double-tap to start
+        XCTAssertEqual(coordinator.state, .recording)
+        XCTAssertTrue(coordinator.isHandsFree)
+        await coordinator.dictationKeyPressed()              // a stray single tap...
+        await coordinator.dictationKeyReleased()             // ...must not stop or restart
+        XCTAssertTrue(coordinator.isHandsFree, "single tap must not disarm hands-free")
+        XCTAssertEqual(coordinator.state, .recording, "single tap must not stop hands-free")
+        XCTAssertEqual(recorder.started, 1, "single tap must not start a second recording")
+    }
+
+    /// A full start double-tap arrives as raw events (press,release,press,release,
+    /// doubleTap). Routed through the serial gesture queue they can't interleave, so
+    /// the gesture deterministically ends in a hands-free recording — never discarded
+    /// by a straggling release task (the START race).
+    func testHandsFreeStartGestureEndsRecording() async {
+        let recorder = MockRecorder()
+        // Real minimumHold so the double-tap's quick taps register as taps (discarded),
+        // not holds — matching production (0.3s) where a double-tap is two fast taps.
+        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
+                                               cleanup: MockCleanup(), inserter: MockInserter(),
+                                               minimumHold: 10)
+        coordinator.handleGesture(.press)
+        coordinator.handleGesture(.release)
+        coordinator.handleGesture(.press)
+        coordinator.handleGesture(.release)
+        coordinator.handleGesture(.toggleHandsFree)
+        await coordinator.waitForGestures()
+        XCTAssertEqual(coordinator.state, .recording, "start double-tap must end recording")
+        XCTAssertTrue(coordinator.isHandsFree)
+        XCTAssertEqual(recorder.stopped, 0, "hands-free recording must still be live")
+    }
+
+    /// A full stop double-tap (raw events) while hands-free must end stopped — the
+    /// constituent presses must not restart it (the off-then-on bounce).
+    func testHandsFreeStopGestureEndsStopped() async {
+        let (coordinator, _, _) = makeCoordinator()
+        coordinator.handleGesture(.toggleHandsFree)          // start hands-free
+        await coordinator.waitForGestures()
+        XCTAssertTrue(coordinator.isHandsFree)
+        XCTAssertEqual(coordinator.state, .recording)
+        coordinator.handleGesture(.press)                    // stop double-tap (raw)
+        coordinator.handleGesture(.release)
+        coordinator.handleGesture(.press)
+        coordinator.handleGesture(.release)
+        coordinator.handleGesture(.toggleHandsFree)
+        await coordinator.waitForGestures()
+        XCTAssertFalse(coordinator.isHandsFree, "stop double-tap must not leave hands-free re-armed")
+        await coordinator.waitForIdle()
+        XCTAssertEqual(coordinator.state, .idle, "stop double-tap must end stopped, not recording")
+    }
+
     // MARK: instant skip-cleanup (Part A)
 
     func testInstantSkipBypassesCleanupWhenRealtimeUsed() async {
@@ -806,14 +864,9 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.inserted, ["Clean text."])
     }
 
-    func testHandsFreeStopsOnSingleTapPress() async {
-        let (coordinator, recorder, inserter) = makeCoordinator()
-        await coordinator.handsFreeToggled()           // hands-free recording on
-        await coordinator.dictationKeyPressed()        // single fn tap stops it (spec §4)
-        await coordinator.waitForIdle()
-        XCTAssertEqual(recorder.stopped, 1)
-        XCTAssertEqual(inserter.inserted, ["Clean text."])
-    }
+    // (Removed testHandsFreeStopsOnSingleTapPress: hands-free is now a symmetric
+    // double-tap toggle — a single tap is ignored while hands-free, not a stop.
+    // Covered by testSingleTapDuringHandsFreeIsIgnored.)
 
     func testCancelDuringRecordingDiscardsAndGoesIdle() async {
         let (coordinator, recorder, inserter) = makeCoordinator()
