@@ -248,6 +248,23 @@ private struct StyleSettingsTab: View {
 private struct GeneralSettingsTab: View {
     @Bindable var settings: SettingsStore
 
+    /// Clears a custom shortcut back to its default. Only shown when one is set —
+    /// nil-ing the binding removes the stored override (SettingsStore didSet) and
+    /// AppDelegate re-binds the default fn / double-tap fn.
+    @ViewBuilder
+    private func shortcutResetButton(for binding: Binding<String?>) -> some View {
+        if binding.wrappedValue != nil {
+            Button {
+                binding.wrappedValue = nil
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .buttonStyle(.borderless)
+            .help("Reset to default")
+            .accessibilityLabel("Reset shortcut to default")
+        }
+    }
+
     var body: some View {
         Form {
             Section("Dictation") {
@@ -255,12 +272,14 @@ private struct GeneralSettingsTab: View {
                     HStack {
                         Text("fn").foregroundStyle(.secondary)
                         ShortcutRecorderField(storage: $settings.pttShortcut)
+                        shortcutResetButton(for: $settings.pttShortcut)
                     }
                 }
                 LabeledContent("Hands-free toggle") {
                     HStack {
                         Text("double-tap fn").foregroundStyle(.secondary)
                         ShortcutRecorderField(storage: $settings.handsFreeShortcut)
+                        shortcutResetButton(for: $settings.handsFreeShortcut)
                     }
                 }
                 LabeledContent("Paste last dictation", value: "⇧⌥V")
