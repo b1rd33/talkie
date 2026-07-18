@@ -8,3 +8,6 @@ tools/keygen/talkie-keygen
 
 # ad-hoc/release build artifacts
 build/
+
+# Isolated Codex implementation worktrees
+.worktrees/
