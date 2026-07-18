@@ -8,6 +8,9 @@ import UserNotifications
 final class AppServices {
     static let shared = AppServices()
 
+    // Must precede SettingsStore/ProfileStore: both may persist defaults during
+    // initialization, while setup migration needs the pre-initialization domain.
+    let setupState = SetupStateStore()
     let keychain = KeychainStore()
     let settings = SettingsStore()
     let profiles = ProfileStore()
@@ -16,7 +19,9 @@ final class AppServices {
     let recorder = AudioRecorder()
     let activeApp = ActiveAppMonitor()
     let shortcuts = ShortcutManager()
-    let pasteLastInserter = TextInserter(notifier: Notifier())
+    let permissions = PermissionManager()
+    let notifier = Notifier()
+    lazy var pasteLastInserter = TextInserter(notifier: notifier)
     let coordinator: DictationCoordinator
     let history: HistoryStore?
     let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
@@ -74,7 +79,7 @@ final class AppServices {
         let history = try? HistoryStore()
         self.history = history
         let activeApp = self.activeApp
-        let notifier = Notifier()
+        let notifier = self.notifier
         let resolver = StyleResolver(overrides: { [history] in
             history?.styleOverridesByBundleID() ?? [:]
         })
@@ -131,22 +136,24 @@ final class AppServices {
             })
     }
 
-    /// First launch (or licensed-but-broken setup): show onboarding when there is
-    /// no entitlement yet (never licensed AND trial never started) OR a required
-    /// permission is missing (spec §7 / §9).
+    /// Automatically show setup only for a genuinely incomplete installation.
+    /// Permission loss after completion is handled by targeted recovery UI.
     func showOnboardingIfNeeded() {
-        // Talkie is free — onboarding is driven purely by missing permissions now,
-        // not by entitlement (no trial/license to start).
         let micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let axTrusted = AXIsProcessTrusted()
-        guard !micGranted || !axTrusted else { return }
+        guard SetupLaunchPolicy.shouldShowOnboarding(
+            setupCompleted: setupState.setupCompleted,
+            microphoneGranted: micGranted,
+            accessibilityGranted: axTrusted
+        ) else { return }
         showOnboarding()
     }
 
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
         onboarding.show(entitlements: entitlements, keychain: keychain,
-                        settings: settings, modelDownloader: modelDownloader, profiles: profiles)
+                        settings: settings, modelDownloader: modelDownloader, profiles: profiles,
+                        setupState: setupState)
     }
 
     private var pillReshowTask: Task<Void, Never>?
@@ -192,6 +199,31 @@ final class AppServices {
         trackPillPosition()
         trackPillActivity()
         showOnboardingIfNeeded()
+        checkPermissionHealthOnce()
+    }
+
+    private var permissionHealthChecked = false
+
+    /// Recheck TCC health on every launch without opening or activating a window.
+    /// Notifications only take the user to repair UI after an explicit click.
+    private func checkPermissionHealthOnce() {
+        guard setupState.setupCompleted, !permissionHealthChecked else { return }
+        permissionHealthChecked = true
+        permissions.refresh()
+        for missing in permissions.health.missing {
+            switch missing {
+            case .microphone:
+                notifier.notify(title: "Microphone access needed",
+                                body: "Talkie cannot record until microphone access is restored.",
+                                destination: .microphone)
+            case .accessibility:
+                notifier.notify(title: "Accessibility access needed",
+                                body: "Dictation will be copied to the clipboard until access is restored.",
+                                destination: .accessibility)
+            case .engines:
+                break
+            }
+        }
     }
 
     private var pillFlashTask: Task<Void, Never>?
@@ -302,7 +334,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.notification.request.content.userInfo["talkie.action"] as? String == "openEngineSettings" {
+        if let action = response.notification.request.content.userInfo["talkie.action"] as? String,
+           let destination = NotificationDestination(action: action) {
+            if let url = destination.systemSettingsURL {
+                NSWorkspace.shared.open(url)
+                completionHandler()
+                return
+            }
             NSApp.activate(ignoringOtherApps: true)
             // SwiftUI Settings has no public programmatic opener; this selector is the
             // established workaround on macOS 14 — verify it still resolves on the SDK you build with.

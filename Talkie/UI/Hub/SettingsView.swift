@@ -305,10 +305,8 @@ private struct GeneralSettingsTab: View {
                 Text("Off (default): audio is deleted after transcription. On: saved to Application Support/Talkie/Recordings.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Setup") {
-                Button("Run Setup Assistant…") {
-                    AppServices.shared.showOnboarding()
-                }
+            Section("Permissions") {
+                PermissionSettingsRows(permissions: AppServices.shared.permissions)
             }
             Section("Startup") {
                 Toggle("Launch Talkie at login", isOn: $settings.launchAtLogin)
@@ -321,6 +319,10 @@ private struct GeneralSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { AppServices.shared.permissions.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            AppServices.shared.permissions.refresh()
+        }
     }
 }
 

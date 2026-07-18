@@ -653,7 +653,9 @@ final class DictationCoordinatorTests: XCTestCase {
         let inserter = MockInserter()
         let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
-                                               frontmostApp: { frontmost })
+                                               frontmostApp: { frontmost },
+                                               focusReturnPollCount: 1,
+                                               focusPollSleep: { _ in })
         await coordinator.dictationKeyPressed()    // targetApp = com.target.app
         frontmost = ("com.apple.finder", "Finder") // user switched apps mid-dictation
         await coordinator.dictationKeyReleased()
@@ -661,6 +663,29 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.copied, ["Clean text."]) // clipboard fallback
         XCTAssertTrue(inserter.inserted.isEmpty)         // never pasted into Finder
         XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testFinalDeliveryWaitsBrieflyForPressTimeTargetToReturn() async {
+        let inserter = MockInserter()
+        var reads = 0
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0,
+            frontmostApp: {
+                reads += 1
+                if reads == 1 { return ("com.target.app", "Target") } // press-time snapshot
+                if reads < 4 { return ("com.apple.finder", "Finder") }
+                return ("com.target.app", "Target")
+            },
+            focusReturnPollCount: 4,
+            focusPollSleep: { _ in })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Clean text."])
+        XCTAssertTrue(inserter.copied.isEmpty)
+        XCTAssertGreaterThanOrEqual(reads, 4)
     }
 
     func testEraseFailureFallsBackToClipboardNotDuplicate() async {

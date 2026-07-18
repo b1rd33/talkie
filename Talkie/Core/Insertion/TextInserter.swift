@@ -32,17 +32,19 @@ final class TextInserter: TextInserting {
     private let axTrustedCheck: () -> Bool
     private let notifier: Notifying?
     private let restoreDelay: Duration
-    private let pasteboardGuard = PasteboardGuard()
+    private let pasteboardGuard: PasteboardGuarding
 
     init(pasteKeystroke: (() -> Bool)? = nil,
          secureInputCheck: @escaping () -> Bool = { IsSecureEventInputEnabled() },
          axTrustedCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
          notifier: Notifying? = nil,
+         pasteboardGuard: PasteboardGuarding? = nil,
          restoreDelay: Duration = .milliseconds(300)) {
         self.pasteKeystroke = pasteKeystroke ?? Self.postCmdV
         self.secureInputCheck = secureInputCheck
         self.axTrustedCheck = axTrustedCheck
         self.notifier = notifier
+        self.pasteboardGuard = pasteboardGuard ?? PasteboardGuard()
         self.restoreDelay = restoreDelay
     }
 
@@ -61,7 +63,8 @@ final class TextInserter: TextInserting {
             pasteboard.clearContents()
             pasteboard.setString(trimmed, forType: .string)
             notifier?.notify(title: "Copied — press ⌘V",
-                             body: "Grant Accessibility in System Settings for automatic insertion.")
+                             body: "Grant Accessibility in System Settings for automatic insertion.",
+                             destination: .accessibility)
             return
         }
 

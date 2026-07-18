@@ -4,6 +4,13 @@ import UserNotifications
 @MainActor
 protocol Notifying: AnyObject {
     func notify(title: String, body: String)
+    func notify(title: String, body: String, destination: NotificationDestination?)
+}
+
+extension Notifying {
+    func notify(title: String, body: String, destination _: NotificationDestination?) {
+        notify(title: title, body: body)
+    }
 }
 
 /// UserNotifications-backed notifier. Requests authorization lazily on first use.
@@ -12,12 +19,10 @@ final class Notifier: Notifying {
     private var authRequested = false
 
     func notify(title: String, body: String) {
-        notify(title: title, body: body, openSettingsOnTap: false)
+        notify(title: title, body: body, destination: nil)
     }
 
-    /// openSettingsOnTap: clicking the notification deep-links to Settings → Engines
-    /// (spec §10) — handled by AppDelegate's UNUserNotificationCenterDelegate.
-    func notify(title: String, body: String, openSettingsOnTap: Bool) {
+    func notify(title: String, body: String, destination: NotificationDestination?) {
         let center = UNUserNotificationCenter.current()
         if !authRequested {
             authRequested = true
@@ -26,8 +31,8 @@ final class Notifier: Notifying {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        if openSettingsOnTap {
-            content.userInfo = ["talkie.action": "openEngineSettings"]
+        if let destination {
+            content.userInfo = ["talkie.action": destination.action]
         }
         center.add(UNNotificationRequest(identifier: UUID().uuidString,
                                          content: content, trigger: nil))

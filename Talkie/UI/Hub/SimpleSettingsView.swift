@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Simple mode: pick a profile in plain language, and Talkie shows only the API key
@@ -45,11 +46,19 @@ struct SimpleSettingsView: View {
                 Text("Pin a language so the transcriber doesn't drift to the wrong one.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+
+            Section("Permissions") {
+                PermissionSettingsRows(permissions: AppServices.shared.permissions)
+            }
         }
         .formStyle(.grouped)
         .onAppear {
             openAIKey = keychain.read(.openAIKey) ?? ""
             openRouterKey = keychain.read(.openRouterKey) ?? ""
+            AppServices.shared.permissions.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            AppServices.shared.permissions.refresh()
         }
     }
 

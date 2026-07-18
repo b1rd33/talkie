@@ -41,6 +41,9 @@ final class DictationCoordinator {
     private let notifier: Notifying?
     private let history: HistoryStore?
     private let frontmostApp: () -> (bundleID: String?, name: String?)
+    private let focusReturnPollCount: Int
+    private let focusPollInterval: Duration
+    private let focusPollSleep: (Duration) async -> Void
     private var recordingStartedAt: Date?
     private var processingTask: Task<Void, Never>?
     private var capTask: Task<Void, Never>?
@@ -93,6 +96,11 @@ final class DictationCoordinator {
          notifier: Notifying? = nil,
          history: HistoryStore? = nil,
          frontmostApp: @escaping () -> (bundleID: String?, name: String?) = { (nil, nil) },
+         focusReturnPollCount: Int = 8,
+         focusPollInterval: Duration = .milliseconds(20),
+         focusPollSleep: @escaping (Duration) async -> Void = { duration in
+             try? await Task.sleep(for: duration)
+         },
          dictionaryTermsProvider: @escaping () -> [String] = { [] },
          cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
@@ -113,6 +121,9 @@ final class DictationCoordinator {
         self.notifier = notifier
         self.history = history
         self.frontmostApp = frontmostApp
+        self.focusReturnPollCount = focusReturnPollCount
+        self.focusPollInterval = focusPollInterval
+        self.focusPollSleep = focusPollSleep
         self.dictionaryTermsProvider = dictionaryTermsProvider
         self.cleanupLevelProvider = cleanupLevelProvider
         self.stylePresetProvider = stylePresetProvider
@@ -405,7 +416,7 @@ final class DictationCoordinator {
             // Never post a keystroke into an app other than the press-time target: if
             // focus left before release (the user switched apps), leave the text on the
             // clipboard and notify instead of pasting/typing into the wrong app.
-            let onTarget = frontmostApp().bundleID == targetApp.bundleID
+            let onTarget = await pressTimeTargetIsFrontmost()
             let liveTypeDelivered = activeLiveType && usedRealtime
             if !onTarget {
                 stopLivePump()
@@ -465,6 +476,19 @@ final class DictationCoordinator {
         }
     }
 
+    /// LaunchServices can lag a click by a few run-loop turns. Poll briefly for
+    /// the press-time target to become frontmost, but never activate it ourselves.
+    /// If the user stays elsewhere, the caller uses the clipboard-safe route.
+    private func pressTimeTargetIsFrontmost() async -> Bool {
+        if frontmostApp().bundleID == targetApp.bundleID { return true }
+        guard focusReturnPollCount > 0 else { return false }
+        for _ in 0..<focusReturnPollCount {
+            await focusPollSleep(focusPollInterval)
+            if frontmostApp().bundleID == targetApp.bundleID { return true }
+        }
+        return false
+    }
+
     /// Moves a recorded file into Application Support for later retry (spec §8/§10).
     /// Returns the destination path, or nil if there was no file or the move failed.
     private func keepAudioForRetry(_ url: URL?, into subfolder: String = "FailedAudio") -> String? {
@@ -517,17 +541,13 @@ final class DictationCoordinator {
     private func fail(_ error: Error) {
         isHandsFree = false // any failure disarms hands-free, else the next PTT inherits it
         if let engineError = error as? EngineError, engineError == .missingAPIKey {
-            if let concrete = notifier as? Notifier {
-                concrete.notify(title: "API key missing",
-                                body: "Add your OpenAI key in Talkie's Settings → Engines.",
-                                openSettingsOnTap: true)
-            } else {
-                notifier?.notify(title: "API key missing",
-                                 body: "Add your OpenAI key in Talkie's Settings → Engines.")
-            }
+            notifier?.notify(title: "API key missing",
+                             body: "Add your OpenAI key in Talkie's Settings → Engines.",
+                             destination: .engines)
         } else if let audioError = error as? AudioError, case .microphoneDenied = audioError {
             notifier?.notify(title: "Microphone unavailable",
-                             body: "Check System Settings → Privacy & Security → Microphone.")
+                             body: "Allow Talkie in System Settings → Privacy & Security → Microphone.",
+                             destination: .microphone)
         }
         state = .error((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         Task { [weak self] in

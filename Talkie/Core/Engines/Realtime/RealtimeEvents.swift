@@ -8,7 +8,7 @@ import Foundation
 enum RealtimeClientEvent {
     case sessionUpdate(model: String, vocabulary: String?, language: String?)
     case audioAppend(pcm16: Data)
-    case audioCommit
+    case audioCommit(eventID: String)
 
     func encoded() -> Data {
         let payload: [String: Any]
@@ -39,8 +39,8 @@ enum RealtimeClientEvent {
             payload = ["type": "session.update", "session": session]
         case .audioAppend(let pcm16):
             payload = ["type": "input_audio_buffer.append", "audio": pcm16.base64EncodedString()]
-        case .audioCommit:
-            payload = ["type": "input_audio_buffer.commit"]
+        case .audioCommit(let eventID):
+            payload = ["type": "input_audio_buffer.commit", "event_id": eventID]
         }
         return try! JSONSerialization.data(withJSONObject: payload)
     }
@@ -48,17 +48,18 @@ enum RealtimeClientEvent {
 
 /// Server→client events we care about; everything else decodes to .ignored.
 enum RealtimeServerEvent: Equatable {
-    case transcriptDelta(String)
-    case transcriptCompleted(String)
+    case transcriptDelta(itemID: String, delta: String)
+    case transcriptCompleted(itemID: String, transcript: String)
+    case transcriptionFailed(itemID: String, message: String)
     /// A VAD-detected (or manually committed) audio segment was accepted — a
     /// `completed` for that segment will follow. We count these to know when all
     /// in-flight segments have resolved before finishing.
-    case segmentCommitted
+    case segmentCommitted(itemID: String)
     /// `input_audio_buffer.commit` rejected because the buffer was empty/too short
     /// (<100ms). Benign on the trailing finish() commit when VAD already drained
     /// everything — not a real error.
-    case commitEmpty
-    case error(String)
+    case commitEmpty(clientEventID: String?)
+    case error(String, clientEventID: String?)
     case ignored(type: String)
 
     static func decode(_ data: Data) throws -> RealtimeServerEvent {
@@ -68,17 +69,29 @@ enum RealtimeServerEvent: Equatable {
         }
         switch type {
         case "conversation.item.input_audio_transcription.delta":
-            return .transcriptDelta(object["delta"] as? String ?? "")
+            guard let itemID = object["item_id"] as? String else { throw EngineError.invalidResponse }
+            return .transcriptDelta(itemID: itemID, delta: object["delta"] as? String ?? "")
         case "conversation.item.input_audio_transcription.completed":
-            return .transcriptCompleted(object["transcript"] as? String ?? "")
+            guard let itemID = object["item_id"] as? String else { throw EngineError.invalidResponse }
+            return .transcriptCompleted(itemID: itemID,
+                                        transcript: object["transcript"] as? String ?? "")
+        case "conversation.item.input_audio_transcription.failed":
+            guard let itemID = object["item_id"] as? String else { throw EngineError.invalidResponse }
+            let errorObject = object["error"] as? [String: Any]
+            return .transcriptionFailed(itemID: itemID,
+                                        message: errorObject?["message"] as? String ?? "transcription failed")
         case "input_audio_buffer.committed":
-            return .segmentCommitted
+            guard let itemID = object["item_id"] as? String else { throw EngineError.invalidResponse }
+            return .segmentCommitted(itemID: itemID)
         case "error":
             let errorObject = object["error"] as? [String: Any]
             let code = errorObject?["code"] as? String
-            if code == "input_audio_buffer_commit_empty" { return .commitEmpty }
+            let clientEventID = errorObject?["event_id"] as? String
+            if code == "input_audio_buffer_commit_empty" {
+                return .commitEmpty(clientEventID: clientEventID)
+            }
             let message = (errorObject?["message"] as? String) ?? "realtime error"
-            return .error(message)
+            return .error(message, clientEventID: clientEventID)
         default:
             return .ignored(type: type)
         }
