@@ -75,6 +75,26 @@ targets:
         GENERATE_INFOPLIST_FILE: YES  # test bundle needs an Info.plist or signing fails
     dependencies:
       - target: Talkie
+  TalkieUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [TalkieUITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Talkie
+    dependencies:
+      - target: Talkie
+  TalkieHostIntegrationTests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [TalkieHostIntegrationTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Talkie
+    dependencies:
+      - target: Talkie
 schemes:
   Talkie:
     build:
@@ -84,4 +104,4 @@ schemes:
       config: Debug
     test:
       config: Debug
-      targets: [TalkieTests]
+      targets: [TalkieTests, TalkieUITests, TalkieHostIntegrationTests]

@@ -31,6 +31,7 @@ enum HotkeyGesture {
 final class DictationCoordinator {
     private(set) var state: DictationState = .idle
     private(set) var lastResult: DictationResult?
+    private var lastDeliveryTargetBundleID: String?
 
     private let recorder: AudioRecording
     private let engine: TranscriptionEngine
@@ -483,6 +484,7 @@ final class DictationCoordinator {
             if deliveredOnTarget, voiceActions.pressEnter {
                 _ = inserter.pressEnter()
             }
+            lastDeliveryTargetBundleID = deliveredOnTarget ? targetApp.bundleID : nil
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
             lastCompletedAt = Date()
@@ -516,6 +518,16 @@ final class DictationCoordinator {
                           appName: targetApp.name, duration: 0, engine: "openai", status: .failed,
                           audioPath: keepAudioForRetry(audioURL))
         }
+    }
+
+    /// Undo is posted only while the app that received the last insertion remains
+    /// frontmost, so ⌘Z can never affect an unrelated application.
+    func undoLastInsertion() -> Bool {
+        guard let target = lastDeliveryTargetBundleID,
+              frontmostApp().bundleID == target else { return false }
+        let undone = inserter.undo()
+        if undone { lastDeliveryTargetBundleID = nil }
+        return undone
     }
 
     /// LaunchServices can lag a click by a few run-loop turns. Poll briefly for

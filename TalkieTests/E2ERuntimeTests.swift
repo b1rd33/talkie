@@ -9,7 +9,8 @@ final class E2ERuntimeTests: XCTestCase {
             .appendingPathComponent("talkie-e2e-report-\(UUID().uuidString).jsonl")
         defer { try? FileManager.default.removeItem(at: url) }
         let reporter = try E2EReporter(configuration: E2ELaunchConfiguration(
-            sessionID: "session-1", scenario: "happy-path", reportURL: url))
+            sessionID: "session-1", scenario: "happy-path", reportURL: url,
+            fixtureText: nil))
         let runtime = E2ERuntime(reporter: reporter,
                                  targetBundleID: { "com.apple.TextEdit" })
 
@@ -31,7 +32,8 @@ final class E2ERuntimeTests: XCTestCase {
             .appendingPathComponent("talkie-e2e-report-\(UUID().uuidString).jsonl")
         defer { try? FileManager.default.removeItem(at: url) }
         let reporter = try E2EReporter(configuration: E2ELaunchConfiguration(
-            sessionID: "session-2", scenario: "cancel", reportURL: url))
+            sessionID: "session-2", scenario: "cancel", reportURL: url,
+            fixtureText: nil))
         let runtime = E2ERuntime(reporter: reporter, targetBundleID: { nil })
 
         runtime.handle(.toggleHandsFree)

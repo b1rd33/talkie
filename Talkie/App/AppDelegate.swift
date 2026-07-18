@@ -19,6 +19,7 @@ final class AppServices {
     let escMonitor: EscKeyMonitor
     let recorder: AudioRecorder
     let activeApp: ActiveAppMonitor
+    let contextReader: FocusedContextReader
     let shortcuts: ShortcutManager
     let permissions: PermissionManager
     let notifier: Notifier
@@ -29,6 +30,8 @@ final class AppServices {
     let licenseManager: LicenseManager
     let entitlements: EntitlementStore
     let onboarding: OnboardingWindow
+    let selectionTransforms: SelectionTransformCoordinator
+    let selectionTransformWindow: SelectionTransformWindow
     private(set) var flowBar: FlowBarPanel?
 #if DEBUG
     private var e2eBridge: E2ETestControlBridge?
@@ -95,6 +98,25 @@ final class AppServices {
                 defaults.string(forKey: "customCleanupPrompt")
             }
         )
+        let selectionTransformer = LLMSelectionTransformer(
+            apiKeyProvider: {
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+                return credential(provider == "openai" ? .openAIKey : .openRouterKey)
+            },
+            modelProvider: { defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite" },
+            endpointProvider: {
+                URL(string: (defaults.string(forKey: "cleanupProvider") ?? "openrouter") == "openai"
+                    ? "https://api.openai.com/v1/chat/completions"
+                    : "https://openrouter.ai/api/v1/chat/completions")!
+            },
+            extraPayloadProvider: {
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+                let model = defaults.string(forKey: "cleanupModel") ?? ""
+                return provider == "openai" && model.hasPrefix("gpt-5")
+                    ? ["reasoning_effort": "none"] : [:]
+            })
+        let selectionTransforms = SelectionTransformCoordinator(transformer: selectionTransformer)
+        let selectionTransformWindow = SelectionTransformWindow()
         let orTranscription = OpenRouterTranscriptionEngine(
             apiKeyProvider: { credential(.openRouterKey) },
             modelProvider: { defaults.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe" }
@@ -183,6 +205,7 @@ final class AppServices {
         self.escMonitor = escMonitor
         self.recorder = recorder
         self.activeApp = activeApp
+        self.contextReader = contextReader
         self.shortcuts = shortcuts
         self.permissions = permissions
         self.notifier = notifier
@@ -193,6 +216,8 @@ final class AppServices {
         self.licenseManager = license
         self.entitlements = entitlementStore
         self.onboarding = onboarding
+        self.selectionTransforms = selectionTransforms
+        self.selectionTransformWindow = selectionTransformWindow
     }
 
     /// Automatically show setup only for a genuinely incomplete installation.
@@ -252,6 +277,16 @@ final class AppServices {
             guard let last = coordinator.lastResult?.cleanedText else { return }
             Task { try? await pasteLastInserter.insert(last) }
         }
+        shortcuts.enableSelectionTransform { [contextReader, selectionTransforms,
+                                               selectionTransformWindow, history, notifier] in
+            guard let target = contextReader.captureSelectionTarget() else {
+                notifier.notify(title: "Select text first",
+                                body: "Highlight editable text, then press ⇧⌥T.")
+                return
+            }
+            selectionTransforms.capture(target)
+            selectionTransformWindow.show(coordinator: selectionTransforms, history: history)
+        }
         trackPillVisibility()
         trackCustomShortcuts()
         trackDockIconPolicy()
@@ -267,7 +302,9 @@ final class AppServices {
               let reporter = try? E2EReporter(configuration: configuration) else { return }
         let activeApp = self.activeApp
         let runtime = E2ERuntime(reporter: reporter,
-                                 targetBundleID: { activeApp.frontmost.bundleID })
+                                 targetBundleID: { activeApp.frontmost.bundleID },
+                                 inserter: TextInserter(notifier: notifier),
+                                 fixtureText: configuration.fixtureText)
         let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
         bridge.start()
         e2eBridge = bridge

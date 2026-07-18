@@ -37,9 +37,11 @@ struct TalkieApp: App {
 struct MenuBarContent: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable private var settings = AppServices.shared.settings
+    private let coordinator = AppServices.shared.coordinator
 
     var body: some View {
         Text("Talkie — hold fn to dictate")
+        Text("Transform selected text: ⇧⌥T").font(.caption)
         Divider()
         // spec §7: the menu carries the Cloud/Local engine picker too — bound to
         // the same SettingsStore property the Engines tab's radio group uses (Phase 3).
@@ -54,6 +56,14 @@ struct MenuBarContent: View {
                 Text(language.name).tag(language.code)
             }
         }
+        Divider()
+        Button("Copy last dictation") {
+            guard let text = coordinator.lastResult?.cleanedText else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+        .disabled(coordinator.lastResult == nil)
+        Button("Undo last insertion") { _ = coordinator.undoLastInsertion() }
         Divider()
         Button("Open Talkie") {
             openWindow(id: "hub")

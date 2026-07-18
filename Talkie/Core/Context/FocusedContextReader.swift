@@ -66,6 +66,44 @@ final class FocusedContextReader: FocusedContextReading {
                                       selection: selection)
     }
 
+    /// Captures only the explicit selection and an AX replacement handle. The
+    /// caller owns its short lifetime; this reader never stores the text or element.
+    func captureSelectionTarget() -> SelectionTarget? {
+        guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(),
+              let element = focusedElement(),
+              stringAttribute(kAXSubroleAttribute, element: element) != kAXSecureTextFieldSubrole,
+              let selected = stringAttribute(kAXSelectedTextAttribute, element: element),
+              !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              var range = rangeAttribute(element: element) else { return nil }
+        return SelectionTarget(originalText: String(selected.prefix(8_000))) { replacement in
+            var currentRange = range
+            guard let axRange = AXValueCreate(.cfRange, &currentRange),
+                  AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString,
+                                               axRange) == .success,
+                  AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString,
+                                               replacement as CFString) == .success else { return false }
+            range.length = replacement.utf16.count
+            return true
+        }
+    }
+
+    private func focusedElement() -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
+                                            kAXFocusedUIElementAttribute as CFString,
+                                            &value) == .success else { return nil }
+        return value as! AXUIElement?
+    }
+
+    private func rangeAttribute(element: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString,
+                                            &value) == .success,
+              let axValue = value as! AXValue? else { return nil }
+        var range = CFRange()
+        return AXValueGetValue(axValue, .cfRange, &range) ? range : nil
+    }
+
     private func stringAttribute(_ attribute: String, element: AXUIElement) -> String? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success

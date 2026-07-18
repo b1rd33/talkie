@@ -72,10 +72,15 @@ final class E2ERuntime {
     private let targetBundleID: () -> String?
     private var state: State = .idle
     private var handsFree = false
+    private let inserter: TextInserting?
+    private let fixtureText: String?
 
-    init(reporter: E2EReporter, targetBundleID: @escaping () -> String?) {
+    init(reporter: E2EReporter, targetBundleID: @escaping () -> String?,
+         inserter: TextInserting? = nil, fixtureText: String? = nil) {
         self.reporter = reporter
         self.targetBundleID = targetBundleID
+        self.inserter = inserter
+        self.fixtureText = fixtureText
     }
 
     func handle(_ command: E2ECommand) {
@@ -108,9 +113,26 @@ final class E2ERuntime {
     private func finish() {
         reporter.record(state: "transcribing", targetBundleID: targetBundleID())
         reporter.record(state: "inserting", targetBundleID: targetBundleID())
-        state = .idle
-        reporter.record(state: "idle", targetBundleID: targetBundleID(),
-                        deliveryRoute: "insert", passed: true, reason: nil)
+        if let fixtureText, let inserter {
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await inserter.insert(fixtureText)
+                    self.state = .idle
+                    self.reporter.record(state: "idle", targetBundleID: self.targetBundleID(),
+                                         deliveryRoute: "insert", passed: true, reason: nil)
+                } catch {
+                    self.state = .idle
+                    self.reporter.record(state: "idle", targetBundleID: self.targetBundleID(),
+                                         deliveryRoute: "none", passed: false,
+                                         reason: "insertion-failed")
+                }
+            }
+        } else {
+            state = .idle
+            reporter.record(state: "idle", targetBundleID: targetBundleID(),
+                            deliveryRoute: "insert", passed: true, reason: nil)
+        }
     }
 }
 
@@ -119,6 +141,7 @@ final class E2ETestControlBridge {
     private let configuration: E2ELaunchConfiguration
     private let runtime: E2ERuntime
     private var observer: NSObjectProtocol?
+    private var commandTask: Task<Void, Never>?
 
     init(configuration: E2ELaunchConfiguration, runtime: E2ERuntime) {
         self.configuration = configuration
@@ -136,6 +159,29 @@ final class E2ETestControlBridge {
                   let command = E2ECommand(rawValue: raw) else { return }
             Task { @MainActor in self?.runtime.handle(command) }
         }
+        startCommandFileBridge()
+    }
+
+    private func startCommandFileBridge() {
+        let url = configuration.reportURL.appendingPathExtension("commands")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        commandTask = Task { [weak self] in
+            var consumed = 0
+            while !Task.isCancelled {
+                if let data = try? Data(contentsOf: url), data.count > consumed {
+                    let newData = data.subdata(in: consumed..<data.count)
+                    consumed = data.count
+                    if let text = String(data: newData, encoding: .utf8) {
+                        for line in text.split(whereSeparator: \.isNewline) {
+                            if let command = E2ECommand(rawValue: String(line)) {
+                                self?.runtime.handle(command)
+                            }
+                        }
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
     }
 
     static func notificationName(sessionID: String) -> Notification.Name {
@@ -143,6 +189,7 @@ final class E2ETestControlBridge {
     }
 
     deinit {
+        commandTask?.cancel()
         if let observer { DistributedNotificationCenter.default().removeObserver(observer) }
     }
 }

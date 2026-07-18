@@ -112,6 +112,26 @@ final class HistoryStore {
         allSnippets().map { SnippetExpansion(trigger: $0.trigger, expansion: $0.expansion) }
     }
 
+    // MARK: - Selection transform presets
+
+    func addTransformPreset(name: String, instruction: String, shortcut: String? = nil) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let instruction = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !instruction.isEmpty else { return }
+        context.insert(TransformPreset(name: name, instruction: instruction, shortcut: shortcut))
+        try? context.save()
+    }
+
+    func allTransformPresets() -> [TransformPreset] {
+        let descriptor = FetchDescriptor<TransformPreset>(sortBy: [SortDescriptor(\.name)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    func deleteTransformPreset(_ preset: TransformPreset) {
+        context.delete(preset)
+        try? context.save()
+    }
+
     private func normalized(_ soundsLike: String?) -> String? {
         guard let trimmed = soundsLike?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else { return nil }

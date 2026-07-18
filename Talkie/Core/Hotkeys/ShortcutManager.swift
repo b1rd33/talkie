@@ -61,10 +61,16 @@ final class ShortcutManager {
     private var pasteLastHotKey: HotKey?
     private var pttHotKey: HotKey?
     private var handsFreeHotKey: HotKey?
+    private var transformHotKey: HotKey?
 
     func enablePasteLast(_ action: @escaping () -> Void) {
         pasteLastHotKey = HotKey(key: .v, modifiers: [.shift, .option])
         pasteLastHotKey?.keyDownHandler = action
+    }
+
+    func enableSelectionTransform(_ action: @escaping () -> Void) {
+        transformHotKey = HotKey(key: .t, modifiers: [.shift, .option])
+        transformHotKey?.keyDownHandler = action
     }
 
     /// Rebinds the push-to-talk combo (nil clears it). Hold = record, release = process.

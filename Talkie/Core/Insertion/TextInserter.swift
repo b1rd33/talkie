@@ -21,10 +21,12 @@ protocol TextInserting: AnyObject {
     /// Best-effort Return key action. Implementations must independently verify that
     /// synthetic input is safe before posting it.
     func pressEnter() -> Bool
+    func undo() -> Bool
 }
 
 extension TextInserting {
     func pressEnter() -> Bool { false }
+    func undo() -> Bool { false }
 }
 
 /// Inserts text into the frontmost app (spec §5), tiered:
@@ -36,6 +38,7 @@ extension TextInserting {
 final class TextInserter: TextInserting {
     private let pasteKeystroke: () -> Bool
     private let enterKeystroke: () -> Bool
+    private let undoKeystroke: () -> Bool
     private let secureInputCheck: () -> Bool
     private let axTrustedCheck: () -> Bool
     private let notifier: Notifying?
@@ -44,6 +47,7 @@ final class TextInserter: TextInserting {
 
     init(pasteKeystroke: (() -> Bool)? = nil,
          enterKeystroke: (() -> Bool)? = nil,
+         undoKeystroke: (() -> Bool)? = nil,
          secureInputCheck: @escaping () -> Bool = { IsSecureEventInputEnabled() },
          axTrustedCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
          notifier: Notifying? = nil,
@@ -51,6 +55,7 @@ final class TextInserter: TextInserting {
          restoreDelay: Duration = .milliseconds(300)) {
         self.pasteKeystroke = pasteKeystroke ?? Self.postCmdV
         self.enterKeystroke = enterKeystroke ?? { Self.postKey(CGKeyCode(kVK_Return)) }
+        self.undoKeystroke = undoKeystroke ?? Self.postCmdZ
         self.secureInputCheck = secureInputCheck
         self.axTrustedCheck = axTrustedCheck
         self.notifier = notifier
@@ -106,6 +111,11 @@ final class TextInserter: TextInserting {
         return enterKeystroke()
     }
 
+    func undo() -> Bool {
+        guard !secureInputCheck(), axTrustedCheck() else { return false }
+        return undoKeystroke()
+    }
+
     private static func postCmdV() -> Bool {
         let source = CGEventSource(stateID: .combinedSessionState)
         let vKey = CGKeyCode(kVK_ANSI_V)
@@ -115,6 +125,16 @@ final class TextInserter: TextInserting {
         up.flags = .maskCommand
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+        return true
+    }
+
+    private static func postCmdZ() -> Bool {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let key = CGKeyCode(kVK_ANSI_Z)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else { return false }
+        down.flags = .maskCommand; up.flags = .maskCommand
+        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
         return true
     }
 

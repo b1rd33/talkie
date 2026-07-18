@@ -34,9 +34,24 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/TalkieDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/TalkieTests.xcresult" \
+            -skip-testing:TalkieUITests \
+            -skip-testing:TalkieHostIntegrationTests \
             -skip-testing:TalkieTests/ReleaseConfigurationTests \
             CODE_SIGNING_ALLOWED=NO \
             | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Run deterministic app UI suite
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Talkie.xcodeproj \
+            -scheme Talkie \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/TalkieUIDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/TalkieUITests.xcresult" \
+            -only-testing:TalkieUITests \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+            | tee "$RUNNER_TEMP/xcodebuild-ui.log"
 
       - name: Produce concise test summary
         if: always()
@@ -57,5 +72,6 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/TalkieTests.xcresult
+            ${{ runner.temp }}/TalkieUITests.xcresult
             ${{ runner.temp }}/test-summary.txt
             ${{ runner.temp }}/xcodebuild-tail.txt

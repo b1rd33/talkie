@@ -9,6 +9,7 @@ struct E2ELaunchConfiguration: Equatable {
     let sessionID: String
     let scenario: String
     let reportURL: URL
+    let fixtureText: String?
 }
 
 /// Process-level dependencies that must differ between a real user launch and a
@@ -48,7 +49,8 @@ struct AppEnvironment {
                 e2e: E2ELaunchConfiguration(
                     sessionID: sessionID,
                     scenario: scenario,
-                    reportURL: URL(fileURLWithPath: reportPath)))
+                    reportURL: URL(fileURLWithPath: reportPath),
+                    fixtureText: value(after: "--e2e-fixture-text", in: arguments)))
         }
 #endif
         return AppEnvironment(

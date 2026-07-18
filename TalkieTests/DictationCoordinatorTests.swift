@@ -69,9 +69,11 @@ final class DictationCoordinatorTests: XCTestCase {
         var inserted: [String] = []
         var copied: [String] = []
         var pressEnterCount = 0
+        var undoCount = 0
         func insert(_ text: String) async throws { inserted.append(text) }
         func copyToClipboard(_ text: String) { copied.append(text) }
         func pressEnter() -> Bool { pressEnterCount += 1; return true }
+        func undo() -> Bool { undoCount += 1; return true }
     }
 
     @MainActor
@@ -137,6 +139,20 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(coordinator.lastResult?.cleanedText, "Clean text.")
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+    }
+
+    func testUndoLastInsertionRequiresOriginalTargetToRemainFocused() async {
+        var frontmost: (bundleID: String?, name: String?) = ("com.target", "Target")
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            frontmostApp: { frontmost }, focusReturnPollCount: 0)
+        await coordinator.dictationKeyPressed(); await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        XCTAssertTrue(coordinator.undoLastInsertion())
+        frontmost = ("com.other", "Other")
+        XCTAssertFalse(coordinator.undoLastInsertion())
+        XCTAssertEqual(inserter.undoCount, 1)
     }
 
     func testSnippetExpansionSurvivesCleanupExactly() async {
