@@ -58,11 +58,20 @@ final class DictationCoordinatorTests: XCTestCase {
         }
     }
 
+    final class PreservingCleanup: CleanupServicing, @unchecked Sendable {
+        func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
+                   style: StylePreset, pinnedLanguage: String?) async throws -> String {
+            transcript.replacingOccurrences(of: "hello", with: "Hello!")
+        }
+    }
+
     final class MockInserter: TextInserting {
         var inserted: [String] = []
         var copied: [String] = []
+        var pressEnterCount = 0
         func insert(_ text: String) async throws { inserted.append(text) }
         func copyToClipboard(_ text: String) { copied.append(text) }
+        func pressEnter() -> Bool { pressEnterCount += 1; return true }
     }
 
     @MainActor
@@ -128,6 +137,62 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(coordinator.lastResult?.cleanedText, "Clean text.")
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+    }
+
+    func testSnippetExpansionSurvivesCleanupExactly() async {
+        let inserter = MockInserter()
+        let engine = MockEngine(result: .success(Transcript(text: "hello email signature")))
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: engine, cleanup: PreservingCleanup(),
+            inserter: inserter, minimumHold: 0,
+            snippetExpansionsProvider: {
+                [SnippetExpansion(trigger: "email signature",
+                                  expansion: "Best,\nChristian — Talkie")]
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Hello! Best,\nChristian — Talkie"])
+        XCTAssertEqual(coordinator.lastResult?.rawText, "hello email signature")
+    }
+
+    func testOptInPressEnterRunsOnlyAfterSafeTargetDelivery() async {
+        let inserter = MockInserter()
+        let engine = MockEngine(result: .success(Transcript(text: "Send it press enter")))
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: engine, cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0,
+            pressEnterEnabledProvider: { true },
+            cleanupLevelProvider: { .none })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Send it"])
+        XCTAssertEqual(inserter.pressEnterCount, 1)
+    }
+
+    func testPressEnterNeverRunsAfterClipboardFallback() async {
+        var frontmost: (bundleID: String?, name: String?) = ("com.target.app", "Target")
+        let inserter = MockInserter()
+        let engine = MockEngine(result: .success(Transcript(text: "Send it press enter")))
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: engine, cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0,
+            frontmostApp: { frontmost }, focusReturnPollCount: 1,
+            focusPollSleep: { _ in }, pressEnterEnabledProvider: { true },
+            cleanupLevelProvider: { .none })
+
+        await coordinator.dictationKeyPressed()
+        frontmost = ("com.apple.finder", "Finder")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.copied, ["Send it"])
+        XCTAssertEqual(inserter.pressEnterCount, 0)
     }
 
     func testReleaseDuringEngineStartupStopsTheEngine() async throws {

@@ -14,10 +14,10 @@ configs:
 packages:
   HotKey:
     url: https://github.com/soffes/HotKey
-    from: 0.2.0
+    exactVersion: 0.2.1
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
-    from: 0.15.2
+    exactVersion: 0.15.5
 settings:
   base:
     SWIFT_VERSION: "5.10"

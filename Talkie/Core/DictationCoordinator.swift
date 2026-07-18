@@ -52,6 +52,8 @@ final class DictationCoordinator {
     private(set) var offlineBadgeVisible = false
     private var targetApp: (bundleID: String?, name: String?) = (nil, nil)
     private let dictionaryTermsProvider: () -> [String]
+    private let snippetExpansionsProvider: () -> [SnippetExpansion]
+    private let pressEnterEnabledProvider: () -> Bool
     private let cleanupLevelProvider: () -> CleanupLevel
     private let stylePresetProvider: (String?) -> StylePreset
     private let pinnedLanguageProvider: () -> String?
@@ -72,6 +74,8 @@ final class DictationCoordinator {
     /// Latest streamed text while recording in instant mode (throttled ~12.5 Hz).
     private(set) var liveTranscript: String = ""
     private var activeTerms: [String] = []
+    private var activeSnippets: [SnippetExpansion] = []
+    private var activePressEnterEnabled = false
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
     /// Press-time snapshot of instantSkipCleanup (same contract as activeLevel).
@@ -102,6 +106,8 @@ final class DictationCoordinator {
              try? await Task.sleep(for: duration)
          },
          dictionaryTermsProvider: @escaping () -> [String] = { [] },
+         snippetExpansionsProvider: @escaping () -> [SnippetExpansion] = { [] },
+         pressEnterEnabledProvider: @escaping () -> Bool = { false },
          cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
          pinnedLanguageProvider: @escaping () -> String? = { nil },
@@ -125,6 +131,8 @@ final class DictationCoordinator {
         self.focusPollInterval = focusPollInterval
         self.focusPollSleep = focusPollSleep
         self.dictionaryTermsProvider = dictionaryTermsProvider
+        self.snippetExpansionsProvider = snippetExpansionsProvider
+        self.pressEnterEnabledProvider = pressEnterEnabledProvider
         self.cleanupLevelProvider = cleanupLevelProvider
         self.stylePresetProvider = stylePresetProvider
         self.pinnedLanguageProvider = pinnedLanguageProvider
@@ -188,6 +196,8 @@ final class DictationCoordinator {
         liveTapActive = false
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
+        activeSnippets = snippetExpansionsProvider()
+        activePressEnterEnabled = pressEnterEnabledProvider()
         activeLevel = cleanupLevelProvider()
         activeStyle = stylePresetProvider(targetApp.bundleID)
         activeInstantSkipCleanup = instantSkipCleanupProvider()
@@ -387,17 +397,23 @@ final class DictationCoordinator {
             // Collapses ANY base level (incl. .custom) to .none when skipping.
             let liveTypeAttempted = activeLiveType && liveTapActive
             let effectiveLevel: CleanupLevel = (activeInstantSkipCleanup && (usedRealtime || liveTypeAttempted)) ? .none : activeLevel
+            let voiceActions = VoiceActionProcessor.process(
+                transcript.text, allowPressEnter: activePressEnterEnabled)
+            let protectedSnippets = SnippetProcessor.protect(voiceActions.text,
+                                                              snippets: activeSnippets)
             let cleaned: String
             if effectiveLevel == .none {
-                cleaned = transcript.text // spec §6: None = raw ASR text, no LLM call
+                cleaned = protectedSnippets.restore(protectedSnippets.text)
             } else {
                 state = .cleaning
                 do {
-                    cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: activeTerms,
-                                                      level: effectiveLevel, style: activeStyle,
-                                                      pinnedLanguage: pinnedLanguageProvider())
+                    let processed = try await cleanup.clean(
+                        protectedSnippets.text, dictionaryTerms: activeTerms,
+                        level: effectiveLevel, style: activeStyle,
+                        pinnedLanguage: pinnedLanguageProvider())
+                    cleaned = protectedSnippets.restore(processed)
                 } catch {
-                    cleaned = transcript.text // spec §6: raw transcript beats nothing
+                    cleaned = protectedSnippets.restore(protectedSnippets.text)
                     cleanupDegraded = true    // spec §6/§10: badge the pill with a subtle warning
                     cleanupFailureReason = (error as? LocalizedError)?.errorDescription
                         ?? "Cleanup failed — inserted the raw transcript."
@@ -418,28 +434,37 @@ final class DictationCoordinator {
             // clipboard and notify instead of pasting/typing into the wrong app.
             let onTarget = await pressTimeTargetIsFrontmost()
             let liveTypeDelivered = activeLiveType && usedRealtime
+            var deliveredOnTarget = false
             if !onTarget {
                 stopLivePump()
                 inserter.copyToClipboard(cleaned)
             } else if liveTypeDelivered, let liveInserter {
                 stopLivePump() // no in-flight pump append racing the final delivery
-                if effectiveLevel == .none {
+                if effectiveLevel == .none, cleaned == transcript.text {
                     // Raw kept (skip-cleanup): cleaned == raw == what was typed. Flush
                     // the final suffix the pump may have missed; fall back to a normal
                     // insert if typing wasn't viable (AX not trusted) or realtime fell
                     // back to batch (B-7: deliver the result, not partial realtime text).
                     let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
                     if !viable { try await inserter.insert(cleaned) }
+                    deliveredOnTarget = true
                 } else {
                     // Cleanup ran: erase the live-typed raw and replace it with the cleaned
                     // text. Only insert cleaned when the erase actually succeeded — otherwise
                     // we'd leave the raw AND add cleaned (duplicate); fall back to clipboard.
                     let erased = (try? liveInserter.eraseTyped()) ?? false
-                    if erased { try await inserter.insert(cleaned) }
+                    if erased {
+                        try await inserter.insert(cleaned)
+                        deliveredOnTarget = true
+                    }
                     else { inserter.copyToClipboard(cleaned) }
                 }
             } else {
                 try await inserter.insert(cleaned)
+                deliveredOnTarget = true
+            }
+            if deliveredOnTarget, voiceActions.pressEnter {
+                _ = inserter.pressEnter()
             }
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)

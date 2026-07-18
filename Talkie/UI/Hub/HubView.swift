@@ -6,6 +6,7 @@ struct HubView: View {
         case home = "Home"
         case history = "History"
         case dictionary = "Dictionary"
+        case snippets = "Snippets"
 
         var id: String { rawValue }
         var icon: String {
@@ -13,6 +14,7 @@ struct HubView: View {
             case .home: "house"
             case .history: "clock.arrow.circlepath"
             case .dictionary: "character.book.closed"
+            case .snippets: "text.badge.plus"
             }
         }
     }
@@ -42,6 +44,7 @@ struct HubView: View {
                 case .home: HomeView(history: history)
                 case .history: HistoryView(history: history)
                 case .dictionary: DictionaryView(history: history)
+                case .snippets: SnippetsView(history: history)
                 }
             } else {
                 ContentUnavailableView("History unavailable",

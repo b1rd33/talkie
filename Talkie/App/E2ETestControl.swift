@@ -1,0 +1,149 @@
+#if DEBUG
+import Foundation
+
+enum E2ECommand: String, CaseIterable {
+    case press
+    case release
+    case toggleHandsFree
+    case cancel
+}
+
+struct E2EReportEntry: Codable, Equatable {
+    let scenario: String
+    let state: String
+    let durationMS: Int
+    let targetBundleID: String?
+    let deliveryRoute: String?
+    let passed: Bool?
+    let reason: String?
+}
+
+/// Session-scoped JSONL diagnostics. The schema deliberately has no fields for
+/// transcript text, surrounding text, credentials, selected text, or clipboard.
+final class E2EReporter {
+    private let configuration: E2ELaunchConfiguration
+    private let encoder = JSONEncoder()
+    private let lock = NSLock()
+    private var lastTransitionAt = Date()
+
+    init(configuration: E2ELaunchConfiguration) throws {
+        self.configuration = configuration
+        try FileManager.default.createDirectory(
+            at: configuration.reportURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: configuration.reportURL.path,
+                                       contents: nil)
+    }
+
+    func record(state: String, targetBundleID: String?, deliveryRoute: String? = nil,
+                passed: Bool? = nil, reason: String? = nil) {
+        lock.lock()
+        defer { lock.unlock() }
+        let now = Date()
+        let entry = E2EReportEntry(
+            scenario: configuration.scenario,
+            state: state,
+            durationMS: max(0, Int(now.timeIntervalSince(lastTransitionAt) * 1_000)),
+            targetBundleID: targetBundleID,
+            deliveryRoute: deliveryRoute,
+            passed: passed,
+            reason: reason)
+        lastTransitionAt = now
+        guard let data = try? encoder.encode(entry),
+              let handle = try? FileHandle(forWritingTo: configuration.reportURL) else { return }
+        defer { try? handle.close() }
+        try? handle.seekToEnd()
+        handle.write(data)
+        handle.write(Data([0x0A]))
+    }
+
+    func readEntries() throws -> [E2EReportEntry] {
+        let data = try Data(contentsOf: configuration.reportURL)
+        return try data.split(separator: 0x0A).map { line in
+            try JSONDecoder().decode(E2EReportEntry.self, from: Data(line))
+        }
+    }
+}
+
+@MainActor
+final class E2ERuntime {
+    private enum State { case idle, recording }
+    private let reporter: E2EReporter
+    private let targetBundleID: () -> String?
+    private var state: State = .idle
+    private var handsFree = false
+
+    init(reporter: E2EReporter, targetBundleID: @escaping () -> String?) {
+        self.reporter = reporter
+        self.targetBundleID = targetBundleID
+    }
+
+    func handle(_ command: E2ECommand) {
+        switch command {
+        case .press:
+            guard state == .idle else { return }
+            state = .recording
+            reporter.record(state: "recording", targetBundleID: targetBundleID())
+        case .release:
+            guard state == .recording, !handsFree else { return }
+            finish()
+        case .toggleHandsFree:
+            if state == .idle {
+                handsFree = true
+                state = .recording
+                reporter.record(state: "recording", targetBundleID: targetBundleID())
+            } else if handsFree {
+                handsFree = false
+                finish()
+            }
+        case .cancel:
+            guard state == .recording else { return }
+            handsFree = false
+            state = .idle
+            reporter.record(state: "idle", targetBundleID: targetBundleID(),
+                            deliveryRoute: "none", passed: true, reason: "cancelled")
+        }
+    }
+
+    private func finish() {
+        reporter.record(state: "transcribing", targetBundleID: targetBundleID())
+        reporter.record(state: "inserting", targetBundleID: targetBundleID())
+        state = .idle
+        reporter.record(state: "idle", targetBundleID: targetBundleID(),
+                        deliveryRoute: "insert", passed: true, reason: nil)
+    }
+}
+
+@MainActor
+final class E2ETestControlBridge {
+    private let configuration: E2ELaunchConfiguration
+    private let runtime: E2ERuntime
+    private var observer: NSObjectProtocol?
+
+    init(configuration: E2ELaunchConfiguration, runtime: E2ERuntime) {
+        self.configuration = configuration
+        self.runtime = runtime
+    }
+
+    func start() {
+        guard observer == nil else { return }
+        observer = DistributedNotificationCenter.default().addObserver(
+            forName: Self.notificationName(sessionID: configuration.sessionID),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let raw = notification.userInfo?["command"] as? String,
+                  let command = E2ECommand(rawValue: raw) else { return }
+            Task { @MainActor in self?.runtime.handle(command) }
+        }
+    }
+
+    static func notificationName(sessionID: String) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).command")
+    }
+
+    deinit {
+        if let observer { DistributedNotificationCenter.default().removeObserver(observer) }
+    }
+}
+#endif

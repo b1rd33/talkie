@@ -10,7 +10,8 @@ final class HistoryStore {
     init(inMemory: Bool = false) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         container = try ModelContainer(for: DictationRecord.self, DictionaryEntry.self,
-                                       AppStyleOverride.self, configurations: config)
+                                       AppStyleOverride.self, Snippet.self,
+                                       TransformPreset.self, configurations: config)
     }
 
     func save(rawText: String, cleanedText: String, appBundleID: String?, appName: String?,
@@ -66,6 +67,47 @@ final class HistoryStore {
     /// Exact spellings for ASR biasing and the cleanup prompt (spec §6).
     func dictionaryTermStrings() -> [String] {
         allTerms().map(\.term)
+    }
+
+    // MARK: - Snippets
+
+    enum SnippetError: Error, Equatable {
+        case emptyTrigger
+        case emptyExpansion
+        case duplicateTrigger
+        case dictionaryConflict
+    }
+
+    func addSnippet(trigger: String, expansion: String) throws {
+        let trimmedTrigger = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = SnippetProcessor.normalize(trimmedTrigger)
+        guard !normalized.isEmpty else { throw SnippetError.emptyTrigger }
+        guard !expansion.isEmpty else { throw SnippetError.emptyExpansion }
+        guard !allSnippets().contains(where: { $0.normalizedTrigger == normalized }) else {
+            throw SnippetError.duplicateTrigger
+        }
+        let correctionTriggers = allTerms().compactMap { $0.soundsLike }
+            .map(SnippetProcessor.normalize)
+        guard !correctionTriggers.contains(normalized) else {
+            throw SnippetError.dictionaryConflict
+        }
+        context.insert(Snippet(trigger: trimmedTrigger, normalizedTrigger: normalized,
+                               expansion: expansion))
+        try context.save()
+    }
+
+    func allSnippets() -> [Snippet] {
+        let descriptor = FetchDescriptor<Snippet>(sortBy: [SortDescriptor(\.trigger)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    func deleteSnippet(_ snippet: Snippet) {
+        context.delete(snippet)
+        try? context.save()
+    }
+
+    func snippetExpansions() -> [SnippetExpansion] {
+        allSnippets().map { SnippetExpansion(trigger: $0.trigger, expansion: $0.expansion) }
     }
 
     private func normalized(_ soundsLike: String?) -> String? {

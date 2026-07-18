@@ -1,0 +1,61 @@
+name: Talkie CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: talkie-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  logic-and-ui:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Verify portable project configuration
+        run: scripts/verify-project-config.sh
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Run deterministic test suites
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Talkie.xcodeproj \
+            -scheme Talkie \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/TalkieDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/TalkieTests.xcresult" \
+            -skip-testing:TalkieTests/ReleaseConfigurationTests \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Produce concise test summary
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/TalkieTests.xcresult" ]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/TalkieTests.xcresult" \
+              > "$RUNNER_TEMP/test-summary.txt" || true
+          fi
+          tail -n 200 "$RUNNER_TEMP/xcodebuild.log" \
+            > "$RUNNER_TEMP/xcodebuild-tail.txt" || true
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: talkie-test-results
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/TalkieTests.xcresult
+            ${{ runner.temp }}/test-summary.txt
+            ${{ runner.temp }}/xcodebuild-tail.txt

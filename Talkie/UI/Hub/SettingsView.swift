@@ -283,6 +283,10 @@ private struct GeneralSettingsTab: View {
                     }
                 }
                 LabeledContent("Paste last dictation", value: "⇧⌥V")
+                Toggle("Allow suffix command “press enter”",
+                       isOn: $settings.enablePressEnterAction)
+                Text("Off by default. When enabled, Talkie presses Return only when those words end a dictation and the original app still has focus.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)

@@ -21,8 +21,17 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.showDockIcon)
         XCTAssertFalse(store.keepRecordings)
         XCTAssertFalse(store.instantSkipCleanup)
+        XCTAssertFalse(store.enablePressEnterAction)
         XCTAssertEqual(store.pillStyle, .bareWaveform)
         XCTAssertEqual(store.pillPosition, "bottomCenter")
+    }
+
+    func testPressEnterActionRoundTrips() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = SettingsStore(defaults: defaults)
+        store.enablePressEnterAction = true
+        XCTAssertTrue(SettingsStore(defaults: defaults).enablePressEnterAction)
     }
 
     func testInstantSkipCleanupRoundTrips() {
