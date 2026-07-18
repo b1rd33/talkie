@@ -52,8 +52,10 @@ final class DictationCoordinator {
     private(set) var offlineBadgeVisible = false
     private var targetApp: (bundleID: String?, name: String?) = (nil, nil)
     private let dictionaryTermsProvider: () -> [String]
+    private let dictionaryPromptTermsProvider: () -> [String]
     private let snippetExpansionsProvider: () -> [SnippetExpansion]
     private let pressEnterEnabledProvider: () -> Bool
+    private let focusedContextProvider: () -> FocusedContext?
     private let cleanupLevelProvider: () -> CleanupLevel
     private let stylePresetProvider: (String?) -> StylePreset
     private let pinnedLanguageProvider: () -> String?
@@ -74,8 +76,10 @@ final class DictationCoordinator {
     /// Latest streamed text while recording in instant mode (throttled ~12.5 Hz).
     private(set) var liveTranscript: String = ""
     private var activeTerms: [String] = []
+    private var activePromptTerms: [String] = []
     private var activeSnippets: [SnippetExpansion] = []
     private var activePressEnterEnabled = false
+    private var activeContext: FocusedContext?
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
     /// Press-time snapshot of instantSkipCleanup (same contract as activeLevel).
@@ -106,8 +110,10 @@ final class DictationCoordinator {
              try? await Task.sleep(for: duration)
          },
          dictionaryTermsProvider: @escaping () -> [String] = { [] },
+         dictionaryPromptTermsProvider: (() -> [String])? = nil,
          snippetExpansionsProvider: @escaping () -> [SnippetExpansion] = { [] },
          pressEnterEnabledProvider: @escaping () -> Bool = { false },
+         focusedContextProvider: @escaping () -> FocusedContext? = { nil },
          cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
          pinnedLanguageProvider: @escaping () -> String? = { nil },
@@ -131,8 +137,10 @@ final class DictationCoordinator {
         self.focusPollInterval = focusPollInterval
         self.focusPollSleep = focusPollSleep
         self.dictionaryTermsProvider = dictionaryTermsProvider
+        self.dictionaryPromptTermsProvider = dictionaryPromptTermsProvider ?? dictionaryTermsProvider
         self.snippetExpansionsProvider = snippetExpansionsProvider
         self.pressEnterEnabledProvider = pressEnterEnabledProvider
+        self.focusedContextProvider = focusedContextProvider
         self.cleanupLevelProvider = cleanupLevelProvider
         self.stylePresetProvider = stylePresetProvider
         self.pinnedLanguageProvider = pinnedLanguageProvider
@@ -196,8 +204,10 @@ final class DictationCoordinator {
         liveTapActive = false
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
+        activePromptTerms = dictionaryPromptTermsProvider()
         activeSnippets = snippetExpansionsProvider()
         activePressEnterEnabled = pressEnterEnabledProvider()
+        activeContext = focusedContextProvider()
         activeLevel = cleanupLevelProvider()
         activeStyle = stylePresetProvider(targetApp.bundleID)
         activeInstantSkipCleanup = instantSkipCleanupProvider()
@@ -384,10 +394,10 @@ final class DictationCoordinator {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
                     // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
-                    transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+                    transcript = try await engine.transcribe(audio, dictionaryTerms: activePromptTerms)
                 }
             } else {
-                transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+                transcript = try await engine.transcribe(audio, dictionaryTerms: activePromptTerms)
             }
             try Task.checkCancellation()
 
@@ -403,17 +413,24 @@ final class DictationCoordinator {
                                                               snippets: activeSnippets)
             let cleaned: String
             if effectiveLevel == .none {
-                cleaned = protectedSnippets.restore(protectedSnippets.text)
+                let formatted = SmartInsertionProcessor.format(
+                    protectedSnippets.text, precedingText: activeContext?.precedingText)
+                cleaned = protectedSnippets.restore(formatted)
             } else {
                 state = .cleaning
                 do {
                     let processed = try await cleanup.clean(
                         protectedSnippets.text, dictionaryTerms: activeTerms,
                         level: effectiveLevel, style: activeStyle,
-                        pinnedLanguage: pinnedLanguageProvider())
-                    cleaned = protectedSnippets.restore(processed)
+                        pinnedLanguage: pinnedLanguageProvider(),
+                        context: activeContext?.cleanupContext)
+                    let formatted = SmartInsertionProcessor.format(
+                        processed, precedingText: activeContext?.precedingText)
+                    cleaned = protectedSnippets.restore(formatted)
                 } catch {
-                    cleaned = protectedSnippets.restore(protectedSnippets.text)
+                    let formatted = SmartInsertionProcessor.format(
+                        protectedSnippets.text, precedingText: activeContext?.precedingText)
+                    cleaned = protectedSnippets.restore(formatted)
                     cleanupDegraded = true    // spec §6/§10: badge the pill with a subtle warning
                     cleanupFailureReason = (error as? LocalizedError)?.errorDescription
                         ?? "Cleanup failed — inserted the raw transcript."
@@ -538,7 +555,8 @@ final class DictationCoordinator {
         do {
             state = .transcribing
             let terms = dictionaryTermsProvider()
-            let transcript = try await engine.transcribe(audio, dictionaryTerms: terms)
+            let transcript = try await engine.transcribe(
+                audio, dictionaryTerms: dictionaryPromptTermsProvider())
             let level = cleanupLevelProvider()
             var cleaned = transcript.text
             if level != .none {

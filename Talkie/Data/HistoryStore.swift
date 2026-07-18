@@ -69,6 +69,8 @@ final class HistoryStore {
         allTerms().map(\.term)
     }
 
+    func dictionaryPromptTerms() -> [String] { allTerms().map(\.promptBias) }
+
     // MARK: - Snippets
 
     enum SnippetError: Error, Equatable {

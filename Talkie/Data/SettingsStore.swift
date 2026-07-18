@@ -33,6 +33,18 @@ final class SettingsStore {
     var enablePressEnterAction: Bool {
         didSet { defaults.set(enablePressEnterAction, forKey: "enablePressEnterAction") }
     }
+    var contextAwarenessEnabled: Bool {
+        didSet { defaults.set(contextAwarenessEnabled, forKey: "contextAwarenessEnabled") }
+    }
+    var contextExcludedBundleIDs: [String] {
+        didSet { defaults.set(contextExcludedBundleIDs, forKey: "contextExcludedBundleIDs") }
+    }
+    var preferredAudioDeviceUID: String? {
+        didSet {
+            if let preferredAudioDeviceUID { defaults.set(preferredAudioDeviceUID, forKey: "preferredAudioDeviceUID") }
+            else { defaults.removeObject(forKey: "preferredAudioDeviceUID") }
+        }
+    }
     /// Type the streamed text into the focused app live while speaking. Implies
     /// instantSkipCleanup — you can't re-polish text already typed into a document.
     var instantLiveType: Bool {
@@ -79,6 +91,9 @@ final class SettingsStore {
         simpleMode = defaults.object(forKey: "simpleMode") as? Bool ?? true
         instantSkipCleanup = defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
         enablePressEnterAction = defaults.object(forKey: "enablePressEnterAction") as? Bool ?? false
+        contextAwarenessEnabled = defaults.object(forKey: "contextAwarenessEnabled") as? Bool ?? false
+        contextExcludedBundleIDs = defaults.stringArray(forKey: "contextExcludedBundleIDs") ?? []
+        preferredAudioDeviceUID = defaults.string(forKey: "preferredAudioDeviceUID")
         instantLiveType = defaults.object(forKey: "instantLiveType") as? Bool ?? false
         cleanupLevel = defaults.string(forKey: "cleanupLevel") ?? "high"
         customCleanupPrompt = defaults.string(forKey: "customCleanupPrompt") ?? ""

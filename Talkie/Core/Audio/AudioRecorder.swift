@@ -153,8 +153,16 @@ final class AudioSink {
 @Observable
 final class AudioRecorder: AudioRecording {
     private let engine = AVAudioEngine()
+    private let preferredDeviceUID: () -> String?
+    private let deviceCatalog: SystemAudioDeviceCatalog
     private var sink = AudioSink()
     private(set) var isRecording = false
+
+    init(preferredDeviceUID: @escaping () -> String? = { nil },
+         deviceCatalog: SystemAudioDeviceCatalog = SystemAudioDeviceCatalog()) {
+        self.preferredDeviceUID = preferredDeviceUID
+        self.deviceCatalog = deviceCatalog
+    }
 
     var latestLevel: Float { sink.latestLevel }
 
@@ -170,6 +178,7 @@ final class AudioRecorder: AudioRecording {
 
         sink = AudioSink()
         sink.chunkConsumer = chunkConsumer
+        deviceCatalog.configure(engine, preferredUID: preferredDeviceUID())
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw AudioError.engineFailure("no input device") }

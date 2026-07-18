@@ -22,6 +22,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.keepRecordings)
         XCTAssertFalse(store.instantSkipCleanup)
         XCTAssertFalse(store.enablePressEnterAction)
+        XCTAssertFalse(store.contextAwarenessEnabled)
+        XCTAssertTrue(store.contextExcludedBundleIDs.isEmpty)
         XCTAssertEqual(store.pillStyle, .bareWaveform)
         XCTAssertEqual(store.pillPosition, "bottomCenter")
     }

@@ -168,6 +168,13 @@ private struct StyleSettingsTab: View {
                         Text(language.name).tag(language.code)
                     }
                 }
+                if settings.engineMode == "local" {
+                    Text("The current on-device Parakeet model is English-only. Choose Cloud or Instant for the expanded language list.")
+                        .font(.caption).foregroundStyle(.orange)
+                } else {
+                    Text("Regional variants guide formatting; transcription receives the provider-supported base language code.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Per-app style") {
                 if overrides.isEmpty {
@@ -287,6 +294,14 @@ private struct GeneralSettingsTab: View {
                        isOn: $settings.enablePressEnterAction)
                 Text("Off by default. When enabled, Talkie presses Return only when those words end a dictation and the original app still has focus.")
                     .font(.caption).foregroundStyle(.secondary)
+                Picker("Microphone", selection: $settings.preferredAudioDeviceUID) {
+                    Text("System default").tag(String?.none)
+                    ForEach(SystemAudioDeviceCatalog().inputDevices()) { device in
+                        Text(device.name).tag(Optional(device.uid))
+                    }
+                }
+                Text("Selection uses the device’s stable UID. If it disconnects, Talkie automatically uses the system default.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
@@ -308,6 +323,17 @@ private struct GeneralSettingsTab: View {
                 Toggle("Keep audio recordings", isOn: $settings.keepRecordings)
                 Text("Off (default): audio is deleted after transcription. On: saved to Application Support/Talkie/Recordings.")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Use nearby text for smart insertion", isOn: $settings.contextAwarenessEnabled)
+                Text("Off by default. When on, Talkie reads a bounded portion of the focused editable field. It never reads password fields, stores the text, or sends it to transcription; cleanup providers may receive it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextField("Excluded bundle IDs (comma-separated)", text: Binding(
+                    get: { settings.contextExcludedBundleIDs.joined(separator: ", ") },
+                    set: { value in
+                        settings.contextExcludedBundleIDs = value.split(separator: ",")
+                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .filter { !$0.isEmpty }
+                    }))
+                    .disabled(!settings.contextAwarenessEnabled)
             }
             Section("Permissions") {
                 PermissionSettingsRows(permissions: AppServices.shared.permissions)

@@ -49,6 +49,11 @@ struct MenuBarContent: View {
             Text("On this Mac (Parakeet)").tag("local")
         }
         .pickerStyle(.inline)
+        Picker("Language", selection: $settings.pinnedLanguage) {
+            ForEach(SupportedLanguages.all, id: \.code) { language in
+                Text(language.name).tag(language.code)
+            }
+        }
         Divider()
         Button("Open Talkie") {
             openWindow(id: "hub")

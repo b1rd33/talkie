@@ -45,8 +45,11 @@ final class AppServices {
         let profiles = ProfileStore(defaults: defaults)
         let fnMonitor = FnKeyMonitor()
         let escMonitor = EscKeyMonitor()
-        let recorder = AudioRecorder()
+        let recorder = AudioRecorder(preferredDeviceUID: {
+            defaults.string(forKey: "preferredAudioDeviceUID")
+        })
         let activeApp = ActiveAppMonitor()
+        let contextReader = FocusedContextReader()
         let shortcuts = ShortcutManager()
         let permissions = PermissionManager()
         let notifier = Notifier()
@@ -66,7 +69,9 @@ final class AppServices {
         let engine = OpenAIEngine(
             apiKeyProvider: { credential(.openAIKey) },
             modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
-            languageProvider: { defaults.string(forKey: "pinnedLanguage") }
+            languageProvider: {
+                SupportedLanguages.transcriptionCode(for: defaults.string(forKey: "pinnedLanguage"))
+            }
         )
         let cleanup = CleanupService(
             apiKeyProvider: {
@@ -112,9 +117,18 @@ final class AppServices {
             history: history,
             frontmostApp: { activeApp.frontmost },
             dictionaryTermsProvider: { [history] in history?.dictionaryTermStrings() ?? [] },
+            dictionaryPromptTermsProvider: { [history] in history?.dictionaryPromptTerms() ?? [] },
             snippetExpansionsProvider: { [history] in history?.snippetExpansions() ?? [] },
             pressEnterEnabledProvider: {
                 defaults.object(forKey: "enablePressEnterAction") as? Bool ?? false
+            },
+            focusedContextProvider: {
+                let target = activeApp.frontmost.bundleID
+                let enabled = defaults.object(forKey: "contextAwarenessEnabled") as? Bool ?? false
+                let excluded = defaults.stringArray(forKey: "contextExcludedBundleIDs") ?? []
+                guard ContextPolicy.mayRead(enabled: enabled, bundleID: target,
+                                            exclusions: excluded) else { return nil }
+                return contextReader.read()
             },
             cleanupLevelProvider: {
                 CleanupLevel(rawValue: defaults.string(forKey: "cleanupLevel") ?? "high") ?? .high
@@ -123,7 +137,7 @@ final class AppServices {
             pinnedLanguageProvider: {
                 // Settings stores the ISO code ("de"); the prompt wants a name ("German").
                 defaults.string(forKey: "pinnedLanguage").flatMap {
-                    Locale(identifier: "en").localizedString(forLanguageCode: $0)
+                    Locale(identifier: "en").localizedString(forIdentifier: $0)
                 }
             },
             cleanupModelProvider: {
@@ -149,7 +163,7 @@ final class AppServices {
                 guard !key.isEmpty else { throw EngineError.missingAPIKey }
                 // Same source as the batch path's dictionaryTermsProvider (Phase 4) — spec §3/§6
                 // carries ASR-level vocabulary biasing and the pinned language into instant mode too.
-                let terms = history?.dictionaryTermStrings() ?? []
+                let terms = history?.dictionaryPromptTerms() ?? []
                 let session = OpenAIRealtimeSession(
                     transport: OpenAIRealtimeTransport(apiKey: key),
                     model: "gpt-4o-mini-transcribe",

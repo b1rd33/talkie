@@ -26,6 +26,17 @@ DMG="build/Talkie-$VERSION.dmg"
 
 rm -rf build
 
+echo "==> Running portable configuration checks"
+scripts/verify-project-config.sh
+
+echo "==> Running deterministic logic suite"
+xcodegen generate
+xcodebuild test \
+  -project Talkie.xcodeproj \
+  -scheme Talkie \
+  -destination 'platform=macOS' \
+  -derivedDataPath build/DerivedData
+
 echo "==> Generating project"
 xcodegen generate
 
@@ -45,6 +56,7 @@ xcodebuild -exportArchive \
 
 echo "==> Verifying code signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
+codesign -d --entitlements :- "$APP" > build/entitlements.plist
 
 echo "==> Notarizing (waits on Apple, typically 1-10 minutes)"
 ditto -c -k --keepParent "$APP" "$ZIP"
@@ -54,6 +66,12 @@ echo "==> Stapling and verifying"
 xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl -a -vv "$APP"
+
+echo "==> Launch smoke check"
+open -gj "$APP"
+sleep 3
+pgrep -x Talkie >/dev/null
+pkill -x Talkie
 
 echo "==> Re-zipping the stapled app"
 rm -f "$ZIP"

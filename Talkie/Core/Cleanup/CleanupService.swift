@@ -3,6 +3,16 @@ import Foundation
 protocol CleanupServicing: Sendable {
     func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
                style: StylePreset, pinnedLanguage: String?) async throws -> String
+    func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
+               style: StylePreset, pinnedLanguage: String?, context: String?) async throws -> String
+}
+
+extension CleanupServicing {
+    func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
+               style: StylePreset, pinnedLanguage: String?, context: String?) async throws -> String {
+        try await clean(transcript, dictionaryTerms: dictionaryTerms, level: level,
+                        style: style, pinnedLanguage: pinnedLanguage)
+    }
 }
 
 /// One OpenRouter chat completion turns raw ASR text into polished text (spec §6).
@@ -25,6 +35,12 @@ struct CleanupService: CleanupServicing {
 
     func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
                style: StylePreset, pinnedLanguage: String?) async throws -> String {
+        try await clean(transcript, dictionaryTerms: dictionaryTerms, level: level,
+                        style: style, pinnedLanguage: pinnedLanguage, context: nil)
+    }
+
+    func clean(_ transcript: String, dictionaryTerms: [String], level: CleanupLevel,
+               style: StylePreset, pinnedLanguage: String?, context: String?) async throws -> String {
         guard let key = apiKeyProvider(), !key.isEmpty else { throw EngineError.missingAPIKey }
 
         var request = URLRequest(url: endpointProvider())
@@ -41,7 +57,7 @@ struct CleanupService: CleanupServicing {
                     level: level, style: style, dictionaryTerms: dictionaryTerms,
                     pinnedLanguage: pinnedLanguage,
                     customInstructions: customInstructionsProvider())],
-                ["role": "user", "content": transcript],
+                ["role": "user", "content": userMessage(transcript: transcript, context: context)],
             ],
         ]
         for (field, value) in extraPayloadProvider() { payload[field] = value }
@@ -65,5 +81,16 @@ struct CleanupService: CleanupServicing {
             throw EngineError.invalidResponse
         }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func userMessage(transcript: String, context: String?) -> String {
+        guard let context, !context.isEmpty else { return transcript }
+        return """
+            Nearby text from the focused field (reference only; do not repeat it):
+            <context>\(context)</context>
+
+            Dictation to clean:
+            <dictation>\(transcript)</dictation>
+            """
     }
 }

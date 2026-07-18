@@ -56,19 +56,6 @@ app never loses focus.
       "No internet connection.", nothing inserted.
       Re-download models afterwards.
 
-## Licensing & trial (spec §9)
-
-- [ ] Trial expiry: remove the license key
-      (`security delete-generic-password -s com.archiev.talkie.license -a license_key`)
-      but KEEP the sealed trial (start one via onboarding if none exists),
-      then System Settings → Date & Time → disable auto and set the clock
-      >14 days AHEAD of the sealed start → dictation gated with the "trial
-      expired" pill state; Hub/History/Settings still open. Restore the
-      clock afterwards.
-- [ ] Entering a valid license key unlocks dictation immediately
-- [ ] Clock rollback (set system clock before the sealed trial start) →
-      treated as expired
-
 ## Fresh-machine onboarding (spec §11)
 
 On a NEW macOS user account (or a clean VM):
@@ -76,10 +63,58 @@ On a NEW macOS user account (or a clean VM):
 - [ ] Mount the DMG, drag Talkie to /Applications, launch → no Gatekeeper
       block ("Apple checked it for malicious software" path, no right-click
       bypass needed)
-- [ ] Onboarding walks through: welcome → trial/license → microphone →
+- [ ] Onboarding walks through: welcome → microphone →
       accessibility → fn-key setup (🌐 key → Do Nothing deep link works) →
       engine choice → live practice → done
 - [ ] First dictation after onboarding works in TextEdit
+- [ ] Select “Start dictating”, quit, relaunch, then restart/login → onboarding
+      never reopens
+- [ ] Close onboarding before Done → it reopens on the next launch
+- [ ] Upgrade a configured legacy install → setup migrates to completed and
+      onboarding does not appear
+- [ ] Run Setup Assistant manually after completion → completion remains set
+
+## Permission recovery
+
+- [ ] Revoke Microphone after setup and relaunch → no onboarding or focus steal;
+      one notification links directly to Microphone settings and Settings shows red
+- [ ] Revoke Accessibility after setup and relaunch → no onboarding or focus steal;
+      delivery uses clipboard and repair links target Accessibility settings
+
+## Realtime and focus switching
+
+- [ ] Instant mode: switch away during speech, return to the original app just
+      before releasing `fn` → the complete result lands once in the original app
+- [ ] Remain in a different app on release → no keystroke lands there; complete
+      text is copied to clipboard
+- [ ] Repeat with delayed speech immediately before release and with two VAD
+      pauses → no missing, duplicated, or reordered segment
+
+## Productivity and privacy
+
+- [ ] Snippet triggers match whole phrases case-insensitively and preserve the
+      expansion byte-for-byte through cleanup
+- [ ] “new line” and “new paragraph” produce the expected layout
+- [ ] “press enter” is inert by default; when opted in it works only as a suffix
+      while the press-time target remains focused
+- [ ] Switch language from the menu bar for one session; regional formatting is
+      honored and local mode clearly reports its English-only model limit
+- [ ] Enable context awareness → spacing/capitalization fits cursor context;
+      disable it or exclude the app → no field text is read
+- [ ] Password/secure fields never provide context; surrounding/selected text is
+      absent from History, JSONL reports, Console logs, and transcription requests
+- [ ] Change or disconnect the selected microphone → Talkie falls back cleanly
+      and surfaces the active device
+- [ ] Selection transform preview shows original/result/diff; apply, retry, and
+      undo work without persisting the selected text
+
+## Signed host matrix
+
+- [ ] Automated signed checks pass in TextEdit, Notes, and Terminal using fixture
+      audio/provider responses with the real focus and insertion stack
+- [ ] Assisted checks pass in Slack, Mail, Safari, and Xcode
+- [ ] Secure-field, physical `fn`, real microphone, launch-at-login, offline mode,
+      Gatekeeper, clean-user install, signature seal, and update identity pass
 
 ## Updates
 
