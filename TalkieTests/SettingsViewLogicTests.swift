@@ -3,6 +3,14 @@ import XCTest
 
 @MainActor
 final class SettingsViewLogicTests: XCTestCase {
+    private func repositoryFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath),
+                          encoding: .utf8)
+    }
+
     private func store(engine: String, skip: Bool) -> SettingsStore {
         let s = SettingsStore(defaults: UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!)
         s.engineMode = engine
@@ -46,5 +54,22 @@ final class SettingsViewLogicTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         XCTAssertFalse(PrivacyCopy.audioRetentionSummary
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    func testPrivacyPolicyUsesOpenAIAPITermsAndDataPractices() throws {
+        let policy = try repositoryFile("PRIVACY.md")
+
+        XCTAssertTrue(policy.contains("https://openai.com/policies/services-agreement/"))
+        XCTAssertTrue(policy.contains("https://openai.com/policies/service-terms/"))
+        XCTAssertTrue(policy.contains("https://developers.openai.com/api/docs/guides/your-data"))
+        XCTAssertFalse(policy.contains("https://openai.com/policies/privacy-policy/"))
+        XCTAssertFalse(policy.contains("https://openai.com/policies/terms-of-use/"))
+    }
+
+    func testOnboardingCaptureCopyIncludesHandsFree() throws {
+        let source = try repositoryFile("Talkie/UI/Onboarding/OnboardingView.swift")
+
+        XCTAssertTrue(source.contains("hands-free recording is active"))
+        XCTAssertFalse(source.contains("records only while you hold the dictation key"))
     }
 }

@@ -103,7 +103,7 @@ private struct MicrophoneStep: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Microphone access")
                 .font(.title2.bold())
-            Text("Talkie records only while you hold the dictation key. \(PrivacyCopy.audioRetentionSummary)")
+            Text("Talkie records while you hold the dictation key or while hands-free recording is active. \(PrivacyCopy.audioRetentionSummary)")
                 .foregroundStyle(.secondary)
             switch status {
             case .authorized:
