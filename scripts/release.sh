@@ -7,9 +7,15 @@
 #   1. "Developer ID Application" certificate in the login keychain
 #   2. xcrun notarytool store-credentials talkie-notary \
 #        --apple-id <appleID> --team-id <teamID> --password <app-specific password>
-#   3. Real teamID in scripts/ExportOptions.plist and DEVELOPMENT_TEAM in project.yml
+#   3. Export DEVELOPMENT_TEAM=<10-character Apple Team ID> for this invocation
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+: "${DEVELOPMENT_TEAM:?set DEVELOPMENT_TEAM to the 10-character Apple Team ID}"
+if [[ ! "$DEVELOPMENT_TEAM" =~ ^[A-Z0-9]{10}$ ]]; then
+  echo "error: DEVELOPMENT_TEAM must be a 10-character uppercase Apple Team ID" >&2
+  exit 1
+fi
 
 VERSION="$(sed -n 's/.*MARKETING_VERSION: *"\([^"]*\)".*/\1/p' project.yml | head -1)"
 if [ -z "$VERSION" ]; then
@@ -20,6 +26,7 @@ fi
 NOTARY_PROFILE="${NOTARY_PROFILE:-talkie-notary}"
 ARCHIVE="build/Talkie.xcarchive"
 EXPORT_DIR="build/export"
+EXPORT_OPTIONS="build/ExportOptions.local.plist"
 APP="$EXPORT_DIR/Talkie.app"
 ZIP="build/Talkie-$VERSION.zip"
 DMG="build/Talkie-$VERSION.dmg"
@@ -28,6 +35,10 @@ rm -rf build
 
 echo "==> Running portable configuration checks"
 scripts/verify-project-config.sh
+
+mkdir -p "$(dirname "$EXPORT_OPTIONS")"
+sed "s/__DEVELOPMENT_TEAM__/$DEVELOPMENT_TEAM/" \
+  scripts/ExportOptions.plist > "$EXPORT_OPTIONS"
 
 echo "==> Running deterministic logic suite"
 xcodegen generate
@@ -46,12 +57,13 @@ xcodebuild archive \
   -scheme Talkie \
   -configuration Release \
   -destination 'generic/platform=macOS' \
-  -archivePath "$ARCHIVE"
+  -archivePath "$ARCHIVE" \
+  DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
 
 echo "==> Exporting with Developer ID"
 xcodebuild -exportArchive \
   -archivePath "$ARCHIVE" \
-  -exportOptionsPlist scripts/ExportOptions.plist \
+  -exportOptionsPlist "$EXPORT_OPTIONS" \
   -exportPath "$EXPORT_DIR"
 
 echo "==> Verifying code signature"

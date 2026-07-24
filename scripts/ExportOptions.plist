@@ -11,6 +11,6 @@
     <key>signingCertificate</key>
     <string>Developer ID Application</string>
     <key>teamID</key>
-    <string>YOURTEAMID</string>
+    <string>__DEVELOPMENT_TEAM__</string>
 </dict>
 </plist>

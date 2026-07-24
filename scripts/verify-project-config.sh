@@ -3,6 +3,14 @@ set -euo pipefail
 
 project_file="${1:-project.yml}"
 
+require_file() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    echo "error: required public repository file is missing" >&2
+    exit 1
+  fi
+}
+
 require_line() {
   local pattern="$1"
   local message="$2"
@@ -11,6 +19,12 @@ require_line() {
     exit 1
   fi
 }
+
+for required_document in LICENSE PRIVACY.md SECURITY.md; do
+  require_file "$required_document"
+done
+
+scripts/scan-sensitive-content.sh
 
 if grep -Eq '^[[:space:]]+from:' "$project_file"; then
   echo "error: package dependencies must use exactVersion, not a version range" >&2

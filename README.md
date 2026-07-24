@@ -121,6 +121,6 @@ Talkie is an early public project. Version 1.0.0 was published on 2026-06-15 as 
 - Cloud transcription, cleanup, and transforms require the user's provider key and are billed under that provider's current terms. Talkie does not promise provider pricing, availability, latency, or retention behavior.
 - Instant mode is OpenAI-only. Live typing inserts raw streamed text and therefore disables a later cleanup pass.
 - Private transcription does not imply private cleanup: use the Private / Offline profile, or separately disable cleanup, to keep transcript processing local.
-- Temporary audio deletion is best-effort. Failed, cancelled, or deletion-error cases can leave an audio file on the Mac for retry or recovery.
+- Talkie attempts to delete temporary audio after a successfully completed dictation, but deletion is best-effort. Failed, cancelled, or deletion-error cases can leave an audio file on the Mac for retry or recovery.
 - Direct insertion depends on Accessibility and intentionally refuses secure/password fields. The non-notarized ad-hoc build can require permission repair after an update.
 - There is no automatic updater for the current ad-hoc release.
