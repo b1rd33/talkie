@@ -26,7 +26,7 @@ final class WaveformBuffer {
 /// while a recording is active — `FlowBarView` shows it for the `.recording`
 /// state, so there's no always-on idle timer.
 struct WaveformCanvasView: View {
-    let recorder: AudioRecorder
+    let levelSource: any AudioLevelReading
     var color: Color = .primary
     var barCount = 28
     var barWidth: CGFloat = 2.5
@@ -42,8 +42,8 @@ struct WaveformCanvasView: View {
     /// as this view (shown only during `.recording`), so there's no idle cost.
     private let clock = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
 
-    init(recorder: AudioRecorder, color: Color = .primary, barCount: Int = 28) {
-        self.recorder = recorder
+    init(recorder: any AudioLevelReading, color: Color = .primary, barCount: Int = 28) {
+        self.levelSource = recorder
         self.color = color
         self.barCount = barCount
         _buffer = State(initialValue: WaveformBuffer(count: barCount))
@@ -65,7 +65,7 @@ struct WaveformCanvasView: View {
         }
         .frame(width: CGFloat(barCount) * (barWidth + gap), height: 24)
         .onReceive(clock) { _ in
-            buffer.advance(to: Date(), level: recorder.latestLevel)
+            buffer.advance(to: Date(), level: levelSource.latestLevel)
             tick &+= 1
         }
     }

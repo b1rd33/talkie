@@ -116,6 +116,25 @@ On a NEW macOS user account (or a clean VM):
 - [ ] Secure-field, physical `fn`, real microphone, launch-at-login, offline mode,
       Gatekeeper, clean-user install, signature seal, and update identity pass
 
+## Native pill and icon
+
+- [ ] Switch the real Appearance picker through Ink Line, Calm Flow Ribbon, and
+      Bare Wave; each is chromeless and clearly distinct while dictating
+- [ ] Real microphone energy produces a smooth response without jitter; silence
+      settles instead of continuing to fabricate activity
+- [ ] Each organic style stays legible over light and dark desktops, with no
+      capsule, glass, notch, or background surface
+- [ ] Reduce Motion removes repeating scale/pulse motion while state changes and
+      cancellation remain immediate; Increase Contrast keeps the outline readable
+- [ ] Physical `fn` push-to-talk and hands-free transitions show recording,
+      processing, success, error, offline, and raw-fallback states correctly
+- [ ] The non-activating production pill stays positioned correctly on multiple
+      displays, Spaces, top/bottom placements, and after display-scale changes
+- [ ] Native Depth icon is crisp at small, medium, and large Dock sizes and is
+      recognizable in Finder, Spotlight, Launchpad, and the app switcher
+- [ ] Icon transparency, rounded margin, shadow, glass capsule, and five waveform
+      bars are not clipped in either light or dark macOS appearance
+
 ## Updates
 
 - [ ] Updates are manual: download the new zip, replace `Talkie.app`. After an

@@ -77,6 +77,15 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, .frostedGlass)
     }
 
+    func testOrganicPillStylesSurviveMigrationAndRoundTrip() {
+        let cases: [PillStyle] = [.inkLine, .calmFlowRibbon, .bareWave]
+        for style in cases {
+            let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+            defaults.set(style.rawValue, forKey: "pillStyle")
+            XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, style)
+        }
+    }
+
     func testStyleDefaults() {
         let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
         let store = SettingsStore(defaults: defaults)

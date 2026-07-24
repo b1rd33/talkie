@@ -307,6 +307,9 @@ private struct GeneralSettingsTab: View {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
                 Picker("Pill style", selection: $settings.pillStyle) {
                     Text("Bare waveform — chromeless, dots when idle").tag(PillStyle.bareWaveform)
+                    Text("Ink Line — a quiet, living line").tag(PillStyle.inkLine)
+                    Text("Calm Flow Ribbon — layered flowing lines").tag(PillStyle.calmFlowRibbon)
+                    Text("Bare Wave — continuous organic waveform").tag(PillStyle.bareWave)
                     Text("Dynamic Island — docked top-center").tag(PillStyle.dynamicIsland)
                     Text("Frosted glass — translucent capsule").tag(PillStyle.frostedGlass)
                     Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
