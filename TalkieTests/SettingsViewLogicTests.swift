@@ -25,4 +25,26 @@ final class SettingsViewLogicTests: XCTestCase {
         cloud.instantLiveType = true
         XCTAssertFalse(cleanupInactive(cloud)) // only in instant mode
     }
+
+    func testPrivacyPolicyLinkIsHTTPS() {
+        XCTAssertEqual(ProjectLinks.privacyPolicy.scheme, "https")
+        XCTAssertEqual(ProjectLinks.privacyPolicy.host, "github.com")
+    }
+
+    func testPrivacyModesHaveFourDistinctNonemptyLabels() {
+        let labels = PrivacyMode.allCases.map(\.label)
+
+        XCTAssertEqual(labels.count, 4)
+        XCTAssertEqual(Set(labels).count, labels.count)
+        XCTAssertTrue(labels.allSatisfy {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
+    }
+
+    func testPrivacyLinkCopyIsCentralizedAndNonempty() {
+        XCTAssertFalse(PrivacyCopy.policyLinkLabel
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        XCTAssertFalse(PrivacyCopy.audioRetentionSummary
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 }

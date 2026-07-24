@@ -103,7 +103,7 @@ private struct MicrophoneStep: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Microphone access")
                 .font(.title2.bold())
-            Text("Talkie records only while you hold the dictation key. Audio is discarded right after transcription.")
+            Text("Talkie records only while you hold the dictation key. \(PrivacyCopy.audioRetentionSummary)")
                 .foregroundStyle(.secondary)
             switch status {
             case .authorized:
@@ -144,7 +144,7 @@ private struct AccessibilityStep: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Accessibility permission")
                 .font(.title2.bold())
-            Text("Needed to watch the fn key globally and paste text at your cursor. Talkie never reads your screen.")
+            Text("Needed to watch the fn key globally and insert text at your cursor. Nearby editable text is read only if you enable smart insertion; secure fields are excluded.")
                 .foregroundStyle(.secondary)
             if trusted {
                 Label("Accessibility granted.", systemImage: "checkmark.circle.fill")
@@ -222,6 +222,8 @@ private struct KeyChoiceStep: View {
                 .font(.title2.bold())
             Text("Pick what you have — Talkie sets up a matching profile. You can change it anytime in Settings → Profiles.")
                 .foregroundStyle(.secondary)
+            Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
+                .font(.caption)
             Picker("Key choice", selection: Binding(
                 get: { choice },
                 set: { if let c = $0 { select(c) } })) {

@@ -65,10 +65,13 @@ Runs via OpenRouter or OpenAI — **Settings → Engines → Cleanup**.
 
 ## Privacy
 
-- Audio is **deleted after transcription** by default (opt in to keep recordings).
+- Successful audio is **deleted after transcription** unless you opt in to keep
+  recordings; failed or cancelled audio may stay local for retry.
 - Talkie is **not sandboxed** — it needs Accessibility to type into other apps,
   and it refuses to type into secure/password fields.
 - Keys live in the macOS Keychain.
+- See **[Privacy and provider data flow](PRIVACY.md)** for exactly what stays on
+  your Mac and what each cloud mode sends directly to its provider.
 
 ## Build from source
 

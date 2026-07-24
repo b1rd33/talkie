@@ -8,13 +8,18 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Settings mode", selection: $settings.simpleMode) {
-                Text("Simple").tag(true)
-                Text("Advanced").tag(false)
+            HStack {
+                Picker("Settings mode", selection: $settings.simpleMode) {
+                    Text("Simple").tag(true)
+                    Text("Advanced").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+                Spacer()
+                Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
+                    .font(.caption)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 220)
             .padding(8)
             Divider()
             if settings.simpleMode {
@@ -322,7 +327,7 @@ private struct GeneralSettingsTab: View {
             }
             Section("Privacy") {
                 Toggle("Keep audio recordings", isOn: $settings.keepRecordings)
-                Text("Off (default): audio is deleted after transcription. On: saved to Application Support/Talkie/Recordings.")
+                Text(PrivacyCopy.audioRetentionSummary)
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Use nearby text for smart insertion", isOn: $settings.contextAwarenessEnabled)
                 Text("Off by default. When on, Talkie reads a bounded portion of the focused editable field. It never reads password fields, stores the text, or sends it to transcription; cleanup providers may receive it.")
