@@ -8,8 +8,6 @@ final class KeychainStore: @unchecked Sendable {
     enum Key: String, Hashable {
         case openAIKey = "openai_api_key"
         case openRouterKey = "openrouter_api_key"
-        case licenseKey = "license_key"
-        case trialSeal = "trial_seal"
     }
 
     private let service: String

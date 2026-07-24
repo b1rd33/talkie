@@ -849,24 +849,11 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.waitForIdle()
     }
 
-    func testExpiredEntitlementBlocksDictationWithErrorPill() async {
+    func testFreeBuildStartsDictationWithoutEntitlementState() async {
         let recorder = MockRecorder()
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: MockInserter(),
-                                               minimumHold: 0, entitlement: { .expired })
-        await coordinator.dictationKeyPressed()
-        XCTAssertEqual(recorder.started, 0)
-        guard case .error(let message) = coordinator.state else {
-            return XCTFail("expected error state, got \(coordinator.state)")
-        }
-        XCTAssertTrue(message.contains("Trial expired"))
-    }
-
-    func testEntitledDictationProceeds() async {
-        let recorder = MockRecorder()
-        let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
-                                               cleanup: MockCleanup(), inserter: MockInserter(),
-                                               minimumHold: 0, entitlement: { nil })
+                                               minimumHold: 0)
         await coordinator.dictationKeyPressed()
         XCTAssertEqual(coordinator.state, .recording)
         XCTAssertEqual(recorder.started, 1)

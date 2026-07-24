@@ -9,16 +9,16 @@ import SwiftUI
 final class OnboardingWindow {
     private var window: NSWindow?
 
-    func show(entitlements: EntitlementStore, keychain: KeychainStore,
-              settings: SettingsStore, modelDownloader: ModelDownloader,
+    func show(keychain: KeychainStore, settings: SettingsStore,
+              modelDownloader: ModelDownloader,
               profiles: ProfileStore, setupState: SetupStateStore) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let view = OnboardingView(entitlements: entitlements, keychain: keychain,
-                                  settings: settings, modelDownloader: modelDownloader,
+        let view = OnboardingView(keychain: keychain, settings: settings,
+                                  modelDownloader: modelDownloader,
                                   profiles: profiles,
                                   onFinished: { [weak self, setupState] in
                                       setupState.markCompleted()

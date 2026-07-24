@@ -4,7 +4,6 @@ DerivedData/
 .build/
 Talkie.xcodeproj/
 *.xcresult
-tools/keygen/talkie-keygen
 
 # ad-hoc/release build artifacts
 build/

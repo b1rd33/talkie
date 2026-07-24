@@ -65,7 +65,6 @@ final class DictationCoordinator {
     private let instantSkipCleanupProvider: () -> Bool
     private let liveTypeProvider: () -> Bool
     private let liveInserter: LiveTextInserting?
-    private let entitlement: (() -> EntitlementError?)?
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
@@ -123,7 +122,6 @@ final class DictationCoordinator {
          instantSkipCleanupProvider: @escaping () -> Bool = { false },
          liveTypeProvider: @escaping () -> Bool = { false },
          liveInserter: LiveTextInserting? = nil,
-         entitlement: (() -> EntitlementError?)? = nil,
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
@@ -150,7 +148,6 @@ final class DictationCoordinator {
         self.instantSkipCleanupProvider = instantSkipCleanupProvider
         self.liveTypeProvider = liveTypeProvider
         self.liveInserter = liveInserter
-        self.entitlement = entitlement
         self.liveSessionFactory = liveSessionFactory
     }
 
@@ -194,10 +191,6 @@ final class DictationCoordinator {
         // presses of a stop-double-tap bounce it off-then-on. So while hands-free
         // is recording, a stray press falls through to the guard below and no-ops.
         guard state == .idle || isErrorState else { return } // one dictation in flight
-        if let entitlement, let gateError = entitlement() {
-            fail(gateError) // fail() disarms hands-free
-            return
-        }
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
         liveTranscript = ""     // clear any stale streamed preview
         liveBox.clear()

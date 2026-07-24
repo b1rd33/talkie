@@ -27,8 +27,6 @@ final class AppServices {
     let coordinator: DictationCoordinator
     let history: HistoryStore?
     let modelDownloader: ModelDownloader
-    let licenseManager: LicenseManager
-    let entitlements: EntitlementStore
     let onboarding: OnboardingWindow
     let selectionTransforms: SelectionTransformCoordinator
     let selectionTransformWindow: SelectionTransformWindow
@@ -64,11 +62,6 @@ final class AppServices {
         let credential: @Sendable (KeychainStore.Key) -> String? = { key in
             credentialOverrides[key] ?? keychain.read(key)
         }
-        let licenseKeychain = KeychainStore(service: "\(environment.keychainService).license")
-        let license = LicenseManager(keychain: licenseKeychain)
-        let entitlementStore = EntitlementStore(
-            license: license,
-            trial: TrialManager(keychain: licenseKeychain))
         let engine = OpenAIEngine(
             apiKeyProvider: { credential(.openAIKey) },
             modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
@@ -176,7 +169,6 @@ final class AppServices {
                 defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
             liveInserter: LiveTextInserter(),
-            entitlement: nil, // Talkie is free — dictation is never gated by a trial/license.
             liveSessionFactory: { [history] onPartial in
                 guard defaults.string(forKey: "engineMode") == "instant" else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
@@ -213,8 +205,6 @@ final class AppServices {
         self.coordinator = coordinator
         self.history = history
         self.modelDownloader = modelDownloader
-        self.licenseManager = license
-        self.entitlements = entitlementStore
         self.onboarding = onboarding
         self.selectionTransforms = selectionTransforms
         self.selectionTransformWindow = selectionTransformWindow
@@ -235,8 +225,8 @@ final class AppServices {
 
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
-        onboarding.show(entitlements: entitlements, keychain: keychain,
-                        settings: settings, modelDownloader: modelDownloader, profiles: profiles,
+        onboarding.show(keychain: keychain, settings: settings,
+                        modelDownloader: modelDownloader, profiles: profiles,
                         setupState: setupState)
     }
 

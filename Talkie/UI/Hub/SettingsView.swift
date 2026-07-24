@@ -38,8 +38,6 @@ struct SettingsView: View {
                 .tabItem { Label("Engines", systemImage: "waveform") }
             StyleSettingsTab(settings: settings, history: AppServices.shared.history)
                 .tabItem { Label("Style", systemImage: "textformat") }
-            // Talkie is free — no License tab. (LicenseSettingsTab kept in the
-            // codebase so paid licensing can be re-enabled later.)
         }
     }
 }

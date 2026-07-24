@@ -3,13 +3,10 @@ import AVFoundation
 import ApplicationServices
 
 enum OnboardingStep: Int, CaseIterable {
-    // Talkie is free — no trial/license step. (TrialOrLicenseStep is kept below,
-    // unused, so re-enabling paid licensing later is a one-line change.)
     case welcome, microphone, accessibility, fnKey, engineChoice, practice, done
 }
 
 struct OnboardingView: View {
-    let entitlements: EntitlementStore
     let keychain: KeychainStore
     let settings: SettingsStore
     let modelDownloader: ModelDownloader
@@ -96,69 +93,6 @@ private struct WelcomeStep: View {
         }
         .frame(maxWidth: 420)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct TrialOrLicenseStep: View {
-    let entitlements: EntitlementStore
-    let advance: () -> Void
-
-    @State private var keyInput = ""
-    @State private var errorText: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Try Talkie free for 14 days")
-                .font(.title2.bold())
-            switch entitlements.current {
-            case .licensed:
-                Label("Licensed — you're all set.", systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
-                Button("Continue") { advance() }
-                    .buttonStyle(.borderedProminent)
-            case .trial(let daysLeft):
-                Label("Trial active — \(daysLeft) days left.", systemImage: "clock.fill")
-                Button("Continue") { advance() }
-                    .buttonStyle(.borderedProminent)
-            case .expired:
-                if entitlements.trialHasStarted {
-                    Label("Your trial has ended — activate a license to keep dictating.",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                } else {
-                    Text("Full-featured, no API keys of ours required — you bring your own. The trial starts only when you click the button.")
-                        .foregroundStyle(.secondary)
-                    Button("Start 14-day trial") {
-                        entitlements.startTrial()
-                        advance()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Divider()
-                Text("Already have a license key?")
-                    .font(.headline)
-                HStack {
-                    TextField("XXXXX-XXXXX-XXXXX-XXXXX", text: $keyInput)
-                        .font(.body.monospaced())
-                        .autocorrectionDisabled()
-                    Button("Activate") {
-                        let result = entitlements.activate(
-                            keyInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                        if result == .valid { advance() } else { errorText = result.message }
-                    }
-                    .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                Text("Machine ID: \(entitlements.machineID)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                if let errorText {
-                    Text(errorText)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .onAppear { entitlements.refresh() } // cached `current` may predate this re-run
     }
 }
 
