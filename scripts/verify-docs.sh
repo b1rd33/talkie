@@ -7,13 +7,15 @@ cd "$root"
 ruby <<'RUBY'
 require "uri"
 
-documents = %w[
+public_documents = %w[
   README.md
   PRIVACY.md
   CONTRIBUTING.md
   SECURITY.md
   SUPPORT.md
   CHANGELOG.md
+  docs/install-free.md
+  docs/testing-matrix.md
 ]
 
 def anchor_for(heading)
@@ -33,7 +35,7 @@ def headings(path)
 end
 
 failures = []
-documents.each do |document|
+public_documents.each do |document|
   body = File.read(document)
   body.scan(/!?\[[^\]]*\]\(([^)]+)\)/).flatten.each do |raw_target|
     target = raw_target.strip.sub(/\A<(.+)>\z/, '\1')
@@ -77,7 +79,6 @@ if positions.all? && positions != positions.sort
   failures << "README.md: required headings are out of order"
 end
 
-public_documents = documents + ["docs/install-free.md"]
 public_documents.each do |document|
   File.readlines(document, chomp: true).each_with_index do |line, index|
     if line.match?(/\bfree (?:build|version)\b/i)
@@ -87,8 +88,8 @@ public_documents.each do |document|
 end
 
 {
-  "docs/images/talkie-settings.png" => [480, 360],
-  "docs/images/talkie-pill.png" => [480, 120],
+  "docs/images/talkie-settings.png" => [680, 360],
+  "docs/images/talkie-pill.png" => [300, 80],
 }.each do |path, minimum|
   unless File.file?(path)
     failures << "#{path}: screenshot is missing"

@@ -10,10 +10,12 @@ import SwiftUI
 @MainActor
 final class ScreenshotDemoPillPanel {
     private let panel: NSPanel
-    private let levelSource = SimulatedAudioLevelSource(seed: 42, fixture: .conversation)
-    private let canvasSize = NSSize(width: 560, height: 160)
+    private let levelSource = SimulatedAudioLevelSource(seed: 42, fixture: .energetic)
+    private let canvasSize = NSSize(width: 320, height: 88)
 
     init() {
+        // Seed the production renderer with a strong, deterministic voice frame.
+        levelSource.frame = 42
         panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: canvasSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -32,12 +34,12 @@ final class ScreenshotDemoPillPanel {
             state: .recording(handsFree: false),
             style: .calmFlowRibbon,
             elapsed: 4,
-            audioLevel: levelSource.latestLevel,
+            audioLevel: 1,
             errorMessage: nil,
             offline: false,
             cleanupDegraded: false,
-            reduceMotion: true,
-            increasedContrast: false,
+            reduceMotion: false,
+            increasedContrast: true,
             isInstant: false)
         let root = ZStack {
             Color(red: 0.08, green: 0.09, blue: 0.12)

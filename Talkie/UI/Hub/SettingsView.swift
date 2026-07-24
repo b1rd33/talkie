@@ -29,7 +29,16 @@ struct SettingsView: View {
                 devTabs
             }
         }
-        .frame(width: 560, height: 480)
+        .frame(width: screenshotReadableWidth, height: 480)
+    }
+
+    private var screenshotReadableWidth: CGFloat {
+#if DEBUG
+        if AppServices.shared.environment.mode == .screenshotDemo {
+            return 720
+        }
+#endif
+        return 560
     }
 
     private var devTabs: some View {
