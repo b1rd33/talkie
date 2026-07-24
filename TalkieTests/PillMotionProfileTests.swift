@@ -18,6 +18,7 @@ final class PillMotionProfileTests: XCTestCase {
         XCTAssertEqual(profile.entryMinimumScale, 1)
         XCTAssertEqual(profile.handsFreeMinimumScale, 1)
         XCTAssertEqual(profile.handsFreeMaximumScale, 1)
+        XCTAssertEqual(profile.waveformFPS, 8)
         XCTAssertFalse(profile.animatesWaveformGeometry)
     }
 

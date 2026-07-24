@@ -50,4 +50,14 @@ final class PillPresentationTests: XCTestCase {
         XCTAssertEqual(PillPresentation.State.map(.recording, handsFree: false, showSuccess: true),
                        .recording(handsFree: false))
     }
+
+    func testOnlyStatesWithVisibleCancelControlAreCancellable() {
+        XCTAssertTrue(PillPresentation.preview(.recording(handsFree: false)).isCancellable)
+        XCTAssertTrue(PillPresentation.preview(.transcribing).isCancellable)
+        XCTAssertTrue(PillPresentation.preview(.cleaning).isCancellable)
+        XCTAssertTrue(PillPresentation.preview(.inserting).isCancellable)
+        XCTAssertFalse(PillPresentation.preview(.idle).isCancellable)
+        XCTAssertFalse(PillPresentation.preview(.success).isCancellable)
+        XCTAssertFalse(PillPresentation.preview(.error).isCancellable)
+    }
 }

@@ -52,6 +52,13 @@ struct PillPresentation: Equatable, Sendable {
         }
     }
 
+    var isCancellable: Bool {
+        switch state {
+        case .recording, .transcribing, .cleaning, .inserting: true
+        case .idle, .success, .error: false
+        }
+    }
+
     var accessibilityLabel: String {
         switch state {
         case .idle:

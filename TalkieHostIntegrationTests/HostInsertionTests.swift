@@ -7,10 +7,7 @@ final class HostInsertionTests: XCTestCase {
     func testTerminalInsertion() throws { try verifyHost(bundleID: "com.apple.Terminal", name: "Terminal") }
 
     private func verifyHost(bundleID: String, name: String) throws {
-        let marker = URL(fileURLWithPath: "/tmp/talkie-host-integration.enabled")
-        let explicitlyEnabled = ProcessInfo.processInfo.environment["TALKIE_RUN_HOST_INTEGRATION"] == "1"
-            || FileManager.default.fileExists(atPath: marker.path)
-        guard explicitlyEnabled else {
+        guard HostIntegrationGate.isEnabled() else {
             throw XCTSkip("Run scripts/host-integration.sh on a signed, Accessibility-approved test Mac.")
         }
         let fixture = "Talkie host test \(UUID().uuidString)"

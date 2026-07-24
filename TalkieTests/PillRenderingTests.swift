@@ -5,6 +5,14 @@ import XCTest
 
 @MainActor
 final class PillRenderingTests: XCTestCase {
+    private final class MutableLevelSource: AudioLevelReading {
+        var latestLevel: Float
+
+        init(level: Float) {
+            latestLevel = level
+        }
+    }
+
     func testEveryStateAndVisibleStyleProducesNonEmptyNativePixels() throws {
         let states: [PillPresentation.State] = [
             .idle, .recording(handsFree: false), .recording(handsFree: true),
@@ -42,12 +50,57 @@ final class PillRenderingTests: XCTestCase {
                        second.representation(using: .png, properties: [:]))
     }
 
+    func testReducedMotionOrganicWaveformStillRespondsToMicrophoneLevel() async throws {
+        var presentation = PillPresentation.preview(.recording(handsFree: false))
+        presentation.style = .inkLine
+        presentation.audioLevel = 0
+        presentation.reduceMotion = true
+        let source = MutableLevelSource(level: 0)
+        let hosting = makeHosting(PillRendererView(
+            presentation: presentation,
+            levelSource: source,
+            recordingStartedAt: nil))
+        let window = attachToWindow(hosting)
+        defer { window.close() }
+
+        try await Task.sleep(for: .milliseconds(180))
+        let quiet = try snapshot(hosting)
+        source.latestLevel = 1
+        try await Task.sleep(for: .milliseconds(300))
+        let loud = try snapshot(hosting)
+
+        XCTAssertNotEqual(quiet.representation(using: .png, properties: [:]),
+                          loud.representation(using: .png, properties: [:]))
+    }
+
     private func render<V: View>(_ view: V) throws -> NSBitmapImageRep {
+        try snapshot(makeHosting(view))
+    }
+
+    private func makeHosting<V: View>(_ view: V) -> NSHostingView<some View> {
         let size = NSSize(width: PillLayout.panelSize.width, height: PillLayout.panelSize.height)
         let hosting = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
         hosting.frame = NSRect(origin: .zero, size: size)
         hosting.layoutSubtreeIfNeeded()
+        return hosting
+    }
 
+    private func attachToWindow<V>(_ hosting: NSHostingView<V>) -> NSWindow where V: View {
+        let window = NSWindow(
+            contentRect: hosting.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        window.alphaValue = 0
+        window.contentView = hosting
+        window.orderBack(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        return window
+    }
+
+    private func snapshot<V>(_ hosting: NSHostingView<V>) throws -> NSBitmapImageRep where V: View {
+        let size = hosting.frame.size
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: Int(size.width * 2),

@@ -11,7 +11,6 @@ struct OrganicWaveformView: View {
 
     @State private var buffer: OrganicWaveBuffer
     @State private var tick = 0
-    private let clock = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
 
     init(style: PillStyle, levelSource: any AudioLevelReading,
          presentation: PillPresentation, color: Color = .primary) {
@@ -24,20 +23,58 @@ struct OrganicWaveformView: View {
 
     var body: some View {
         let _ = tick
-        canvas
+        Group {
+            if presentation.isActive {
+                activeCanvas
+            } else {
+                canvas
+            }
+        }
             .frame(width: 116, height: 26)
-            .onReceive(clock) { date in
-                guard presentation.isActive, !presentation.reduceMotion else { return }
-                buffer.advance(to: date, level: levelSource.latestLevel)
-                tick &+= 1
+            .onAppear {
+                if !presentation.isActive {
+                    settleForIdle()
+                }
+            }
+            .onChange(of: presentation.isActive) { _, isActive in
+                if !isActive {
+                    settleForIdle()
+                }
             }
             .accessibilityHidden(true)
     }
 
+    private var activeCanvas: some View {
+        canvas.onReceive(
+            Timer.publish(
+                every: 1.0 / Double(motion.waveformFPS),
+                on: .main,
+                in: .common
+            ).autoconnect()
+        ) { date in
+            buffer.advance(
+                to: date,
+                level: levelSource.latestLevel,
+                advancesPhase: motion.animatesWaveformGeometry)
+            tick &+= 1
+        }
+    }
+
+    private var motion: PillMotionProfile {
+        .resolve(reduceMotion: presentation.reduceMotion)
+    }
+
+    private func settleForIdle() {
+        buffer.reset()
+        tick &+= 1
+    }
+
     private var canvas: some View {
         Canvas { context, size in
-            let level = max(CGFloat(buffer.level), CGFloat(presentation.audioLevel))
-            let phase = presentation.reduceMotion ? 0 : CGFloat(buffer.frame) * rate
+            let level = presentation.isActive
+                ? max(CGFloat(buffer.level), CGFloat(presentation.audioLevel))
+                : 0
+            let phase = motion.animatesWaveformGeometry ? CGFloat(buffer.frame) * rate : 0
             switch style {
             case .inkLine:
                 drawLine(in: &context, size: size, level: level, phase: phase, lane: 0,
@@ -59,7 +96,6 @@ struct OrganicWaveformView: View {
             default:
                 break
             }
-            drawTerminalStateMarker(in: &context, size: size)
         }
     }
 
@@ -85,18 +121,6 @@ struct OrganicWaveformView: View {
         context.stroke(path, with: .color(color.opacity(opacity)), lineWidth: width)
     }
 
-    private func drawTerminalStateMarker(in context: inout GraphicsContext, size: CGSize) {
-        let marker: Color?
-        switch presentation.state {
-        case .success: marker = .green
-        case .error: marker = .red
-        default: marker = nil
-        }
-        guard let marker else { return }
-        context.fill(Path(ellipseIn: CGRect(x: size.width - 7, y: size.height / 2 - 3,
-                                           width: 6, height: 6)),
-                     with: .color(marker.opacity(0.82)))
-    }
 }
 
 final class OrganicWaveBuffer {
@@ -107,11 +131,20 @@ final class OrganicWaveBuffer {
 
     init(initialLevel: Float) { level = min(max(initialLevel, 0), 1) }
 
-    func advance(to date: Date, level target: Float) {
+    func advance(to date: Date, level target: Float, advancesPhase: Bool = true) {
         guard date != lastDate else { return }
         lastDate = date
         level = smoother.update(target: target)
-        frame &+= 1
+        if advancesPhase {
+            frame &+= 1
+        }
+    }
+
+    func reset() {
+        smoother = WaveformSmoother()
+        lastDate = nil
+        level = 0
+        frame = 0
     }
 }
 

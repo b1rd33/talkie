@@ -170,8 +170,11 @@ struct PillRendererView: View {
             Button("Hide for 1 hour") { onHideForHour() }
             Button("Hide permanently") { onHidePermanently() }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(presentation.accessibilityLabel)
+        .modifier(PillAccessibilityModifier(
+            presentation: presentation,
+            onCancel: onCancel,
+            onHideForHour: onHideForHour,
+            onHidePermanently: onHidePermanently))
         .onAppear { updateHandsFreeAnimation() }
         .onChange(of: isHandsFree) { _, _ in updateHandsFreeAnimation() }
         .onChange(of: presentation.reduceMotion) { _, _ in updateHandsFreeAnimation() }
@@ -308,6 +311,28 @@ struct PillRendererView: View {
                 .frame(height: 34)
                 .background(accent?.opacity(0.85) ?? .black.opacity(0.78), in: Capsule())
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+        }
+    }
+}
+
+private struct PillAccessibilityModifier: ViewModifier {
+    let presentation: PillPresentation
+    let onCancel: () -> Void
+    let onHideForHour: () -> Void
+    let onHidePermanently: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let accessible = content
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(presentation.accessibilityLabel)
+            .accessibilityAction(named: "Hide for 1 hour", onHideForHour)
+            .accessibilityAction(named: "Hide permanently", onHidePermanently)
+
+        if presentation.isCancellable {
+            accessible.accessibilityAction(named: "Cancel dictation", onCancel)
+        } else {
+            accessible
         }
     }
 }
