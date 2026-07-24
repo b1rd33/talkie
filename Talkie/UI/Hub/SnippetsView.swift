@@ -1,34 +1,50 @@
 import SwiftData
 import SwiftUI
 
+struct SnippetFormState {
+    var errorMessage: String?
+    var trigger = "" {
+        didSet {
+            if trigger != oldValue { errorMessage = nil }
+        }
+    }
+    var expansion = "" {
+        didSet {
+            if expansion != oldValue { errorMessage = nil }
+        }
+    }
+
+    static func deleteAccessibilityLabel(trigger: String) -> String {
+        "Delete snippet \(trigger)"
+    }
+}
+
 struct SnippetsView: View {
     let history: HistoryStore
     @Query(sort: \Snippet.trigger) private var snippets: [Snippet]
-    @State private var trigger = ""
-    @State private var expansion = ""
-    @State private var errorMessage: String?
+    @State private var form = SnippetFormState()
 
     var body: some View {
         VStack(spacing: 0) {
             Form {
                 Section("Add a voice snippet") {
-                    TextField("Trigger phrase (for example: email signature)", text: $trigger)
-                    TextEditor(text: $expansion)
+                    TextField("Trigger phrase (for example: email signature)", text: $form.trigger)
+                    TextEditor(text: $form.expansion)
                         .frame(minHeight: 70)
                         .overlay(alignment: .topLeading) {
-                            if expansion.isEmpty {
+                            if form.expansion.isEmpty {
                                 Text("Exact text to insert")
                                     .foregroundStyle(.tertiary)
                                     .padding(.horizontal, 5).padding(.vertical, 8)
                                     .allowsHitTesting(false)
                             }
                         }
-                    if let errorMessage {
+                    if let errorMessage = form.errorMessage {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(.orange)
                     }
                     Button("Add snippet") { add() }
-                        .disabled(SnippetProcessor.normalize(trigger).isEmpty || expansion.isEmpty)
+                        .disabled(SnippetProcessor.normalize(form.trigger).isEmpty || form.expansion.isEmpty)
                 }
             }
             .formStyle(.grouped)
@@ -48,6 +64,9 @@ struct SnippetsView: View {
                             Image(systemName: "trash")
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel(
+                            SnippetFormState.deleteAccessibilityLabel(trigger: snippet.trigger)
+                        )
                     }
                     .padding(.vertical, 4)
                 }
@@ -66,16 +85,16 @@ struct SnippetsView: View {
 
     private func add() {
         do {
-            try history.addSnippet(trigger: trigger, expansion: expansion)
-            trigger = ""
-            expansion = ""
-            errorMessage = nil
+            try history.addSnippet(trigger: form.trigger, expansion: form.expansion)
+            form.trigger = ""
+            form.expansion = ""
+            form.errorMessage = nil
         } catch HistoryStore.SnippetError.duplicateTrigger {
-            errorMessage = "That trigger already exists."
+            form.errorMessage = "That trigger already exists."
         } catch HistoryStore.SnippetError.dictionaryConflict {
-            errorMessage = "That trigger conflicts with a dictionary correction."
+            form.errorMessage = "That trigger conflicts with a dictionary correction."
         } catch {
-            errorMessage = "Enter both a trigger and an expansion."
+            form.errorMessage = "Enter both a trigger and an expansion."
         }
     }
 }
