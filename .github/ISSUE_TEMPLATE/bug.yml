@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible problem with Talkie.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Privacy warning**
+
+        Do not paste API keys, transcripts, recordings, clipboard contents, crash logs containing personal paths, or other private data.
+
+        Please share only the minimum sanitized information needed to reproduce the problem.
+  - type: input
+    id: version
+    attributes:
+      label: Talkie version
+      description: Find this in Talkie's About window or the GitHub release name.
+      placeholder: "Example: 1.2.3"
+    validations:
+      required: true
+  - type: input
+    id: macos_version
+    attributes:
+      label: macOS version
+      description: Include the full version shown in About This Mac.
+      placeholder: "Example: macOS 26.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Mac architecture
+      options:
+        - Apple silicon
+        - Intel
+        - Unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: engine_mode
+    attributes:
+      label: Engine mode
+      description: Choose the transcription mode active when the problem occurred.
+      options:
+        - Cloud — batch
+        - Cloud — instant streaming
+        - On this Mac — local
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: Describe what you expected Talkie to do without including private content.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Describe what happened instead. Redact private data from any error text.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproducible steps
+      description: List the smallest sequence that reproduces the problem using placeholder or non-sensitive text.
+      placeholder: |
+        1. Open …
+        2. Choose …
+        3. Observe …
+    validations:
+      required: true
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Regression status
+      description: Did this work in an earlier Talkie version on the same Mac?
+      options:
+        - Yes — it worked before
+        - No — it has never worked
+        - Unknown or not sure
+    validations:
+      required: true

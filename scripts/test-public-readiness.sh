@@ -136,6 +136,156 @@ if [[ -f "$codeql" ]]; then
   done < <(grep -E '^[[:space:]]*uses:' "$codeql" || true)
 fi
 
+bug_form=".github/ISSUE_TEMPLATE/bug.yml"
+feature_form=".github/ISSUE_TEMPLATE/feature.yml"
+issue_config=".github/ISSUE_TEMPLATE/config.yml"
+pull_request_template=".github/pull_request_template.md"
+privacy_warning="Do not paste API keys, transcripts, recordings, clipboard contents, crash logs containing personal paths, or other private data."
+
+for template in "$bug_form" "$feature_form" "$issue_config" "$pull_request_template"; do
+  expect_file "$template"
+done
+
+expect_pattern "$bug_form" "${privacy_warning//./\\.}" "missing the repository privacy warning"
+expect_pattern "$feature_form" "${privacy_warning//./\\.}" "missing the repository privacy warning"
+
+for checklist_line in \
+  "- [ ] Tests cover the change and pass locally." \
+  "- [ ] No live provider calls or production credentials are required by routine tests." \
+  "- [ ] No transcript, selected text, clipboard content, recording, or API key is logged." \
+  "- [ ] UI changes were checked with keyboard access, Reduce Motion, Increase Contrast, light mode, and dark mode." \
+  "- [ ] User-facing behavior and privacy documentation are updated."
+do
+  expect_line "$pull_request_template" "$checklist_line"
+done
+for heading in "## Summary" "## Testing" "## Privacy"; do
+  expect_line "$pull_request_template" "$heading"
+done
+
+if [[ -f "$bug_form" && -f "$feature_form" && -f "$issue_config" ]]; then
+  ruby - "$bug_form" "$feature_form" "$issue_config" <<'RUBY' || failures+=("GitHub issue templates failed YAML/schema validation")
+require "yaml"
+
+def fail_schema(path, message)
+  warn "#{path}: #{message}"
+  exit 1
+end
+
+def load_yaml(path)
+  YAML.safe_load(File.read(path), permitted_classes: [], permitted_symbols: [], aliases: false)
+rescue Psych::Exception => error
+  fail_schema(path, "invalid YAML: #{error.message.lines.first.strip}")
+end
+
+def validate_form(path, required_ids)
+  form = load_yaml(path)
+  fail_schema(path, "top level must be a mapping") unless form.is_a?(Hash)
+  %w[name description].each do |key|
+    fail_schema(path, "#{key} must be a non-empty string") unless form[key].is_a?(String) && !form[key].strip.empty?
+  end
+  fail_schema(path, "title must be a string") if form.key?("title") && !form["title"].is_a?(String)
+  %w[labels assignees].each do |key|
+    next unless form.key?(key)
+    value = form[key]
+    fail_schema(path, "#{key} must be an array of strings") unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) }
+  end
+
+  body = form["body"]
+  fail_schema(path, "body must be a non-empty array") unless body.is_a?(Array) && !body.empty?
+  seen_ids = []
+  allowed_types = %w[markdown input dropdown textarea checkboxes]
+  body.each_with_index do |element, index|
+    fail_schema(path, "body item #{index} must be a mapping") unless element.is_a?(Hash)
+    type = element["type"]
+    fail_schema(path, "body item #{index} has unsupported type") unless allowed_types.include?(type)
+    attributes = element["attributes"]
+    fail_schema(path, "body item #{index} attributes must be a mapping") unless attributes.is_a?(Hash)
+
+    if type == "markdown"
+      fail_schema(path, "markdown item #{index} needs a non-empty value") unless attributes["value"].is_a?(String) && !attributes["value"].strip.empty?
+      next
+    end
+
+    id = element["id"]
+    fail_schema(path, "body item #{index} needs a valid id") unless id.is_a?(String) && id.match?(/\A[A-Za-z0-9_-]+\z/)
+    fail_schema(path, "duplicate id #{id}") if seen_ids.include?(id)
+    seen_ids << id
+    fail_schema(path, "#{id} needs a non-empty label") unless attributes["label"].is_a?(String) && !attributes["label"].strip.empty?
+
+    validations = element.fetch("validations", {})
+    fail_schema(path, "#{id} validations must be a mapping") unless validations.is_a?(Hash)
+    if validations.key?("required") && ![true, false].include?(validations["required"])
+      fail_schema(path, "#{id} required validation must be boolean")
+    end
+
+    if type == "dropdown"
+      options = attributes["options"]
+      fail_schema(path, "#{id} dropdown needs at least two string options") unless options.is_a?(Array) && options.length >= 2 && options.all? { |option| option.is_a?(String) && !option.strip.empty? }
+      if attributes.key?("multiple") && ![true, false].include?(attributes["multiple"])
+        fail_schema(path, "#{id} multiple attribute must be boolean")
+      end
+    elsif type == "checkboxes"
+      options = attributes["options"]
+      valid_options = options.is_a?(Array) && !options.empty? && options.all? do |option|
+        option.is_a?(Hash) &&
+          option["label"].is_a?(String) && !option["label"].strip.empty? &&
+          (!option.key?("required") || [true, false].include?(option["required"]))
+      end
+      fail_schema(path, "#{id} checkboxes need valid options") unless valid_options
+    end
+  end
+
+  missing = required_ids - seen_ids
+  fail_schema(path, "missing required field ids: #{missing.join(", ")}") unless missing.empty?
+  required_ids.each do |id|
+    element = body.find { |item| item["id"] == id }
+    fail_schema(path, "#{id} must be required") unless element.dig("validations", "required") == true
+  end
+end
+
+bug_path, feature_path, config_path = ARGV
+validate_form(bug_path, %w[version macos_version architecture engine_mode expected actual steps regression])
+validate_form(feature_path, %w[problem proposed_behavior privacy_impact local_offline_impact alternatives])
+
+feature_ids = load_yaml(feature_path).fetch("body").map { |item| item["id"] }.compact
+expected_order = %w[problem proposed_behavior privacy_impact local_offline_impact alternatives]
+positions = expected_order.map { |id| feature_ids.index(id) }
+fail_schema(feature_path, "feature questions must remain in problem-first order") unless positions == positions.sort
+
+config = load_yaml(config_path)
+fail_schema(config_path, "config top level must be a mapping") unless config.is_a?(Hash)
+fail_schema(config_path, "blank issues must be disabled") unless config["blank_issues_enabled"] == false
+links = config["contact_links"]
+fail_schema(config_path, "contact_links must contain Discussions and private security guidance") unless links.is_a?(Array) && links.length == 2
+expected_urls = [
+  "https://github.com/b1rd33/talkie/discussions",
+  "https://github.com/b1rd33/talkie/security/policy"
+]
+actual_urls = links.map { |link| link.is_a?(Hash) ? link["url"] : nil }
+fail_schema(config_path, "contact links must use stable repository URLs") unless actual_urls == expected_urls
+links.each_with_index do |link, index|
+  fail_schema(config_path, "contact link #{index} must have name, url, and about strings") unless %w[name url about].all? { |key| link[key].is_a?(String) && !link[key].strip.empty? }
+end
+security_link = links.last
+unless security_link["name"].match?(/security|vulnerability/i) &&
+       security_link["about"].match?(/private/i) &&
+       !security_link["about"].match?(/public issue/i)
+  fail_schema(config_path, "security contact must direct reporters to private vulnerability reporting")
+end
+
+[bug_path, feature_path].each do |path|
+  content = File.read(path)
+  forbidden_prompts = [
+    /paste your API key here/i,
+    /attach (?:your )?transcript/i,
+    /upload (?:a |your )?recording/i,
+    /provide (?:your )?clipboard contents/i
+  ]
+  fail_schema(path, "requests secrets or private content") if forbidden_prompts.any? { |pattern| content.match?(pattern) }
+end
+RUBY
+fi
+
 legacy_license="License""Secret"
 trial_type="Trial""Manager"
 lab_type="Pill""Lab"
