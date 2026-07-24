@@ -12,6 +12,8 @@ Describe any data-handling or logging impact. Write "None" when there is no impa
 
 ## Checklist
 
+Conditional checklist items may be marked checked with `N/A — explanation`.
+
 - [ ] Tests cover the change and pass locally.
 - [ ] No live provider calls or production credentials are required by routine tests.
 - [ ] No transcript, selected text, clipboard content, recording, or API key is logged.
