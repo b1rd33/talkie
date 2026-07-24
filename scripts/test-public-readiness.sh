@@ -186,9 +186,24 @@ done
 
 reject_pattern project.yml '^[[:space:]]+DEVELOPMENT_TEAM:' "team identity must be supplied only by release tooling"
 expect_file Talkie/TalkieDebug.entitlements
-expect_pattern scripts/release.sh 'DEVELOPMENT_TEAM:\?' "release must require DEVELOPMENT_TEAM"
-expect_pattern scripts/release.sh 'ExportOptions\.local\.plist' "release must generate a local export options file"
-expect_pattern scripts/release.sh 'mkdir -p[[:space:]]+"\$\(dirname "\$EXPORT_OPTIONS"\)"' "release must create the local export options directory"
+expect_pattern scripts/release.sh 'DEVELOPMENT_TEAM_ID:\?' "release must require DEVELOPMENT_TEAM_ID"
+expect_pattern scripts/release.sh 'SIGNING_IDENTITY:\?' "release must require SIGNING_IDENTITY"
+expect_pattern scripts/release.sh 'NOTARY_KEYCHAIN_PROFILE' "release must support a notarytool Keychain profile"
+expect_pattern scripts/release.sh 'NOTARY_KEY_PATH.*NOTARY_KEY_ID.*NOTARY_ISSUER_ID|NOTARY_KEY_PATH, NOTARY_KEY_ID, NOTARY_ISSUER_ID' "release must document App Store Connect API key variables"
+expect_pattern scripts/release.sh 'ExportOptions\.resolved\.plist' "release must generate resolved export options"
+expect_pattern scripts/release.sh 'PlistBuddy' "release must safely inject the validated team ID"
+expect_pattern scripts/release.sh 'notarytool submit' "release must submit artifacts with notarytool"
+expect_pattern scripts/release.sh '\-\-output-format[[:space:]]+json' "release must capture machine-readable notarization results"
+expect_pattern scripts/release.sh 'submitted_status.*Accepted|submitted_status.*!=.*Accepted' "release must require Accepted notarization"
+expect_pattern scripts/release.sh 'stapler validate' "release must validate stapled tickets"
+expect_pattern scripts/release.sh 'spctl -a -vv' "release must run Gatekeeper assessment"
+expect_pattern scripts/release.sh 'SHA256SUMS' "release must publish checksums"
+reject_pattern scripts/release.sh 'DEVELOPMENT_TEAM:\?' "release must not use the retired DEVELOPMENT_TEAM public interface"
+reject_pattern scripts/ExportOptions.plist 'teamID|__[A-Z0-9_]+__' "public export template must not contain a team ID or placeholder"
+expect_file scripts/test-release-pipeline.sh
+expect_pattern scripts/build-release-adhoc.sh 'community-preview' "ad-hoc artifacts must be named as community previews"
+expect_pattern scripts/build-release-adhoc.sh 'SHA256SUMS' "ad-hoc community previews must publish checksums"
+reject_pattern scripts/build-release-adhoc.sh 'notarytool|spctl[[:space:]]+-a' "ad-hoc build must not invoke notarization or Gatekeeper assessment"
 release_generate_line="$(grep -n -m1 'xcodegen generate' scripts/release.sh | cut -d: -f1 || true)"
 release_verify_line="$(grep -n -m1 'scripts/verify-project-config\.sh' scripts/release.sh | cut -d: -f1 || true)"
 if [[ -z "$release_generate_line" || -z "$release_verify_line" ||
@@ -295,6 +310,11 @@ if [[ -x "$scanner" ]]; then
   if ! "$root/$scanner" --root "$fixture" --tracked-only >/dev/null 2>&1; then
     failures+=("$scanner: tracked-only mode scanned an untracked fixture")
   fi
+fi
+
+if [[ -x scripts/test-release-pipeline.sh ]]; then
+  scripts/test-release-pipeline.sh \
+    || failures+=("stubbed release-pipeline tests failed")
 fi
 
 if ((${#failures[@]})); then

@@ -10,7 +10,5 @@
     <string>manual</string>
     <key>signingCertificate</key>
     <string>Developer ID Application</string>
-    <key>teamID</key>
-    <string>__DEVELOPMENT_TEAM__</string>
 </dict>
 </plist>

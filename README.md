@@ -17,9 +17,9 @@ The project does not currently publish or validate an Intel release. The app has
 
 ## Install
 
-### 1. Notarized release — planned
+### 1. Notarized release — supported standard, not yet published
 
-A Developer ID-signed and Apple-notarized build is the intended primary installation path, but none is published today. When one becomes available, it will be listed on [GitHub Releases](https://github.com/b1rd33/talkie/releases). Do not assume an asset is notarized unless its release notes say so.
+A Developer ID-signed and Apple-notarized build is the only supported public binary standard, but none is published today. When one becomes available, it will be listed on [GitHub Releases](https://github.com/b1rd33/talkie/releases). Do not assume an asset is notarized unless its release notes say so.
 
 ### 2. Build from source
 
@@ -33,9 +33,9 @@ xcodebuild -project Talkie.xcodeproj -scheme Talkie -configuration Debug build
 
 Launch the built app from Xcode or the build products directory, then follow onboarding for Microphone and Accessibility access. Cloud workflows use provider API keys stored in the macOS Keychain; the Private / Offline profile needs no key.
 
-### 3. Ad-hoc build — advanced and unsupported
+### 3. Ad-hoc community preview — advanced and unsupported
 
-The published [v1.0.0 release](https://github.com/b1rd33/talkie/releases/tag/v1.0.0) contains an ad-hoc-signed, non-notarized archive. It requires a manual Gatekeeper override, has no automatic updater, may lose its Accessibility grant after replacement, and is not the supported installation path. See the [ad-hoc installation guide](docs/install-free.md) before using it.
+The published [v1.0.0 release](https://github.com/b1rd33/talkie/releases/tag/v1.0.0) contains an ad-hoc-signed, non-notarized community preview. It requires a manual Gatekeeper override, has no automatic updater, may lose its Accessibility grant after replacement, and is not the supported installation path. See the [community-preview installation guide](docs/install-free.md) before using it.
 
 ## Core workflows
 
@@ -105,6 +105,13 @@ xcodebuild test \
 
 Project configuration checks are available at `scripts/verify-project-config.sh`; documentation checks are at `scripts/verify-docs.sh`. Host insertion and credentialed provider checks are separate, explicit workflows documented in [the testing matrix](docs/testing-matrix.md).
 
+Maintainers use `scripts/release.sh` for the fail-closed Developer ID and Apple
+notarization pipeline. Local signing/notary environment setup, the
+`--validate-environment` preflight, artifact checksums, and the separate
+unsupported community-preview path are documented in the
+[installation guide](docs/install-free.md). The release script never creates a
+tag, pushes, or publishes an asset.
+
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Support](SUPPORT.md)
@@ -114,7 +121,7 @@ Project configuration checks are available at `scripts/verify-project-config.sh`
 
 ## Project status and known limitations
 
-Talkie is an early public project. Version 1.0.0 was published on 2026-06-15 as an ad-hoc macOS build; a notarized distribution is planned but not currently available.
+Talkie is an early public project. Version 1.0.0 was published on 2026-06-15 as an ad-hoc macOS community preview. A Developer ID-signed and Apple-notarized distribution is the supported public standard but is not currently available.
 
 - Apple Silicon is the only supported/tested hardware target. Intel releases and Intel cloud-only behavior are not validated.
 - The on-device model requires Apple Silicon, is currently presented by Talkie as English-only, and requires a separate model download of about 2 GB.
@@ -123,4 +130,4 @@ Talkie is an early public project. Version 1.0.0 was published on 2026-06-15 as 
 - Private transcription does not imply private cleanup: use the Private / Offline profile, or separately disable cleanup, to keep transcript processing local.
 - Talkie attempts to delete temporary audio after a successfully completed dictation, but deletion is best-effort. Failed, cancelled, or deletion-error cases can leave an audio file on the Mac for retry or recovery.
 - Direct insertion depends on Accessibility and intentionally refuses secure/password fields. The non-notarized ad-hoc build can require permission repair after an update.
-- There is no automatic updater for the current ad-hoc release.
+- There is no automatic updater for the current ad-hoc community preview.
