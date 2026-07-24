@@ -23,7 +23,7 @@ final class FluidAudioBackend: LocalASRBackend, @unchecked Sendable {
         loadLock.unlock()
         guard existing == nil else { return }
         guard Self.modelsPresent else {
-            throw EngineError.requestFailed(status: 0, message: "Local models not downloaded — see Settings → Engines.")
+            throw EngineError.localModelsUnavailable
         }
         let models = try await AsrModels.load(from: Self.modelsDirectory)
         let loaded = AsrManager(config: .default, models: models) // v0.15: models inject at init

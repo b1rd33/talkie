@@ -65,8 +65,8 @@ Runs via OpenRouter or OpenAI — **Settings → Engines → Cleanup**.
 
 ## Privacy
 
-- Successful audio is **deleted after transcription** unless you opt in to keep
-  recordings; failed or cancelled audio may stay local for retry.
+- Talkie attempts to delete audio after a successfully completed dictation unless
+  you opt in to keep it; failures or deletion errors may leave audio local for recovery.
 - Talkie is **not sandboxed** — it needs Accessibility to type into other apps,
   and it refuses to type into secure/password fields.
 - Keys live in the macOS Keychain.

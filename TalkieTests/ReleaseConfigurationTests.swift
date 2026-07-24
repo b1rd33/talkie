@@ -5,6 +5,15 @@ import XCTest
 /// app bundle — built from the same project.yml settings as the Release bundle.
 final class ReleaseConfigurationTests: XCTestCase {
     private var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
+    private let microphoneUsage = "Talkie records for transcription while you hold the dictation key or while hands-free recording is active."
+
+    private func repositoryFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath),
+                          encoding: .utf8)
+    }
 
     /// codesign writes -d output to stderr; merge both streams.
     private func codesign(_ arguments: [String]) throws -> String {
@@ -34,10 +43,17 @@ final class ReleaseConfigurationTests: XCTestCase {
                        "sandbox must stay OFF — AX insertion is incompatible (see Talkie.entitlements)")
     }
 
-    func testPlistMigrationKeepsMenuBarOnlyAndMicUsage() {
+    func testPlistMigrationKeepsMenuBarOnlyAndMicUsage() throws {
         XCTAssertEqual(info["LSUIElement"] as? Bool, true)
-        XCTAssertEqual((info["NSMicrophoneUsageDescription"] as? String)?.isEmpty, false)
+        XCTAssertEqual(info["NSMicrophoneUsageDescription"] as? String, microphoneUsage)
         XCTAssertEqual(info["CFBundleDisplayName"] as? String, "Talkie")
+
+        let sourcePlist = try repositoryFile("Talkie/Info.plist")
+        let projectConfig = try repositoryFile("project.yml")
+        XCTAssertTrue(sourcePlist.contains("<string>\(microphoneUsage)</string>"))
+        XCTAssertTrue(projectConfig.contains(
+            "NSMicrophoneUsageDescription: \"\(microphoneUsage)\""
+        ))
     }
 
     func testVersionIsReleaseSemver() {

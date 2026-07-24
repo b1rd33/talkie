@@ -47,7 +47,7 @@ targets:
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         LSUIElement: true
         NSPrincipalClass: NSApplication
-        NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
+        NSMicrophoneUsageDescription: "Talkie records for transcription while you hold the dictation key or while hands-free recording is active."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie

@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Talkie listens while you hold the dictation key so it can transcribe your speech.</string>
+	<string>Talkie records for transcription while you hold the dictation key or while hands-free recording is active.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

@@ -392,6 +392,10 @@ private struct EngineSettingsTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Local models") {
+                if settings.engineMode == "local", !FluidAudioBackend.modelsPresent {
+                    Text("Local mode will not use cloud automatically. Download models below or switch to Cloud or Instant explicitly.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 switch downloader.state {
                 case .ready:
                     LabeledContent("Status", value: "Downloaded")

@@ -64,12 +64,11 @@ struct SimpleSettingsView: View {
 
     @ViewBuilder private var keyFields: some View {
         let selected = profiles.selectedProfile
-        // Local profiles need the on-device models; without them EngineRouter falls back
-        // to the cloud (needing a key the profile claims none). Surface this for ANY
-        // local profile, independent of requiredKey (covers local + cleanup too).
+        // Local profiles fail closed when models are absent. Surface this for ANY local
+        // profile, independent of requiredKey (covers local + cleanup too).
         let localModelsMissing = (selected?.engineMode == "local") && !FluidAudioBackend.modelsPresent
         if localModelsMissing {
-            Label("On-device models aren't downloaded yet — run the Setup Assistant to enable offline mode (otherwise Talkie falls back to the cloud).",
+            Label("On-device models aren't downloaded yet. Talkie will not use cloud automatically — download them in the Setup Assistant or switch to a cloud profile explicitly.",
                   systemImage: "exclamationmark.triangle.fill")
                 .font(.caption).foregroundStyle(.orange)
             Button("Open Setup Assistant…") { AppServices.shared.showOnboarding() }

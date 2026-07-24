@@ -6,7 +6,7 @@ Talkie has no account system, analytics, advertising, or Talkie-operated server.
 
 Audio stays on your Mac during transcription. The local model files are downloaded from Hugging Face, but dictated audio, transcripts, and nearby context are not sent there.
 
-After a successful transcription, temporary audio is deleted unless **Keep audio recordings** is enabled. Failed or cancelled recordings may be retained locally for retry.
+After a successfully completed dictation, Talkie attempts to delete temporary audio unless **Keep audio recordings** is enabled. Deletion is best-effort: a deletion error can leave the temporary file on your Mac. Failed or cancelled dictations, including an insertion failure after transcription, may retain audio locally for retry or recovery.
 
 ## Cloud batch transcription
 
@@ -36,4 +36,4 @@ Provider policies can change. Review the linked policies before using cloud feat
 
 ## Local storage
 
-API keys are stored in the macOS Keychain. Dictation history is stored locally on your Mac unless you copy or export it. Recordings kept by choice, or retained after a failed or cancelled dictation for retry, also remain local.
+API keys are stored in the macOS Keychain. Dictation history is stored locally on your Mac unless you copy or export it. Recordings kept by choice, retained after a failed or cancelled dictation, or left after a deletion error also remain local.

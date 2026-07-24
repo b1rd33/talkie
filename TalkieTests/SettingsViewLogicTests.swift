@@ -54,6 +54,9 @@ final class SettingsViewLogicTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         XCTAssertFalse(PrivacyCopy.audioRetentionSummary
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        XCTAssertTrue(PrivacyCopy.audioRetentionSummary.contains("attempts to delete"))
+        XCTAssertTrue(PrivacyCopy.audioRetentionSummary.contains("may remain locally"))
+        XCTAssertFalse(PrivacyCopy.audioRetentionSummary.contains("is deleted after transcription"))
     }
 
     func testPrivacyPolicyUsesOpenAIAPITermsAndDataPractices() throws {
@@ -71,5 +74,27 @@ final class SettingsViewLogicTests: XCTestCase {
 
         XCTAssertTrue(source.contains("hands-free recording is active"))
         XCTAssertFalse(source.contains("records only while you hold the dictation key"))
+    }
+
+    func testPrivacyPolicyDescribesBestEffortAudioDeletion() throws {
+        let policy = try repositoryFile("PRIVACY.md")
+        let readme = try repositoryFile("README.md")
+
+        XCTAssertTrue(policy.contains("attempts to delete"))
+        XCTAssertTrue(policy.contains("deletion error"))
+        XCTAssertTrue(policy.contains("insertion failure"))
+        XCTAssertFalse(policy.contains("temporary audio is deleted"))
+        XCTAssertTrue(readme.contains("attempts to delete"))
+        XCTAssertFalse(readme.contains("is **deleted after transcription**"))
+    }
+
+    func testLocalModelWarningsPromiseNoAutomaticCloudFallback() throws {
+        let simpleSettings = try repositoryFile("Talkie/UI/Hub/SimpleSettingsView.swift")
+        let advancedSettings = try repositoryFile("Talkie/UI/Hub/SettingsView.swift")
+
+        XCTAssertFalse(simpleSettings.contains("falls back to the cloud"))
+        XCTAssertTrue(simpleSettings.contains("will not use cloud automatically"))
+        XCTAssertTrue(advancedSettings.contains("will not use cloud automatically"))
+        XCTAssertTrue(advancedSettings.contains("switch to Cloud or Instant explicitly"))
     }
 }

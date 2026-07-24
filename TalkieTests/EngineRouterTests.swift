@@ -2,10 +2,28 @@ import XCTest
 @testable import Talkie
 
 final class EngineRouterTests: XCTestCase {
+    actor CallCounter {
+        private var count = 0
+
+        func record() { count += 1 }
+        func value() -> Int { count }
+    }
+
     struct StubEngine: TranscriptionEngine {
         var result: Result<Transcript, Error>
         func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
             try result.get()
+        }
+    }
+
+    struct CountingEngine: TranscriptionEngine {
+        let counter: CallCounter
+        var result: Result<Transcript, Error>
+
+        func transcribe(_ audio: RecordedAudio,
+                        dictionaryTerms: [String]) async throws -> Transcript {
+            await counter.record()
+            return try result.get()
         }
     }
 
@@ -30,13 +48,31 @@ final class EngineRouterTests: XCTestCase {
         XCTAssertEqual(t.text, "local")
     }
 
-    func testLocalModeWithoutModelsFallsBackToCloud() async throws {
+    func testLocalModeWithoutModelsFailsClosedWithoutCallingCloud() async {
+        let cloudCalls = CallCounter()
+        let localCalls = CallCounter()
         let router = EngineRouter(
-            cloud: StubEngine(result: .success(Transcript(text: "cloud", engineID: "openai"))),
-            local: StubEngine(result: .failure(EngineError.invalidResponse)),
+            cloud: CountingEngine(
+                counter: cloudCalls,
+                result: .success(Transcript(text: "cloud", engineID: "openai"))),
+            local: CountingEngine(
+                counter: localCalls,
+                result: .success(Transcript(text: "local", engineID: "parakeet"))),
             mode: { "local" }, localAvailable: { false })
-        let t = try await router.transcribe(audio, dictionaryTerms: [])
-        XCTAssertEqual(t.text, "cloud")
+
+        do {
+            _ = try await router.transcribe(audio, dictionaryTerms: [])
+            XCTFail("local mode must fail closed when its models are unavailable")
+        } catch {
+            XCTAssertEqual(
+                (error as? LocalizedError)?.errorDescription,
+                "On-device models aren't downloaded. Download them in Settings → Engines, or explicitly switch to Cloud or Instant."
+            )
+        }
+        let cloudCallCount = await cloudCalls.value()
+        let localCallCount = await localCalls.value()
+        XCTAssertEqual(cloudCallCount, 0)
+        XCTAssertEqual(localCallCount, 0)
     }
 
     func testCloudOfflineFallsBackToLocal() async throws {
