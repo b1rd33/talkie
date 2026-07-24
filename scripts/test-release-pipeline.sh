@@ -29,6 +29,10 @@ assert_failure_without_release() {
   [[ "$status" -ne 0 ]] || fail "$message: command unexpectedly succeeded"
   [[ ! -e "$root/build/release-1.0.0" ]] \
     || fail "$message: publishable release directory survived failure"
+  [[ ! -e "$root/build/ExportOptions.resolved.plist" ]] \
+    || fail "$message: resolved export options survived outside private staging"
+  [[ "$(find "$root/build" -maxdepth 1 -name '.release-1.0.0.*' | wc -l | tr -d ' ')" == "0" ]] \
+    || fail "$message: private release staging survived failure"
 }
 
 make_fixture() {
@@ -261,6 +265,8 @@ validation_root="$(make_fixture validation)"
 run_supported_capture "$validation_root" --validate-environment
 [[ "$captured_status" -eq 0 ]] || fail "profile credential validation should succeed"
 assert_not_contains "$captured_output" "$profile_secret" "profile credential leaked to output"
+[[ ! -e "$validation_root/build/ExportOptions.resolved.plist" ]] \
+  || fail "environment validation created persistent resolved export options"
 validation_log="$(cat "$validation_root/build/commands.log")"
 assert_contains "$validation_log" "xcrun <notarytool> <history>" "validation must authenticate with notarytool history"
 
@@ -359,6 +365,8 @@ for artifact in Talkie-1.0.0.zip Talkie-1.0.0.dmg SHA256SUMS release-metadata.tx
 done
 [[ "$(find "$accepted_root/build" -maxdepth 1 -name '.release-1.0.0.*' | wc -l | tr -d ' ')" == "0" ]] \
   || fail "private release staging survived success"
+[[ ! -e "$accepted_root/build/ExportOptions.resolved.plist" ]] \
+  || fail "resolved export options survived outside private staging after success"
 for metadata_value in \
   "tag=v1.0.0" \
   "commit=$(git -C "$accepted_root" rev-parse HEAD)" \

@@ -195,7 +195,7 @@ expect_pattern scripts/release.sh 'git diff --quiet' "release must reject dirty 
 expect_pattern scripts/release.sh 'git ls-files --others --exclude-standard' "release must reject untracked non-build provenance"
 expect_pattern scripts/release.sh 'refs/tags/\$tag\^\{commit\}' "release must resolve the exact version tag"
 expect_pattern scripts/release.sh 'tag_commit.*head_commit' "release tag must resolve to HEAD"
-expect_pattern scripts/release.sh 'ExportOptions\.resolved\.plist' "release must generate resolved export options"
+expect_pattern scripts/release.sh 'export_options="\$staging_root/ExportOptions\.resolved\.plist"' "resolved export options must remain in private staging"
 expect_pattern scripts/release.sh 'PlistBuddy' "release must safely inject the validated team ID"
 expect_pattern scripts/release.sh 'notarytool submit' "release must submit artifacts with notarytool"
 expect_pattern scripts/release.sh '\-\-output-format[[:space:]]+json' "release must capture machine-readable notarization results"

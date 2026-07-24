@@ -179,13 +179,12 @@ fluid_audio_version="$(
   || fail "could not resolve release metadata from project.yml"
 
 final_dir="build/release-$version"
-export_options="build/ExportOptions.resolved.plist"
 rm -rf "$final_dir"
-rm -f "$export_options"
 mkdir -p build
 staging_root="$(mktemp -d "build/.release-$version.XXXXXX")"
 
 archive="$staging_root/Talkie.xcarchive"
+export_options="$staging_root/ExportOptions.resolved.plist"
 export_dir="$staging_root/export"
 app="$export_dir/Talkie.app"
 output_dir="$staging_root/output"
