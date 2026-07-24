@@ -28,8 +28,8 @@ After setup, hold **fn** and speak.
 
 ## Updating
 
-There's no auto-update in the free build. To update: download the new zip,
-delete the old `Talkie.app` from Applications, and drop the new one in.
+There's no auto-update in the current ad-hoc release. To update: download the
+new zip, delete the old `Talkie.app` from Applications, and drop the new one in.
 
 > **After an update, you may need to re-enable Accessibility.** Because the ad-hoc
 > build isn't signed with a stable Apple identity, macOS treats each new version

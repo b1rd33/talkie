@@ -77,6 +77,15 @@ if positions.all? && positions != positions.sort
   failures << "README.md: required headings are out of order"
 end
 
+public_documents = documents + ["docs/install-free.md"]
+public_documents.each do |document|
+  File.readlines(document, chomp: true).each_with_index do |line, index|
+    if line.match?(/\bfree (?:build|version)\b/i)
+      failures << "#{document}:#{index + 1}: stale pricing/status terminology"
+    end
+  end
+end
+
 {
   "docs/images/talkie-settings.png" => [480, 360],
   "docs/images/talkie-pill.png" => [480, 120],
