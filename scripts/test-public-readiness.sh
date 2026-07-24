@@ -56,6 +56,36 @@ expect_pattern "$ci" 'scan-sensitive-content\.sh[[:space:]]+--tracked-only' "tra
 expect_pattern "$ci" 'if:[[:space:]]+failure\(\)' "test artifacts must only upload on failure"
 expect_pattern "$ci" 'retention-days:[[:space:]]+[1-3]$' "test artifacts need short retention"
 reject_pattern "$ci" 'OPENAI_API_KEY|OPENROUTER_API_KEY|api\.openai\.com|openrouter\.ai' "CI must not use provider credentials or live endpoints"
+reject_pattern "$ci" 'skip-testing:TalkieTests/ReleaseConfigurationTests' "deterministic CI must run release-configuration checks"
+
+ui_step="$(awk '
+  /^      - name: Run deterministic app UI suite$/ { capture = 1 }
+  capture && /^      - name:/ && $0 !~ /Run deterministic app UI suite$/ { exit }
+  capture { print }
+' "$ci")"
+[[ "$ui_step" =~ timeout-minutes:[[:space:]]+8 ]] \
+  || failures+=("$ci: UI step must have an 8-minute timeout")
+[[ "$ui_step" == *"-test-timeouts-enabled YES"* ]] \
+  || failures+=("$ci: UI xcodebuild must enable per-test timeouts")
+[[ "$ui_step" == *"-default-test-execution-time-allowance 60"* ]] \
+  || failures+=("$ci: UI tests need a 60-second default execution allowance")
+[[ "$ui_step" == *"-maximum-test-execution-time-allowance 120"* ]] \
+  || failures+=("$ci: UI tests need a 120-second maximum execution allowance")
+[[ "$ui_step" != *"CODE_SIGN_IDENTITY="* ]] \
+  || failures+=("$ci: UI tests must use generated portable signing settings without command-line identity overrides")
+[[ "$ui_step" == *'tee "$RUNNER_TEMP/xcodebuild-ui.log"'* ]] \
+  || failures+=("$ci: UI output must always be captured in xcodebuild-ui.log")
+
+diagnostic_steps="$(awk '
+  /^      - name: Produce concise test summary$/ { capture = 1 }
+  capture { print }
+' "$ci")"
+[[ "$diagnostic_steps" == *'xcodebuild-ui.log'* ]] \
+  || failures+=("$ci: failure diagnostics must preserve the full UI log")
+[[ "$diagnostic_steps" == *'xcodebuild-ui-tail.txt'* ]] \
+  || failures+=("$ci: failure summary must include a concise UI log tail")
+[[ "$diagnostic_steps" == *'GITHUB_STEP_SUMMARY'* ]] \
+  || failures+=("$ci: UI failure details must be written to the job summary")
 
 while IFS= read -r action; do
   if [[ ! "$action" =~ ^[[:space:]]*uses:[[:space:]]+[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+\#[[:space:]]+v[0-9] ]]; then
@@ -65,6 +95,15 @@ done < <(grep -E '^[[:space:]]*uses:' "$ci" || true)
 
 dependabot=".github/dependabot.yml"
 expect_file "$dependabot"
+expect_file Package.swift
+expect_file Package.resolved
+expect_pattern Package.swift 'Dependabot dependency mirror' "dependency-only manifest must document its metadata purpose"
+expect_pattern Package.swift '\.package\(url:[[:space:]]*"https://github\.com/soffes/HotKey",[[:space:]]+exact:[[:space:]]+"0\.2\.1"\)' "HotKey mirror dependency missing"
+expect_pattern Package.swift '\.package\(url:[[:space:]]*"https://github\.com/FluidInference/FluidAudio",[[:space:]]+exact:[[:space:]]+"0\.15\.5"\)' "FluidAudio mirror dependency missing"
+expect_file scripts/verify-dependency-mirror.sh
+expect_pattern scripts/verify-dependency-mirror.sh 'swift package.*dump-package' "dependency mirror verification must inspect SwiftPM semantics"
+expect_pattern scripts/verify-dependency-mirror.sh 'Package\.resolved' "dependency mirror verification must inspect the tracked SwiftPM lockfile"
+expect_pattern scripts/verify-project-config.sh 'verify-dependency-mirror\.sh' "project verification must reject dependency-mirror drift"
 expect_pattern "$dependabot" '^version:[[:space:]]+2$' "Dependabot version must be 2"
 if [[ -f "$dependabot" ]]; then
   [[ "$(grep -Ec 'package-ecosystem:[[:space:]]+\"?(swift|github-actions)\"?' "$dependabot" || true)" -eq 2 ]] \
@@ -109,21 +148,63 @@ for forbidden in "$legacy_license" "$trial_type" "$lab_type" "$lab_flag" "$team_
 done
 
 reject_pattern project.yml '^[[:space:]]+DEVELOPMENT_TEAM:' "team identity must be supplied only by release tooling"
-expect_pattern project.yml 'OTHER_CODE_SIGN_FLAGS:[[:space:]]+"--options=runtime"' "portable Debug signing must explicitly preserve hardened runtime"
-expect_pattern project.yml 'ENABLE_DEBUG_DYLIB:[[:space:]]+NO' "portable hardened Debug builds must avoid an unloadable ad-hoc debug dylib"
-expect_pattern project.yml 'CODE_SIGN_ENTITLEMENTS:[[:space:]]+Talkie/TalkieDebug\.entitlements' "portable hardened Debug tests must use test-host entitlements"
 expect_file Talkie/TalkieDebug.entitlements
-expect_pattern Talkie/TalkieDebug.entitlements 'com\.apple\.security\.cs\.disable-library-validation' "portable hardened Debug tests must allow XCTest bundle injection"
 expect_pattern scripts/release.sh 'DEVELOPMENT_TEAM:\?' "release must require DEVELOPMENT_TEAM"
 expect_pattern scripts/release.sh 'ExportOptions\.local\.plist' "release must generate a local export options file"
 expect_pattern scripts/release.sh 'mkdir -p[[:space:]]+"\$\(dirname "\$EXPORT_OPTIONS"\)"' "release must create the local export options directory"
+release_generate_line="$(grep -n -m1 'xcodegen generate' scripts/release.sh | cut -d: -f1 || true)"
+release_verify_line="$(grep -n -m1 'scripts/verify-project-config\.sh' scripts/release.sh | cut -d: -f1 || true)"
+if [[ -z "$release_generate_line" || -z "$release_verify_line" ||
+      "$release_generate_line" -ge "$release_verify_line" ]]; then
+  failures+=("scripts/release.sh: must generate the project before semantic configuration verification")
+fi
 expect_pattern scripts/verify-project-config.sh 'scan-sensitive-content\.sh' "project verification must run the repository scanner"
-expect_pattern scripts/verify-project-config.sh 'OTHER_CODE_SIGN_FLAGS' "project verification must enforce portable hardened-runtime flags"
-expect_pattern scripts/verify-project-config.sh 'ENABLE_DEBUG_DYLIB' "project verification must enforce portable hardened Debug layout"
-expect_pattern scripts/verify-project-config.sh 'TalkieDebug\.entitlements' "project verification must enforce portable Debug test-host entitlements"
+expect_pattern scripts/verify-project-config.sh 'xcodebuild' "signing verification must inspect the generated Xcode project"
+expect_pattern scripts/verify-project-config.sh '-showBuildSettings' "signing verification must inspect generated build settings"
+expect_pattern scripts/verify-project-config.sh '-json' "generated build settings must be parsed as structured JSON"
+expect_pattern scripts/verify-project-config.sh 'assert_setting.*Debug.*OTHER_CODE_SIGN_FLAGS.*--options=runtime' "Debug runtime signing flag must be verified"
+expect_pattern scripts/verify-project-config.sh 'assert_setting.*Release.*ENABLE_HARDENED_RUNTIME.*YES' "Release hardened runtime must be verified"
+expect_pattern scripts/verify-project-config.sh 'assert_setting.*Release.*CODE_SIGN_IDENTITY.*Developer ID Application' "Release signing identity must be verified"
+expect_pattern scripts/verify-project-config.sh 'assert_entitlement.*Talkie/TalkieDebug\.entitlements.*disable-library-validation.*true' "Debug XCTest entitlement must be verified"
+expect_pattern scripts/verify-project-config.sh 'reject_entitlement.*Talkie/Talkie\.entitlements.*disable-library-validation' "Release library validation must remain enabled"
+reject_pattern scripts/verify-project-config.sh "require_line 'ENABLE_HARDENED_RUNTIME|require_line 'OTHER_CODE_SIGN_FLAGS|require_line 'CODE_SIGN_IDENTITY" "signing checks must not grep unscoped project text"
 for document in LICENSE PRIVACY.md SECURITY.md; do
   expect_pattern scripts/verify-project-config.sh "$document" "project verification must require $document"
 done
+
+if [[ -x scripts/verify-dependency-mirror.sh && -f Package.swift ]]; then
+  mirror_fixture="$(mktemp -d "${TMPDIR:-/tmp}/talkie-dependency-mirror.XXXXXX")"
+  cp Package.swift "$mirror_fixture/Package.swift"
+  cp Package.resolved "$mirror_fixture/Package.resolved"
+  cp project.yml "$mirror_fixture/project.yml"
+  perl -0pi -e 's/0[.]2[.]1/9.9.9/' "$mirror_fixture/Package.swift"
+  mirror_output="$(
+    scripts/verify-dependency-mirror.sh \
+      "$mirror_fixture/project.yml" "$mirror_fixture/Package.swift" 2>&1 || true
+  )"
+  if scripts/verify-dependency-mirror.sh \
+      "$mirror_fixture/project.yml" "$mirror_fixture/Package.swift" >/dev/null 2>&1; then
+    failures+=("scripts/verify-dependency-mirror.sh: accepted a diverged HotKey version")
+  fi
+  [[ "$mirror_output" == *"dependency mirror mismatch for HotKey"* ]] \
+    || failures+=("scripts/verify-dependency-mirror.sh: mismatch error must identify HotKey")
+
+  cp Package.swift "$mirror_fixture/Package.swift"
+  perl -0pi -e 's/0[.]2[.]1/9.9.9/' "$mirror_fixture/Package.resolved"
+  lock_output="$(
+    scripts/verify-dependency-mirror.sh \
+      "$mirror_fixture/project.yml" "$mirror_fixture/Package.swift" \
+      "$mirror_fixture/Package.resolved" 2>&1 || true
+  )"
+  if scripts/verify-dependency-mirror.sh \
+      "$mirror_fixture/project.yml" "$mirror_fixture/Package.swift" \
+      "$mirror_fixture/Package.resolved" >/dev/null 2>&1; then
+    failures+=("scripts/verify-dependency-mirror.sh: accepted a diverged HotKey lockfile version")
+  fi
+  [[ "$lock_output" == *"lockfile mismatch for HotKey"* ]] \
+    || failures+=("scripts/verify-dependency-mirror.sh: lockfile mismatch error must identify HotKey")
+  rm -rf "$mirror_fixture"
+fi
 
 scanner="scripts/scan-sensitive-content.sh"
 expect_file "$scanner"

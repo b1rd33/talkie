@@ -33,6 +33,9 @@ DMG="build/Talkie-$VERSION.dmg"
 
 rm -rf build
 
+echo "==> Generating project"
+xcodegen generate
+
 echo "==> Running portable configuration checks"
 scripts/verify-project-config.sh
 
@@ -41,15 +44,11 @@ sed "s/__DEVELOPMENT_TEAM__/$DEVELOPMENT_TEAM/" \
   scripts/ExportOptions.plist > "$EXPORT_OPTIONS"
 
 echo "==> Running deterministic logic suite"
-xcodegen generate
 xcodebuild test \
   -project Talkie.xcodeproj \
   -scheme Talkie \
   -destination 'platform=macOS' \
   -derivedDataPath build/DerivedData
-
-echo "==> Generating project"
-xcodegen generate
 
 echo "==> Archiving Talkie $VERSION (Release)"
 xcodebuild archive \

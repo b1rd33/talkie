@@ -36,11 +36,11 @@ jobs:
           unzip -q "$archive" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
 
-      - name: Verify portable project configuration
-        run: scripts/verify-project-config.sh
-
       - name: Generate project
         run: xcodegen generate
+
+      - name: Verify portable project configuration
+        run: scripts/verify-project-config.sh
 
       - name: Run deterministic test suites
         run: |
@@ -53,13 +53,13 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/TalkieTests.xcresult" \
             -skip-testing:TalkieUITests \
             -skip-testing:TalkieHostIntegrationTests \
-            -skip-testing:TalkieTests/ReleaseConfigurationTests \
-            CODE_SIGNING_ALLOWED=NO \
             | tee "$RUNNER_TEMP/xcodebuild.log"
 
       - name: Run deterministic app UI suite
+        timeout-minutes: 8
         run: |
           set -o pipefail
+          : > "$RUNNER_TEMP/xcodebuild-ui.log"
           xcodebuild test \
             -project Talkie.xcodeproj \
             -scheme Talkie \
@@ -67,7 +67,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/TalkieUIDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/TalkieUITests.xcresult" \
             -only-testing:TalkieUITests \
-            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 120 \
             | tee "$RUNNER_TEMP/xcodebuild-ui.log"
 
       - name: Produce concise test summary
@@ -78,8 +80,25 @@ jobs:
               --path "$RUNNER_TEMP/TalkieTests.xcresult" \
               > "$RUNNER_TEMP/test-summary.txt" || true
           fi
+          if [ -d "$RUNNER_TEMP/TalkieUITests.xcresult" ]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/TalkieUITests.xcresult" \
+              > "$RUNNER_TEMP/ui-test-summary.txt" || true
+          fi
           tail -n 200 "$RUNNER_TEMP/xcodebuild.log" \
             > "$RUNNER_TEMP/xcodebuild-tail.txt" || true
+          tail -n 200 "$RUNNER_TEMP/xcodebuild-ui.log" \
+            > "$RUNNER_TEMP/xcodebuild-ui-tail.txt" || true
+          {
+            echo "## Test diagnostics"
+            echo
+            echo "The complete result bundles and logs are attached to the failure artifact."
+            echo
+            echo "### UI test log tail"
+            echo '```text'
+            cat "$RUNNER_TEMP/xcodebuild-ui-tail.txt" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test diagnostics
         if: failure()
@@ -92,4 +111,7 @@ jobs:
             ${{ runner.temp }}/TalkieTests.xcresult
             ${{ runner.temp }}/TalkieUITests.xcresult
             ${{ runner.temp }}/test-summary.txt
+            ${{ runner.temp }}/ui-test-summary.txt
             ${{ runner.temp }}/xcodebuild-tail.txt
+            ${{ runner.temp }}/xcodebuild-ui.log
+            ${{ runner.temp }}/xcodebuild-ui-tail.txt
