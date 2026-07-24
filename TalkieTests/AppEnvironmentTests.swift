@@ -34,4 +34,26 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertFalse(configuration.sessionID.isEmpty)
         XCTAssertTrue(configuration.reportURL.lastPathComponent.contains(configuration.sessionID))
     }
+
+    func testScreenshotDemoUsesIsolatedCredentialFreeState() {
+        let environment = AppEnvironment.launch(arguments: [
+            "Talkie", "--screenshot-demo",
+            "--screenshot-demo-session", "docs-session",
+        ])
+
+        XCTAssertEqual(environment.mode, .screenshotDemo)
+        XCTAssertTrue(environment.historyInMemory)
+        XCTAssertTrue(environment.credentialOverrides.isEmpty)
+        XCTAssertNil(environment.e2e)
+        XCTAssertEqual(environment.keychainService,
+                       "com.archiev.talkie.screenshot.docs-session")
+        XCTAssertEqual(environment.defaults.string(forKey: "engineMode"), "local")
+        XCTAssertEqual(environment.defaults.string(forKey: "cleanupLevel"), "none")
+        XCTAssertEqual(environment.defaults.string(forKey: "cleanupProvider"), "openai")
+        XCTAssertEqual(environment.defaults.string(forKey: "selectedProfileID"),
+                       DictationProfile.privateOffline.id.uuidString)
+        XCTAssertEqual(environment.defaults.string(forKey: "pillStyle"),
+                       PillStyle.calmFlowRibbon.rawValue)
+        XCTAssertEqual(environment.defaults.string(forKey: "pinnedLanguage"), "en")
+    }
 }

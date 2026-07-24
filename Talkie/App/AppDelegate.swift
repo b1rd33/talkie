@@ -33,6 +33,7 @@ final class AppServices {
     private(set) var flowBar: FlowBarPanel?
 #if DEBUG
     private var e2eBridge: E2ETestControlBridge?
+    private var screenshotDemoPill: ScreenshotDemoPillPanel?
 #endif
 
     init(environment: AppEnvironment) {
@@ -299,6 +300,11 @@ final class AppServices {
         bridge.start()
         e2eBridge = bridge
     }
+
+    func startScreenshotDemo() {
+        screenshotDemoPill = ScreenshotDemoPillPanel()
+        NSApp.activate(ignoringOtherApps: true)
+    }
 #endif
 
     private var permissionHealthChecked = false
@@ -428,9 +434,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self // harmless under tests
         guard !Self.isRunningTests else { return }
 #if DEBUG
-        if AppServices.shared.environment.mode == .e2e {
+        switch AppServices.shared.environment.mode {
+        case .e2e:
             AppServices.shared.startE2E()
             return
+        case .screenshotDemo:
+            AppServices.shared.startScreenshotDemo()
+            return
+        case .production:
+            break
         }
 #endif
         AppServices.shared.startUI()

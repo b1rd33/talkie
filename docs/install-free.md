@@ -1,8 +1,9 @@
-# Installing Talkie (free build)
+# Installing the advanced ad-hoc build
 
-Talkie is shared as a free, **ad-hoc-signed** build (no paid Apple Developer
-account). It works exactly like a notarized app — the only difference is a
-**one-time** "unknown developer" prompt the first time you open it.
+Talkie's current public archive is **ad-hoc signed and not notarized**. This is
+an advanced, unsupported installation path while a notarized build is planned.
+macOS requires a manual Gatekeeper override, and replacing the app can invalidate
+its Accessibility grant.
 
 ## Install
 
@@ -11,8 +12,9 @@ account). It works exactly like a notarized app — the only difference is a
 2. **Drag `Talkie.app` into your `Applications` folder.**
 3. **Double-click Talkie.** macOS blocks it:
    *"Talkie can't be opened because Apple cannot check it for malicious software."*
-   This is expected for a free build — it is not a virus warning about *this* app,
-   just that it isn't notarized.
+   This is expected for an ad-hoc build because Apple has not notarized it. Verify
+   that you downloaded the archive from this repository's GitHub Release before
+   overriding Gatekeeper.
 4. **Allow it:** open **System Settings → Privacy & Security**, scroll down to
    *"Talkie was blocked…"*, click **Open Anyway**, then **Open** in the dialog.
    (You only do this once.)
@@ -22,20 +24,19 @@ account). It works exactly like a notarized app — the only difference is a
 6. **Add your API key** in the onboarding screen (an OpenRouter key works for
    transcription + cleanup; instant streaming additionally needs an OpenAI key).
 
-That's it — hold **fn** and speak.
+After setup, hold **fn** and speak.
 
 ## Updating
 
 There's no auto-update in the free build. To update: download the new zip,
 delete the old `Talkie.app` from Applications, and drop the new one in.
 
-> **After an update, you may need to re-enable Accessibility.** Because the free
+> **After an update, you may need to re-enable Accessibility.** Because the ad-hoc
 > build isn't signed with a stable Apple identity, macOS treats each new version
 > as a "new" app and can forget the Accessibility permission. If, after updating,
 > dictation only copies to the clipboard instead of typing, open
 > **System Settings → Privacy & Security → Accessibility** and switch Talkie back
-> on. (A paid Apple Developer account would remove both this and the first-launch
-> prompt — but everything works without it.)
+> on.
 
 ## Maintainer: cutting a release
 
