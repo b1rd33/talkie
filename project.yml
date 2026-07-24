@@ -30,7 +30,14 @@ targets:
   Talkie:
     type: application
     platform: macOS
-    sources: [Talkie]
+    sources:
+      - path: Talkie
+      - path: LICENSE
+        buildPhase: resources
+      - path: NOTICE
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.txt
+        buildPhase: resources
     info:
       path: Talkie/Info.plist
       properties:

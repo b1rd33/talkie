@@ -5,4 +5,5 @@ This product includes software developed by third parties:
 - FluidAudio, Apache License 2.0
 - HotKey, MIT License
 
-See each dependency's repository and resolved package checkout for its complete license text.
+The Apache License 2.0 text is bundled in LICENSE. HotKey's complete copyright
+and MIT license notice is bundled in THIRD_PARTY_NOTICES.txt.
