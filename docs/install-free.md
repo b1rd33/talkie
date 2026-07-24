@@ -52,11 +52,12 @@ scripts/build-release-adhoc.sh
 #    SHA256SUMS
 ```
 
-The script verifies ad-hoc code seals and checksums, but deliberately never runs
-`spctl`, `notarytool`, or `stapler`. It does not establish Gatekeeper approval.
-Gatekeeper rejection is **expected and correct** because the preview is not
-notarized; the ZIP can launch only after the manual Privacy & Security override
-above.
+The script verifies the ad-hoc code seals and byte-for-byte legal notices both
+before and after extracting the finished ZIP, then verifies its checksum. It
+deliberately never runs `spctl`, `notarytool`, or `stapler`; it does not
+establish Gatekeeper approval. Gatekeeper rejection is **expected and correct**
+because the preview is not notarized, and the ZIP can launch only after the
+manual Privacy & Security override above.
 
 ## Maintainer: producing the supported release
 
@@ -89,6 +90,14 @@ scripts/release.sh --validate-environment
 scripts/release.sh
 ```
 
+Environment validation is not an offline syntax check: it makes an
+authenticated `notarytool history` request to Apple and fails if the
+credentials are rejected. The release itself also requires a clean Git
+worktree, including no staged or untracked non-build files, and an existing
+`v<MARKETING_VERSION>` tag that resolves exactly to `HEAD`. Commit and create
+that tag before running the release script; the script never creates or moves
+tags.
+
 As an alternative to a Keychain profile, unset `NOTARY_KEYCHAIN_PROFILE` and
 set all three Team App Store Connect API key variables:
 
@@ -101,12 +110,23 @@ scripts/release.sh --validate-environment
 scripts/release.sh
 ```
 
-The script fails unless Apple returns `Accepted` for both the app submission and
-the final DMG. It staples and validates the app before creating the final ZIP,
-then staples and validates the exact submitted DMG. It also runs strict
-`codesign`, Gatekeeper, and checksum verification. Successful artifacts are
-written to `build/release-<version>/`; the script does not create a tag, push,
-or publish a GitHub release.
+The script fails unless the selected identity belongs to the declared team and
+Apple returns `Accepted` for both the app submission and the final DMG. It
+requires the exported app to have the expected Developer ID authority, team,
+hardened runtime, secure timestamp, and exact production entitlements. It
+staples and validates the app before creating the final ZIP, then staples and
+validates the exact submitted DMG. Finally, it extracts the ZIP, mounts the DMG
+read-only, and verifies the packaged apps, Gatekeeper result, legal notices,
+and checksums.
+
+All intermediate output remains in a private staging directory. Only after
+every check succeeds is the artifact set atomically promoted to
+`build/release-<version>/`. That directory includes the ZIP, DMG, checksums,
+both notarization result files, and `release-metadata.txt` recording the exact
+tag, commit, tree, toolchain, dependency versions, signing identity, team,
+notarization request IDs, and artifact digests. On failure, no final release
+directory remains. The script does not create a tag, push, or publish a GitHub
+release.
 
 An asset is supported only when this pipeline completes and its release notes
 explicitly identify it as Developer ID-signed and Apple-notarized. The current

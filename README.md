@@ -107,8 +107,9 @@ Project configuration checks are available at `scripts/verify-project-config.sh`
 
 Maintainers use `scripts/release.sh` for the fail-closed Developer ID and Apple
 notarization pipeline. Local signing/notary environment setup, the
-`--validate-environment` preflight, artifact checksums, and the separate
-unsupported community-preview path are documented in the
+authenticated `--validate-environment` preflight, clean-worktree and exact-tag
+provenance requirements, packaged-artifact verification, release metadata, and
+the separate unsupported community-preview path are documented in the
 [installation guide](docs/install-free.md). The release script never creates a
 tag, pushes, or publishes an asset.
 

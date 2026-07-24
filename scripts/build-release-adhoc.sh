@@ -26,6 +26,16 @@ app="$export_dir/Talkie.app"
 preview_dir="build/community-preview-$version"
 zip="$preview_dir/Talkie-$version-community-preview-adhoc.zip"
 checksum_file="$preview_dir/SHA256SUMS"
+verification_dir=""
+
+cleanup() {
+  local status=$?
+  if [[ -n "$verification_dir" && -d "$verification_dir" ]]; then
+    rm -rf -- "$verification_dir"
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 
 rm -rf "$archive" "$export_dir" "$preview_dir"
 mkdir -p "$preview_dir"
@@ -64,6 +74,8 @@ codesign --force --timestamp=none -s - "$app"
 for legal_notice in LICENSE NOTICE THIRD_PARTY_NOTICES.txt; do
   [[ -f "$app/Contents/Resources/$legal_notice" ]] \
     || fail "community preview app is missing legal notice: $legal_notice"
+  cmp -s "$legal_notice" "$app/Contents/Resources/$legal_notice" \
+    || fail "community preview app contains a modified legal notice: $legal_notice"
 done
 
 echo "==> Verifying ad-hoc code seals only"
@@ -71,6 +83,21 @@ codesign --verify --deep --strict --verbose=2 "$app"
 
 echo "==> Packaging the community preview"
 ditto -c -k --keepParent "$app" "$zip"
+
+echo "==> Verifying the packaged community preview"
+verification_dir="$(mktemp -d "build/community-preview-verification.XXXXXX")"
+ditto -x -k "$zip" "$verification_dir"
+packaged_app="$verification_dir/Talkie.app"
+[[ -d "$packaged_app" ]] \
+  || fail "community preview ZIP did not contain Talkie.app at its root"
+for legal_notice in LICENSE NOTICE THIRD_PARTY_NOTICES.txt; do
+  cmp -s "$legal_notice" "$packaged_app/Contents/Resources/$legal_notice" \
+    || fail "packaged community preview contains a missing or modified legal notice: $legal_notice"
+done
+codesign --verify --deep --strict --verbose=2 "$packaged_app"
+rm -rf -- "$verification_dir"
+verification_dir=""
+
 (
   cd "$preview_dir"
   shasum -a 256 "$(basename "$zip")" > "$(basename "$checksum_file")"
