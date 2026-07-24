@@ -57,6 +57,9 @@ targets:
         Debug:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "-"
+          OTHER_CODE_SIGN_FLAGS: "--options=runtime"
+          ENABLE_DEBUG_DYLIB: NO
+          CODE_SIGN_ENTITLEMENTS: Talkie/TalkieDebug.entitlements
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"

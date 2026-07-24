@@ -109,10 +109,18 @@ for forbidden in "$legacy_license" "$trial_type" "$lab_type" "$lab_flag" "$team_
 done
 
 reject_pattern project.yml '^[[:space:]]+DEVELOPMENT_TEAM:' "team identity must be supplied only by release tooling"
+expect_pattern project.yml 'OTHER_CODE_SIGN_FLAGS:[[:space:]]+"--options=runtime"' "portable Debug signing must explicitly preserve hardened runtime"
+expect_pattern project.yml 'ENABLE_DEBUG_DYLIB:[[:space:]]+NO' "portable hardened Debug builds must avoid an unloadable ad-hoc debug dylib"
+expect_pattern project.yml 'CODE_SIGN_ENTITLEMENTS:[[:space:]]+Talkie/TalkieDebug\.entitlements' "portable hardened Debug tests must use test-host entitlements"
+expect_file Talkie/TalkieDebug.entitlements
+expect_pattern Talkie/TalkieDebug.entitlements 'com\.apple\.security\.cs\.disable-library-validation' "portable hardened Debug tests must allow XCTest bundle injection"
 expect_pattern scripts/release.sh 'DEVELOPMENT_TEAM:\?' "release must require DEVELOPMENT_TEAM"
 expect_pattern scripts/release.sh 'ExportOptions\.local\.plist' "release must generate a local export options file"
 expect_pattern scripts/release.sh 'mkdir -p[[:space:]]+"\$\(dirname "\$EXPORT_OPTIONS"\)"' "release must create the local export options directory"
 expect_pattern scripts/verify-project-config.sh 'scan-sensitive-content\.sh' "project verification must run the repository scanner"
+expect_pattern scripts/verify-project-config.sh 'OTHER_CODE_SIGN_FLAGS' "project verification must enforce portable hardened-runtime flags"
+expect_pattern scripts/verify-project-config.sh 'ENABLE_DEBUG_DYLIB' "project verification must enforce portable hardened Debug layout"
+expect_pattern scripts/verify-project-config.sh 'TalkieDebug\.entitlements' "project verification must enforce portable Debug test-host entitlements"
 for document in LICENSE PRIVACY.md SECURITY.md; do
   expect_pattern scripts/verify-project-config.sh "$document" "project verification must require $document"
 done
