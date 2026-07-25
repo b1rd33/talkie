@@ -9,6 +9,7 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.mode, .production)
         XCTAssertFalse(environment.historyInMemory)
         XCTAssertNil(environment.e2e)
+        XCTAssertEqual(AppDelegate.launchAction(for: environment.mode), .startProductionUI)
     }
 
     func testE2ELaunchUsesIsolatedStateAndFakeCredentials() throws {
@@ -28,6 +29,7 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.e2e?.commandURL, paths.commandURL)
         XCTAssertEqual(environment.credentialOverrides[.openAIKey], "e2e-openai-key")
         XCTAssertEqual(environment.credentialOverrides[.openRouterKey], "e2e-openrouter-key")
+        XCTAssertEqual(AppDelegate.launchAction(for: environment.mode), .startE2E)
     }
 
     func testE2ELaunchGeneratesSessionAndReportWhenOmitted() throws {
@@ -41,6 +43,58 @@ final class AppEnvironmentTests: XCTestCase {
             try? FileManager.default.removeItem(
                 at: configuration.reportURL.deletingLastPathComponent())
         }
+    }
+
+    func testE2ELaunchRejectsUnsafeSharedRootWithoutProductionFallback() {
+        assertRejectedE2ELaunch([
+            "--e2e-session", UUID().uuidString,
+            "--e2e-shared-root", "/private/var/tmp",
+        ])
+    }
+
+    func testE2ELaunchRejectsInvalidSessionIDWithoutProductionFallback() {
+        assertRejectedE2ELaunch([
+            "--e2e-session", "../production",
+            "--e2e-shared-root", "/private/tmp",
+        ])
+    }
+
+    func testE2ELaunchRejectsMissingSharedSessionWithoutProductionFallback() {
+        assertRejectedE2ELaunch([
+            "--e2e-session", UUID().uuidString,
+            "--e2e-shared-root", "/private/tmp",
+        ])
+    }
+
+    func testE2ELaunchRejectsNonPrivateSessionWithoutProductionFallback() throws {
+        let sessionID = UUID().uuidString
+        let sessionDirectory = E2EBridgePaths.neutralSharedRootURL
+            .appendingPathComponent("talkie-ui-\(sessionID)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: sessionDirectory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o755])
+        defer { try? FileManager.default.removeItem(at: sessionDirectory) }
+
+        assertRejectedE2ELaunch([
+            "--e2e-session", sessionID,
+            "--e2e-shared-root", "/private/tmp",
+        ])
+    }
+
+    func testE2ELaunchRejectsSymlinkSessionWithoutProductionFallback() throws {
+        let sessionID = UUID().uuidString
+        let sessionDirectory = E2EBridgePaths.neutralSharedRootURL
+            .appendingPathComponent("talkie-ui-\(sessionID)", isDirectory: true)
+        try FileManager.default.createSymbolicLink(
+            at: sessionDirectory,
+            withDestinationURL: E2EBridgePaths.neutralSharedRootURL)
+        defer { try? FileManager.default.removeItem(at: sessionDirectory) }
+
+        assertRejectedE2ELaunch([
+            "--e2e-session", sessionID,
+            "--e2e-shared-root", "/private/tmp",
+        ])
     }
 
     func testE2EBridgePathsCreatePrivateSharedSessionAndResolveSameFiles() throws {
@@ -96,5 +150,31 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.defaults.string(forKey: "pillStyle"),
                        PillStyle.calmFlowRibbon.rawValue)
         XCTAssertEqual(environment.defaults.string(forKey: "pinnedLanguage"), "en")
+        XCTAssertEqual(AppDelegate.launchAction(for: environment.mode), .startScreenshotDemo)
+    }
+
+    private func assertRejectedE2ELaunch(
+        _ e2eArguments: [String],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let environment = AppEnvironment.launch(
+            arguments: ["Talkie", "--e2e"] + e2eArguments)
+
+        XCTAssertEqual(environment.mode, .invalidE2E, file: file, line: line)
+        XCTAssertFalse(environment.defaults === UserDefaults.standard, file: file, line: line)
+        XCTAssertNotEqual(
+            environment.keychainService,
+            "com.archiev.talkie",
+            file: file,
+            line: line)
+        XCTAssertTrue(environment.historyInMemory, file: file, line: line)
+        XCTAssertTrue(environment.credentialOverrides.isEmpty, file: file, line: line)
+        XCTAssertNil(environment.e2e, file: file, line: line)
+        XCTAssertEqual(
+            AppDelegate.launchAction(for: environment.mode),
+            .terminate,
+            file: file,
+            line: line)
     }
 }

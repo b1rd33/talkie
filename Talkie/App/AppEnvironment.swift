@@ -3,6 +3,7 @@ import Foundation
 enum AppRuntimeMode: Equatable {
     case production
     case e2e
+    case invalidE2E
     case screenshotDemo
 }
 
@@ -169,7 +170,7 @@ struct AppEnvironment {
                 paths = try? E2EBridgePaths.createSharedSession(sessionID: sessionID)
             }
             guard let paths else {
-                return productionEnvironment()
+                return invalidE2EEnvironment()
             }
             let suite = "com.archiev.talkie.e2e.\(paths.sessionID)"
             UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -206,6 +207,20 @@ struct AppEnvironment {
             credentialOverrides: [:],
             e2e: nil)
     }
+
+#if DEBUG
+    private static func invalidE2EEnvironment() -> AppEnvironment {
+        let suite = "com.archiev.talkie.e2e.invalid"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        return AppEnvironment(
+            mode: .invalidE2E,
+            defaults: UserDefaults(suiteName: suite)!,
+            keychainService: suite,
+            historyInMemory: true,
+            credentialOverrides: [:],
+            e2e: nil)
+    }
+#endif
 
     private static func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag),

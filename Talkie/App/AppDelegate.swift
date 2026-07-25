@@ -430,22 +430,45 @@ final class AppServices {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    enum LaunchAction: Equatable {
+        case startProductionUI
+        case startE2E
+        case startScreenshotDemo
+        case terminate
+    }
+
     static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    static func launchAction(for mode: AppRuntimeMode) -> LaunchAction {
+        switch mode {
+        case .production:
+            .startProductionUI
+        case .e2e:
+            .startE2E
+        case .invalidE2E:
+            .terminate
+        case .screenshotDemo:
+            .startScreenshotDemo
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self // harmless under tests
         guard !Self.isRunningTests else { return }
 #if DEBUG
-        switch AppServices.shared.environment.mode {
-        case .e2e:
+        switch Self.launchAction(for: AppServices.shared.environment.mode) {
+        case .startE2E:
             AppServices.shared.startE2E()
             return
-        case .screenshotDemo:
+        case .startScreenshotDemo:
             AppServices.shared.startScreenshotDemo()
             return
-        case .production:
+        case .terminate:
+            NSApp.terminate(nil)
+            return
+        case .startProductionUI:
             break
         }
 #endif
