@@ -6,11 +6,134 @@ enum AppRuntimeMode: Equatable {
     case screenshotDemo
 }
 
+#if DEBUG
+enum E2EBridgePathError: Error {
+    case invalidSessionID
+    case invalidSharedRoot
+    case sessionAlreadyExists
+    case unsafeSessionDirectory
+    case sessionDirectoryMissing
+    case invalidSessionDirectoryPermissions
+}
+
+struct E2EBridgePaths: Equatable {
+    static let neutralSharedRootURL = URL(
+        fileURLWithPath: "/private/tmp",
+        isDirectory: true)
+
+    let sessionID: String
+    let sharedRootURL: URL
+    let sessionDirectoryURL: URL
+    let reportURL: URL
+    let commandURL: URL
+
+    static func createSharedSession(
+        sessionID: String,
+        fileManager: FileManager = .default
+    ) throws -> E2EBridgePaths {
+        let paths = try resolvedPaths(
+            sessionID: sessionID,
+            sharedRootPath: neutralSharedRootURL.path)
+        if (try? fileManager.destinationOfSymbolicLink(
+            atPath: paths.sessionDirectoryURL.path)) != nil {
+            throw E2EBridgePathError.unsafeSessionDirectory
+        }
+        guard !fileManager.fileExists(atPath: paths.sessionDirectoryURL.path) else {
+            throw E2EBridgePathError.sessionAlreadyExists
+        }
+        try fileManager.createDirectory(
+            at: paths.sessionDirectoryURL,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        try validateExistingSessionDirectory(paths, fileManager: fileManager)
+        return paths
+    }
+
+    static func resolveExistingSharedSession(
+        sessionID: String,
+        sharedRootPath: String,
+        fileManager: FileManager = .default
+    ) throws -> E2EBridgePaths {
+        let paths = try resolvedPaths(
+            sessionID: sessionID,
+            sharedRootPath: sharedRootPath)
+        try validateExistingSessionDirectory(paths, fileManager: fileManager)
+        return paths
+    }
+
+    private static func resolvedPaths(
+        sessionID: String,
+        sharedRootPath: String
+    ) throws -> E2EBridgePaths {
+        guard let uuid = UUID(uuidString: sessionID),
+              uuid.uuidString.caseInsensitiveCompare(sessionID) == .orderedSame else {
+            throw E2EBridgePathError.invalidSessionID
+        }
+        guard sharedRootPath == "/private/tmp" || sharedRootPath == "/tmp" else {
+            throw E2EBridgePathError.invalidSharedRoot
+        }
+        let canonicalRoot = neutralSharedRootURL
+        let canonicalSessionID = uuid.uuidString
+        let sessionDirectory = canonicalRoot
+            .appendingPathComponent(
+                "talkie-ui-\(canonicalSessionID)",
+                isDirectory: true)
+        guard sessionDirectory.deletingLastPathComponent().path == canonicalRoot.path else {
+            throw E2EBridgePathError.unsafeSessionDirectory
+        }
+        return E2EBridgePaths(
+            sessionID: canonicalSessionID,
+            sharedRootURL: canonicalRoot,
+            sessionDirectoryURL: sessionDirectory,
+            reportURL: sessionDirectory.appendingPathComponent("report.jsonl"),
+            commandURL: sessionDirectory.appendingPathComponent("commands"))
+    }
+
+    private static func validateExistingSessionDirectory(
+        _ paths: E2EBridgePaths,
+        fileManager: FileManager
+    ) throws {
+        if (try? fileManager.destinationOfSymbolicLink(
+            atPath: paths.sessionDirectoryURL.path)) != nil {
+            throw E2EBridgePathError.unsafeSessionDirectory
+        }
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: paths.sessionDirectoryURL.path,
+            isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw E2EBridgePathError.sessionDirectoryMissing
+        }
+        let attributes = try fileManager.attributesOfItem(
+            atPath: paths.sessionDirectoryURL.path)
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
+        guard permissions == 0o700 else {
+            throw E2EBridgePathError.invalidSessionDirectoryPermissions
+        }
+    }
+}
+#endif
+
 struct E2ELaunchConfiguration: Equatable {
     let sessionID: String
     let scenario: String
     let reportURL: URL
+    let commandURL: URL
     let fixtureText: String?
+
+    init(
+        sessionID: String,
+        scenario: String,
+        reportURL: URL,
+        commandURL: URL? = nil,
+        fixtureText: String?
+    ) {
+        self.sessionID = sessionID
+        self.scenario = scenario
+        self.reportURL = reportURL
+        self.commandURL = commandURL ?? reportURL.appendingPathExtension("commands")
+        self.fixtureText = fixtureText
+    }
 }
 
 /// Process-level dependencies that must differ between a real user launch and a
@@ -37,10 +160,18 @@ struct AppEnvironment {
         if arguments.contains("--e2e") {
             let sessionID = value(after: "--e2e-session", in: arguments) ?? UUID().uuidString
             let scenario = value(after: "--e2e-scenario", in: arguments) ?? "unspecified"
-            let reportPath = value(after: "--e2e-report", in: arguments)
-                ?? FileManager.default.temporaryDirectory
-                    .appendingPathComponent("talkie-e2e-\(sessionID).jsonl").path
-            let suite = "com.archiev.talkie.e2e.\(sessionID)"
+            let paths: E2EBridgePaths?
+            if let sharedRoot = value(after: "--e2e-shared-root", in: arguments) {
+                paths = try? E2EBridgePaths.resolveExistingSharedSession(
+                    sessionID: sessionID,
+                    sharedRootPath: sharedRoot)
+            } else {
+                paths = try? E2EBridgePaths.createSharedSession(sessionID: sessionID)
+            }
+            guard let paths else {
+                return productionEnvironment()
+            }
+            let suite = "com.archiev.talkie.e2e.\(paths.sessionID)"
             UserDefaults.standard.removePersistentDomain(forName: suite)
             let defaults = UserDefaults(suiteName: suite)!
             defaults.set(true, forKey: SetupStateStore.completedKey)
@@ -56,13 +187,18 @@ struct AppEnvironment {
                     .openRouterKey: "e2e-openrouter-key",
                 ],
                 e2e: E2ELaunchConfiguration(
-                    sessionID: sessionID,
+                    sessionID: paths.sessionID,
                     scenario: scenario,
-                    reportURL: URL(fileURLWithPath: reportPath),
+                    reportURL: paths.reportURL,
+                    commandURL: paths.commandURL,
                     fixtureText: value(after: "--e2e-fixture-text", in: arguments)))
         }
 #endif
-        return AppEnvironment(
+        return productionEnvironment()
+    }
+
+    private static func productionEnvironment() -> AppEnvironment {
+        AppEnvironment(
             mode: .production,
             defaults: .standard,
             keychainService: "com.archiev.talkie",

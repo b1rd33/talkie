@@ -297,8 +297,12 @@ final class AppServices {
                                  inserter: TextInserter(notifier: notifier),
                                  fixtureText: configuration.fixtureText)
         let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
-        bridge.start()
-        e2eBridge = bridge
+        do {
+            try bridge.start()
+            e2eBridge = bridge
+        } catch {
+            assertionFailure("E2E bridge initialization failed")
+        }
     }
 
     func startScreenshotDemo() {

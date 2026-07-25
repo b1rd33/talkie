@@ -8,6 +8,59 @@ enum E2ECommand: String, CaseIterable {
     case cancel
 }
 
+private enum E2EPrivateFileError: Error {
+    case unsafeParentDirectory
+    case unsafeFile
+}
+
+private enum E2EPrivateFile {
+    static func create(
+        at url: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        try validateParentDirectory(of: url, fileManager: fileManager)
+        try Data().write(to: url, options: .withoutOverwriting)
+        do {
+            try fileManager.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: url.path)
+            try validate(at: url, fileManager: fileManager)
+        } catch {
+            try? fileManager.removeItem(at: url)
+            throw error
+        }
+    }
+
+    private static func validateParentDirectory(
+        of url: URL,
+        fileManager: FileManager
+    ) throws {
+        let parent = url.deletingLastPathComponent()
+        if (try? fileManager.destinationOfSymbolicLink(atPath: parent.path)) != nil {
+            throw E2EPrivateFileError.unsafeParentDirectory
+        }
+        let attributes = try fileManager.attributesOfItem(atPath: parent.path)
+        guard attributes[.type] as? FileAttributeType == .typeDirectory,
+              (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else {
+            throw E2EPrivateFileError.unsafeParentDirectory
+        }
+    }
+
+    private static func validate(
+        at url: URL,
+        fileManager: FileManager
+    ) throws {
+        if (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil {
+            throw E2EPrivateFileError.unsafeFile
+        }
+        let attributes = try fileManager.attributesOfItem(atPath: url.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600 else {
+            throw E2EPrivateFileError.unsafeFile
+        }
+    }
+}
+
 struct E2EReportEntry: Codable, Equatable {
     let scenario: String
     let state: String
@@ -28,11 +81,7 @@ final class E2EReporter {
 
     init(configuration: E2ELaunchConfiguration) throws {
         self.configuration = configuration
-        try FileManager.default.createDirectory(
-            at: configuration.reportURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
-        FileManager.default.createFile(atPath: configuration.reportURL.path,
-                                       contents: nil)
+        try E2EPrivateFile.create(at: configuration.reportURL)
     }
 
     func record(state: String, targetBundleID: String?, deliveryRoute: String? = nil,
@@ -49,12 +98,16 @@ final class E2EReporter {
             passed: passed,
             reason: reason)
         lastTransitionAt = now
-        guard let data = try? encoder.encode(entry),
-              let handle = try? FileHandle(forWritingTo: configuration.reportURL) else { return }
-        defer { try? handle.close() }
-        try? handle.seekToEnd()
-        handle.write(data)
-        handle.write(Data([0x0A]))
+        do {
+            let data = try encoder.encode(entry)
+            let handle = try FileHandle(forWritingTo: configuration.reportURL)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data([0x0A]))
+        } catch {
+            assertionFailure("E2E report write failed")
+        }
     }
 
     func readEntries() throws -> [E2EReportEntry] {
@@ -148,8 +201,9 @@ final class E2ETestControlBridge {
         self.runtime = runtime
     }
 
-    func start() {
+    func start() throws {
         guard observer == nil else { return }
+        try startCommandFileBridge()
         observer = DistributedNotificationCenter.default().addObserver(
             forName: Self.notificationName(sessionID: configuration.sessionID),
             object: nil,
@@ -159,12 +213,11 @@ final class E2ETestControlBridge {
                   let command = E2ECommand(rawValue: raw) else { return }
             Task { @MainActor in self?.runtime.handle(command) }
         }
-        startCommandFileBridge()
     }
 
-    private func startCommandFileBridge() {
-        let url = configuration.reportURL.appendingPathExtension("commands")
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+    private func startCommandFileBridge() throws {
+        let url = configuration.commandURL
+        try E2EPrivateFile.create(at: url)
         commandTask = Task { [weak self] in
             var consumed = 0
             while !Task.isCancelled {
