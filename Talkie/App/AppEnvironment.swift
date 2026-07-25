@@ -121,19 +121,22 @@ struct E2ELaunchConfiguration: Equatable {
     let reportURL: URL
     let commandURL: URL
     let fixtureText: String?
+    let ownsSessionDirectory: Bool
 
     init(
         sessionID: String,
         scenario: String,
         reportURL: URL,
         commandURL: URL? = nil,
-        fixtureText: String?
+        fixtureText: String?,
+        ownsSessionDirectory: Bool = false
     ) {
         self.sessionID = sessionID
         self.scenario = scenario
         self.reportURL = reportURL
         self.commandURL = commandURL ?? reportURL.appendingPathExtension("commands")
         self.fixtureText = fixtureText
+        self.ownsSessionDirectory = ownsSessionDirectory
     }
 }
 
@@ -161,17 +164,22 @@ struct AppEnvironment {
         if arguments.contains("--e2e") {
             let sessionID = value(after: "--e2e-session", in: arguments) ?? UUID().uuidString
             let scenario = value(after: "--e2e-scenario", in: arguments) ?? "unspecified"
-            let paths: E2EBridgePaths?
+            let resolvedSession: (paths: E2EBridgePaths, isAppOwned: Bool)?
             if let sharedRoot = value(after: "--e2e-shared-root", in: arguments) {
-                paths = try? E2EBridgePaths.resolveExistingSharedSession(
+                resolvedSession = try? (
+                    E2EBridgePaths.resolveExistingSharedSession(
                     sessionID: sessionID,
-                    sharedRootPath: sharedRoot)
+                    sharedRootPath: sharedRoot),
+                    false)
             } else {
-                paths = try? E2EBridgePaths.createSharedSession(sessionID: sessionID)
+                resolvedSession = try? (
+                    E2EBridgePaths.createSharedSession(sessionID: sessionID),
+                    true)
             }
-            guard let paths else {
+            guard let resolvedSession else {
                 return invalidE2EEnvironment()
             }
+            let paths = resolvedSession.paths
             let suite = "com.archiev.talkie.e2e.\(paths.sessionID)"
             UserDefaults.standard.removePersistentDomain(forName: suite)
             let defaults = UserDefaults(suiteName: suite)!
@@ -192,7 +200,8 @@ struct AppEnvironment {
                     scenario: scenario,
                     reportURL: paths.reportURL,
                     commandURL: paths.commandURL,
-                    fixtureText: value(after: "--e2e-fixture-text", in: arguments)))
+                    fixtureText: value(after: "--e2e-fixture-text", in: arguments),
+                    ownsSessionDirectory: resolvedSession.isAppOwned))
         }
 #endif
         return productionEnvironment()

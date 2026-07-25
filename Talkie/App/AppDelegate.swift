@@ -305,6 +305,11 @@ final class AppServices {
         }
     }
 
+    func stopE2E() {
+        e2eBridge?.stop()
+        e2eBridge = nil
+    }
+
     func startScreenshotDemo() {
         screenshotDemoPill = ScreenshotDemoPillPanel()
         NSApp.activate(ignoringOtherApps: true)
@@ -473,6 +478,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         AppServices.shared.startUI()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+#if DEBUG
+        AppServices.shared.stopE2E()
+#endif
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

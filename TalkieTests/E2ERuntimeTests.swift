@@ -4,6 +4,138 @@ import XCTest
 
 @MainActor
 final class E2ERuntimeTests: XCTestCase {
+    func testReporterPublishesTypedSessionScopedPrivacySafeNotification() throws {
+        let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: paths.sessionDirectoryURL) }
+        let configuration = E2ELaunchConfiguration(
+            sessionID: paths.sessionID,
+            scenario: "notification-report",
+            reportURL: paths.reportURL,
+            commandURL: paths.commandURL,
+            fixtureText: nil)
+        let published = expectation(description: "typed report notification")
+        var payload: Data?
+        let center = DistributedNotificationCenter.default()
+        let observer = center.addObserver(
+            forName: E2EBridgeNotifications.reportName(sessionID: paths.sessionID),
+            object: nil,
+            queue: .main
+        ) { notification in
+            payload = notification.userInfo?[E2EBridgeNotifications.reportPayloadKey] as? Data
+            published.fulfill()
+        }
+        defer { center.removeObserver(observer) }
+        let reporter = try E2EReporter(configuration: configuration)
+
+        reporter.record(
+            state: "idle",
+            targetBundleID: "com.apple.TextEdit",
+            deliveryRoute: "insert",
+            passed: true)
+
+        wait(for: [published], timeout: 1)
+        let data = try XCTUnwrap(payload)
+        let entry = try JSONDecoder().decode(E2EReportEntry.self, from: data)
+        XCTAssertEqual(entry.state, "idle")
+        XCTAssertEqual(entry.passed, true)
+        XCTAssertEqual(entry.scenario, "notification-report")
+        let raw = String(decoding: data, as: UTF8.self)
+        for forbidden in ["transcript", "clipboard", "apiKey", "selectedText", "context"] {
+            XCTAssertFalse(raw.localizedCaseInsensitiveContains(forbidden))
+        }
+    }
+
+    func testBridgeAnnouncesReadyAfterInstallingSessionScopedCommandObserver() throws {
+        let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: paths.sessionDirectoryURL) }
+        let configuration = E2ELaunchConfiguration(
+            sessionID: paths.sessionID,
+            scenario: "ready-command",
+            reportURL: paths.reportURL,
+            commandURL: paths.commandURL,
+            fixtureText: nil)
+        let center = DistributedNotificationCenter.default()
+        let ready = expectation(description: "bridge ready")
+        let recorded = expectation(description: "command produced report")
+        let reportObserver = center.addObserver(
+            forName: E2EBridgeNotifications.reportName(sessionID: paths.sessionID),
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let payload = notification.userInfo?[
+                E2EBridgeNotifications.reportPayloadKey] as? Data,
+                  let entry = try? JSONDecoder().decode(
+                    E2EReportEntry.self,
+                    from: payload),
+                  entry.state == "recording" else { return }
+            recorded.fulfill()
+        }
+        let readyObserver = center.addObserver(
+            forName: E2EBridgeNotifications.readyName(sessionID: paths.sessionID),
+            object: nil,
+            queue: .main
+        ) { _ in
+            ready.fulfill()
+        }
+        defer {
+            center.removeObserver(readyObserver)
+            center.removeObserver(reportObserver)
+        }
+        let reporter = try E2EReporter(configuration: configuration)
+        let runtime = E2ERuntime(reporter: reporter, targetBundleID: { nil })
+        let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
+
+        try bridge.start()
+
+        wait(for: [ready], timeout: 1)
+        center.postNotificationName(
+            E2EBridgeNotifications.commandName(
+                sessionID: paths.sessionID,
+                command: .press),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true)
+        wait(for: [recorded], timeout: 1)
+    }
+
+    func testBridgeStopRemovesOnlyAppOwnedSessionDirectory() throws {
+        let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
+        let configuration = E2ELaunchConfiguration(
+            sessionID: paths.sessionID,
+            scenario: "owned-session",
+            reportURL: paths.reportURL,
+            commandURL: paths.commandURL,
+            fixtureText: nil,
+            ownsSessionDirectory: true)
+        let reporter = try E2EReporter(configuration: configuration)
+        let runtime = E2ERuntime(reporter: reporter, targetBundleID: { nil })
+        let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
+        try bridge.start()
+
+        bridge.stop()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.sessionDirectoryURL.path))
+    }
+
+    func testBridgeStopPreservesExternallyOwnedSessionDirectory() throws {
+        let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: paths.sessionDirectoryURL) }
+        let configuration = E2ELaunchConfiguration(
+            sessionID: paths.sessionID,
+            scenario: "external-session",
+            reportURL: paths.reportURL,
+            commandURL: paths.commandURL,
+            fixtureText: nil)
+        let reporter = try E2EReporter(configuration: configuration)
+        let runtime = E2ERuntime(reporter: reporter, targetBundleID: { nil })
+        let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
+        try bridge.start()
+
+        bridge.stop()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.sessionDirectoryURL.path))
+    }
+
     func testPressReleaseProducesPrivacySafePassingReport() throws {
         let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: paths.sessionDirectoryURL) }

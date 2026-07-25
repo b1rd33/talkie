@@ -27,6 +27,7 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.e2e?.scenario, "happy-path")
         XCTAssertEqual(environment.e2e?.reportURL, paths.reportURL)
         XCTAssertEqual(environment.e2e?.commandURL, paths.commandURL)
+        XCTAssertEqual(environment.e2e?.ownsSessionDirectory, false)
         XCTAssertEqual(environment.credentialOverrides[.openAIKey], "e2e-openai-key")
         XCTAssertEqual(environment.credentialOverrides[.openRouterKey], "e2e-openrouter-key")
         XCTAssertEqual(AppDelegate.launchAction(for: environment.mode), .startE2E)
@@ -39,6 +40,7 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertFalse(configuration.sessionID.isEmpty)
         XCTAssertEqual(configuration.reportURL.lastPathComponent, "report.jsonl")
         XCTAssertEqual(configuration.commandURL.lastPathComponent, "commands")
+        XCTAssertTrue(configuration.ownsSessionDirectory)
         defer {
             try? FileManager.default.removeItem(
                 at: configuration.reportURL.deletingLastPathComponent())

@@ -71,6 +71,27 @@ struct E2EReportEntry: Codable, Equatable {
     let reason: String?
 }
 
+enum E2EBridgeNotifications {
+    static let commandPayloadKey = "command"
+    static let reportPayloadKey = "entry"
+
+    static func commandName(sessionID: String) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).command")
+    }
+
+    static func commandName(sessionID: String, command: E2ECommand) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).command.\(command.rawValue)")
+    }
+
+    static func reportName(sessionID: String) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).report")
+    }
+
+    static func readyName(sessionID: String) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).ready")
+    }
+}
+
 /// Session-scoped JSONL diagnostics. The schema deliberately has no fields for
 /// transcript text, surrounding text, credentials, selected text, or clipboard.
 final class E2EReporter {
@@ -105,6 +126,11 @@ final class E2EReporter {
             try handle.seekToEnd()
             try handle.write(contentsOf: data)
             try handle.write(contentsOf: Data([0x0A]))
+            DistributedNotificationCenter.default().postNotificationName(
+                E2EBridgeNotifications.reportName(sessionID: configuration.sessionID),
+                object: nil,
+                userInfo: [E2EBridgeNotifications.reportPayloadKey: data],
+                deliverImmediately: true)
         } catch {
             assertionFailure("E2E report write failed")
         }
@@ -193,7 +219,7 @@ final class E2ERuntime {
 final class E2ETestControlBridge {
     private let configuration: E2ELaunchConfiguration
     private let runtime: E2ERuntime
-    private var observer: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
     private var commandTask: Task<Void, Never>?
 
     init(configuration: E2ELaunchConfiguration, runtime: E2ERuntime) {
@@ -202,17 +228,52 @@ final class E2ETestControlBridge {
     }
 
     func start() throws {
-        guard observer == nil else { return }
+        guard observers.isEmpty else { return }
         try startCommandFileBridge()
-        observer = DistributedNotificationCenter.default().addObserver(
-            forName: Self.notificationName(sessionID: configuration.sessionID),
+        let center = DistributedNotificationCenter.default()
+        observers.append(center.addObserver(
+            forName: E2EBridgeNotifications.commandName(sessionID: configuration.sessionID),
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let raw = notification.userInfo?["command"] as? String,
+            guard let raw = notification.userInfo?[
+                E2EBridgeNotifications.commandPayloadKey] as? String,
                   let command = E2ECommand(rawValue: raw) else { return }
-            Task { @MainActor in self?.runtime.handle(command) }
+            MainActor.assumeIsolated {
+                self?.runtime.handle(command)
+            }
+        })
+        for command in E2ECommand.allCases {
+            observers.append(center.addObserver(
+                forName: E2EBridgeNotifications.commandName(
+                    sessionID: configuration.sessionID,
+                    command: command),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.runtime.handle(command)
+                }
+            })
         }
+        center.postNotificationName(
+            E2EBridgeNotifications.readyName(sessionID: configuration.sessionID),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true)
+    }
+
+    func stop() {
+        commandTask?.cancel()
+        commandTask = nil
+        let center = DistributedNotificationCenter.default()
+        for observer in observers {
+            center.removeObserver(observer)
+        }
+        observers.removeAll()
+        guard configuration.ownsSessionDirectory else { return }
+        try? FileManager.default.removeItem(
+            at: configuration.reportURL.deletingLastPathComponent())
     }
 
     private func startCommandFileBridge() throws {
@@ -237,13 +298,16 @@ final class E2ETestControlBridge {
         }
     }
 
-    static func notificationName(sessionID: String) -> Notification.Name {
-        Notification.Name("com.archiev.talkie.e2e.\(sessionID).command")
-    }
-
     deinit {
         commandTask?.cancel()
-        if let observer { DistributedNotificationCenter.default().removeObserver(observer) }
+        let center = DistributedNotificationCenter.default()
+        for observer in observers {
+            center.removeObserver(observer)
+        }
+        if configuration.ownsSessionDirectory {
+            try? FileManager.default.removeItem(
+                at: configuration.reportURL.deletingLastPathComponent())
+        }
     }
 }
 #endif
