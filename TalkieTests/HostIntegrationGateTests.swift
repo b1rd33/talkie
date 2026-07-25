@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 final class HostIntegrationGateTests: XCTestCase {
-    private let token = "talkie-host-integration-fixture"
+    private let token = "test-host-integration-token-00000000"
     private let path = "/tmp/talkie-host-integration.test-token"
     private let userID = geteuid()
     private let now = Date(timeIntervalSince1970: 10_000)
