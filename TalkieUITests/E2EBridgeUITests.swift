@@ -9,12 +9,17 @@ final class E2EBridgeUITests: XCTestCase {
         app.launchArguments = ["--e2e", "--e2e-session", bridge.sessionID,
                                "--e2e-scenario", "press-release"]
         app.launch()
-        wait(for: [bridge.readyExpectation], timeout: 5)
+        XCTAssertTrue(bridge.waitUntilReady(timeout: 5))
+
+        let recording = bridge.expectReport { entry in
+            entry.state == "recording"
+        }
+        bridge.post(command: "press")
+        wait(for: [recording], timeout: 5)
 
         let completed = bridge.expectReport { entry in
             entry.state == "idle" && entry.passed == true
         }
-        bridge.post(command: "press")
         bridge.post(command: "release")
         wait(for: [completed], timeout: 5)
 
@@ -36,12 +41,17 @@ final class E2EBridgeUITests: XCTestCase {
         app.launchArguments = ["--e2e", "--e2e-session", bridge.sessionID,
                                "--e2e-scenario", "hands-free-cancel"]
         app.launch()
-        wait(for: [bridge.readyExpectation], timeout: 5)
+        XCTAssertTrue(bridge.waitUntilReady(timeout: 5))
+
+        let recording = bridge.expectReport { entry in
+            entry.state == "recording"
+        }
+        bridge.post(command: "toggleHandsFree")
+        wait(for: [recording], timeout: 5)
 
         let cancelled = bridge.expectReport { entry in
             entry.state == "idle" && entry.reason == "cancelled"
         }
-        bridge.post(command: "toggleHandsFree")
         bridge.post(command: "cancel")
         wait(for: [cancelled], timeout: 5)
 
@@ -60,13 +70,13 @@ private final class UITestNotificationBridge {
     }
 
     let sessionID = UUID().uuidString
-    let readyExpectation = XCTestExpectation(description: "E2E app bridge ready")
     private(set) var entries: [UITestReportEntry] = []
     private(set) var payloads: [Data] = []
 
     private let center = DistributedNotificationCenter.default()
     private var observers: [NSObjectProtocol] = []
     private var pendingReports: [PendingReport] = []
+    private var isReady = false
 
     init() {
         observers.append(center.addObserver(
@@ -74,26 +84,45 @@ private final class UITestNotificationBridge {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.readyExpectation.fulfill()
+            MainActor.assumeIsolated {
+                self?.isReady = true
+            }
         })
         observers.append(center.addObserver(
             forName: UITestBridgeNotifications.reportName(sessionID: sessionID),
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self,
-                  let payload = notification.userInfo?[
+            guard let payload = notification.userInfo?[
                     UITestBridgeNotifications.reportPayloadKey] as? Data,
                   let entry = try? JSONDecoder().decode(
                     UITestReportEntry.self,
                     from: payload) else { return }
-            entries.append(entry)
-            payloads.append(payload)
-            let matching = pendingReports.filter { $0.predicate(entry) }
-            let matchingIDs = Set(matching.map(\.id))
-            pendingReports.removeAll { matchingIDs.contains($0.id) }
-            matching.forEach { $0.expectation.fulfill() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.entries.append(entry)
+                self.payloads.append(payload)
+                let matching = self.pendingReports.filter { $0.predicate(entry) }
+                let matchingIDs = Set(matching.map(\.id))
+                self.pendingReports.removeAll { matchingIDs.contains($0.id) }
+                matching.forEach { $0.expectation.fulfill() }
+            }
         })
+    }
+
+    func waitUntilReady(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !isReady, Date() < deadline {
+            center.postNotificationName(
+                UITestBridgeNotifications.readyRequestName(sessionID: sessionID),
+                object: nil,
+                userInfo: nil,
+                deliverImmediately: true)
+            RunLoop.current.run(until: min(
+                deadline,
+                Date().addingTimeInterval(0.1)))
+        }
+        return isReady
     }
 
     func expectReport(
@@ -151,5 +180,9 @@ private enum UITestBridgeNotifications {
 
     static func readyName(sessionID: String) -> Notification.Name {
         Notification.Name("com.archiev.talkie.e2e.\(sessionID).ready")
+    }
+
+    static func readyRequestName(sessionID: String) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).ready-request")
     }
 }

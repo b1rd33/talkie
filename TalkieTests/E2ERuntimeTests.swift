@@ -98,6 +98,40 @@ final class E2ERuntimeTests: XCTestCase {
         wait(for: [recorded], timeout: 1)
     }
 
+    func testBridgeRespondsToReadyRequestAfterInitialAnnouncementWasMissed() throws {
+        let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: paths.sessionDirectoryURL) }
+        let configuration = E2ELaunchConfiguration(
+            sessionID: paths.sessionID,
+            scenario: "ready-retry",
+            reportURL: paths.reportURL,
+            commandURL: paths.commandURL,
+            fixtureText: nil)
+        let reporter = try E2EReporter(configuration: configuration)
+        let runtime = E2ERuntime(reporter: reporter, targetBundleID: { nil })
+        let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
+        try bridge.start()
+
+        let center = DistributedNotificationCenter.default()
+        let ready = expectation(description: "bridge re-announced readiness")
+        let observer = center.addObserver(
+            forName: E2EBridgeNotifications.readyName(sessionID: paths.sessionID),
+            object: nil,
+            queue: .main
+        ) { _ in
+            ready.fulfill()
+        }
+        defer { center.removeObserver(observer) }
+
+        center.postNotificationName(
+            E2EBridgeNotifications.readyRequestName(sessionID: paths.sessionID),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true)
+
+        wait(for: [ready], timeout: 1)
+    }
+
     func testBridgeStopRemovesOnlyAppOwnedSessionDirectory() throws {
         let paths = try E2EBridgePaths.createSharedSession(sessionID: UUID().uuidString)
         let configuration = E2ELaunchConfiguration(

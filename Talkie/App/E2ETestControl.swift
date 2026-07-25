@@ -90,6 +90,10 @@ enum E2EBridgeNotifications {
     static func readyName(sessionID: String) -> Notification.Name {
         Notification.Name("com.archiev.talkie.e2e.\(sessionID).ready")
     }
+
+    static func readyRequestName(sessionID: String) -> Notification.Name {
+        Notification.Name("com.archiev.talkie.e2e.\(sessionID).ready-request")
+    }
 }
 
 /// Session-scoped JSONL diagnostics. The schema deliberately has no fields for
@@ -256,7 +260,21 @@ final class E2ETestControlBridge {
                 }
             })
         }
-        center.postNotificationName(
+        observers.append(center.addObserver(
+            forName: E2EBridgeNotifications.readyRequestName(
+                sessionID: configuration.sessionID),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.announceReady()
+            }
+        })
+        announceReady()
+    }
+
+    private func announceReady() {
+        DistributedNotificationCenter.default().postNotificationName(
             E2EBridgeNotifications.readyName(sessionID: configuration.sessionID),
             object: nil,
             userInfo: nil,
