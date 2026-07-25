@@ -25,19 +25,30 @@ actor OpenAIRealtimeSession {
 
     private let onPartial: PartialTranscriptSink?
     private var receiveLoop: Task<Void, Never>?
-    /// Authoritative transcripts of VAD-committed segments, in arrival order. The
-    /// returned transcript is these joined; cleaner than concatenated deltas.
-    private var finalSegments: [String] = []
-    /// Deltas of the segment currently being transcribed (cleared on its completed).
-    private var currentSegmentDeltas = ""
-    /// Committed-but-not-yet-completed segments. finish() waits for this to hit 0.
-    private var openItems = 0
+    private struct ItemState {
+        var deltas = ""
+        var finalTranscript: String?
+        var failure: String?
+
+        var isTerminal: Bool { finalTranscript != nil || failure != nil }
+        var displayText: String { finalTranscript ?? deltas }
+    }
+
+    /// Item IDs preserve server commit order even when transcription completions
+    /// arrive out of order. Duplicate commit/completion events are idempotent.
+    private var committedItemIDs: [String] = []
+    private var items: [String: ItemState] = [:]
     /// finish() was called — fn released; we're draining the trailing segment.
     private var finishing = false
-    /// The trailing finish() commit was acknowledged (a `committed` for it, or an
-    /// empty-commit). Gates finalization so an in-flight segment completing first
-    /// doesn't end the session before the trailing segment arrives.
-    private var finalCommitSeen = false
+    private enum FinalCommitOutcome { case pending, accepted, empty }
+    private var finalCommitOutcome: FinalCommitOutcome = .pending
+    private var finalCommitEventID: String?
+    private let eventIDProvider: @Sendable () -> String
+    private let settlingInterval: Duration
+    private let finishTimeout: Duration
+    private var activityGeneration = 0
+    private var settlingTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
     private var completedTranscript: String?
     private var serverError: String?
     private var finishContinuation: CheckedContinuation<String, Error>?
@@ -45,20 +56,31 @@ actor OpenAIRealtimeSession {
     /// Cumulative live text for the partial sink: finalized segments + the
     /// in-progress segment's deltas, spaced without doubling.
     private func liveCumulative() -> String {
-        let base = finalSegments.joined(separator: " ")
-        if currentSegmentDeltas.isEmpty { return base }
-        if base.isEmpty { return currentSegmentDeltas }
-        return currentSegmentDeltas.hasPrefix(" ") ? base + currentSegmentDeltas : base + " " + currentSegmentDeltas
+        committedItemIDs.reduce(into: "") { result, id in
+            let text = items[id]?.displayText ?? ""
+            guard !text.isEmpty else { return }
+            if result.isEmpty || result.hasSuffix(" ") || text.hasPrefix(" ") {
+                result += text
+            } else {
+                result += " " + text
+            }
+        }
     }
 
     init(transport: RealtimeTransport, model: String, vocabulary: String?, language: String?,
-         encoder: RealtimePCMEncoder, onPartial: PartialTranscriptSink? = nil) {
+         encoder: RealtimePCMEncoder, onPartial: PartialTranscriptSink? = nil,
+         eventIDProvider: @escaping @Sendable () -> String = { "finish-\(UUID().uuidString)" },
+         settlingInterval: Duration = .milliseconds(200),
+         finishTimeout: Duration = .seconds(8)) {
         self.transport = transport
         self.model = model
         self.vocabulary = vocabulary
         self.language = language
         self.encoder = encoder
         self.onPartial = onPartial
+        self.eventIDProvider = eventIDProvider
+        self.settlingInterval = settlingInterval
+        self.finishTimeout = finishTimeout
     }
 
     func begin() async throws {
@@ -87,7 +109,11 @@ actor OpenAIRealtimeSession {
         }
         // Commit any audio VAD hasn't auto-committed yet (the segment after the last
         // pause). Yields either a `committed`+`completed` pair or an empty-commit.
-        try await transport.send(RealtimeClientEvent.audioCommit.encoded())
+        let eventID = eventIDProvider()
+        finalCommitEventID = eventID
+        finalCommitOutcome = .pending
+        try await transport.send(RealtimeClientEvent.audioCommit(eventID: eventID).encoded())
+        startFinishTimeout()
         let text: String = try await withCheckedThrowingContinuation { continuation in
             if let completedTranscript {
                 continuation.resume(returning: completedTranscript)
@@ -105,6 +131,10 @@ actor OpenAIRealtimeSession {
     }
 
     private func cleanup() {
+        settlingTask?.cancel()
+        settlingTask = nil
+        timeoutTask?.cancel()
+        timeoutTask = nil
         receiveLoop?.cancel()
         receiveLoop = nil
         transport.close()
@@ -118,26 +148,39 @@ actor OpenAIRealtimeSession {
             }
             guard let event = try? RealtimeServerEvent.decode(data) else { continue }
             switch event {
-            case .transcriptDelta(let delta):
-                currentSegmentDeltas += delta
+            case .transcriptDelta(let itemID, let delta):
+                guard items[itemID]?.isTerminal != true else { continue }
+                items[itemID, default: ItemState()].deltas += delta
+                noteActivity()
                 onPartial?(liveCumulative()) // cumulative; synchronous, no MainActor hop
-            case .segmentCommitted:
-                openItems += 1
-                if finishing { finalCommitSeen = true } // post-release commit = trailing segment
-            case .transcriptCompleted(let transcript):
-                let segment = transcript.isEmpty
-                    ? currentSegmentDeltas.trimmingCharacters(in: .whitespaces)
+                scheduleSettlingIfEligible()
+            case .segmentCommitted(let itemID):
+                noteActivity()
+                if !committedItemIDs.contains(itemID) { committedItemIDs.append(itemID) }
+                if items[itemID] == nil { items[itemID] = ItemState() }
+                if finishing { finalCommitOutcome = .accepted }
+                scheduleSettlingIfEligible()
+            case .transcriptCompleted(let itemID, let transcript):
+                guard items[itemID]?.isTerminal != true else { continue }
+                var item = items[itemID, default: ItemState()]
+                let completed = transcript.isEmpty
+                    ? item.deltas.trimmingCharacters(in: .whitespacesAndNewlines)
                     : transcript
-                if !segment.isEmpty { finalSegments.append(segment) }
-                currentSegmentDeltas = ""
-                openItems = max(0, openItems - 1)
+                item.finalTranscript = completed
+                items[itemID] = item
+                noteActivity()
                 onPartial?(liveCumulative())
-                if tryFinalize() { return }
-            case .commitEmpty:
-                // The trailing finish() commit had no new audio (VAD already drained
-                // everything). Mark the boundary seen and finalize once segments settle.
-                if finishing { finalCommitSeen = true; if tryFinalize() { return } }
-            case .error(let message):
+                scheduleSettlingIfEligible()
+            case .transcriptionFailed(let itemID, let message):
+                items[itemID, default: ItemState()].failure = message
+                deliver(error: "transcription failed for \(itemID): \(message)")
+                return
+            case .commitEmpty(let clientEventID):
+                guard finishing, clientEventID == finalCommitEventID else { continue }
+                noteActivity()
+                finalCommitOutcome = .empty
+                scheduleSettlingIfEligible()
+            case .error(let message, _):
                 deliver(error: message)
                 return
             case .ignored:
@@ -146,21 +189,57 @@ actor OpenAIRealtimeSession {
         }
     }
 
-    /// Resolves finish() once fn is released, the trailing commit is acknowledged,
-    /// and every committed segment has completed. Returns true when it finalized.
-    private func tryFinalize() -> Bool {
-        guard finishing, finalCommitSeen, openItems == 0, completedTranscript == nil else { return false }
-        let result = finalSegments.isEmpty
-            ? liveCumulative().trimmingCharacters(in: .whitespaces)
-            : finalSegments.joined(separator: " ")
+    private func noteActivity() {
+        activityGeneration += 1
+        settlingTask?.cancel()
+        settlingTask = nil
+    }
+
+    private var isReadyToSettle: Bool {
+        guard finishing, completedTranscript == nil else { return false }
+        guard finalCommitOutcome != .pending else { return false }
+        return committedItemIDs.allSatisfy { items[$0]?.isTerminal == true }
+    }
+
+    /// The server does not echo a successful commit's client event ID. A short
+    /// quiet window therefore closes the race where a delayed VAD commit is
+    /// observed before the manual finish commit's committed item.
+    private func scheduleSettlingIfEligible() {
+        guard isReadyToSettle else { return }
+        let generation = activityGeneration
+        settlingTask = Task { [weak self, settlingInterval] in
+            try? await Task.sleep(for: settlingInterval)
+            guard !Task.isCancelled else { return }
+            await self?.finalizeIfStable(generation: generation)
+        }
+    }
+
+    private func finalizeIfStable(generation: Int) {
+        guard generation == activityGeneration, isReadyToSettle else { return }
+        let result = liveCumulative().trimmingCharacters(in: .whitespacesAndNewlines)
         completedTranscript = result
         finishContinuation?.resume(returning: result)
         finishContinuation = nil
-        return true
+        timeoutTask?.cancel()
+        timeoutTask = nil
+    }
+
+    private func startFinishTimeout() {
+        timeoutTask?.cancel()
+        timeoutTask = Task { [weak self, finishTimeout] in
+            try? await Task.sleep(for: finishTimeout)
+            guard !Task.isCancelled else { return }
+            await self?.deliver(error: "realtime finalization timed out")
+        }
     }
 
     private func deliver(error message: String) {
+        guard completedTranscript == nil, serverError == nil else { return }
         serverError = message
+        settlingTask?.cancel()
+        settlingTask = nil
+        timeoutTask?.cancel()
+        timeoutTask = nil
         finishContinuation?.resume(throwing: EngineError.requestFailed(status: 0, message: message))
         finishContinuation = nil
     }

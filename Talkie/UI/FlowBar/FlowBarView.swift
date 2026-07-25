@@ -1,109 +1,49 @@
 import SwiftUI
 
+/// Production adapter. It converts observable app state into the same privacy-safe
+/// value model rendered by the production Flow Bar.
 struct FlowBarView: View {
     let coordinator: DictationCoordinator
     let recorder: AudioRecorder
-    /// Injected via .environment from FlowBarPanel — a plain stored property is
-    /// NOT tracked by SwiftUI inside NSHostingView, so pillStyle/engineMode
-    /// changes never re-rendered the pill (live-testing bug 2026-06-11).
     @Environment(SettingsStore.self) private var settings: SettingsStore?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     var onHideForHour: () -> Void = {}
     var onHidePermanently: () -> Void = {}
 
     @State private var showCheckmark = false
     @State private var recordingStarted = Date()
 
-    private var style: PillStyle { settings?.pillStyle ?? .default }
-    /// Chromeless styles float their content (waveform + text) with only a drop
-    /// shadow; the others wrap it in a capsule. Bare waveform is the new default.
-    private var isChromeless: Bool { style == .bareWaveform || style == .hidden }
-    /// Foreground that reads on any wallpaper: `.primary` follows the system
-    /// light/dark appearance for chromeless + glass; white on the dark capsule.
-    private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
-
-    /// Per-phase progress label — the coordinator already distinguishes these states,
-    /// so surface them instead of a single lumped "Polishing…" (lets the user see when
-    /// cleanup is actually running).
-    private var statusLabel: String {
-        switch coordinator.state {
-        case .transcribing: "Transcribing…"
-        case .cleaning: "Cleaning…"
-        case .inserting: "Inserting…"
-        default: "Polishing…"
+    private var presentation: PillPresentation {
+        let errorMessage: String? = if case .error(let message) = coordinator.state {
+            message
+        } else {
+            nil
         }
+        return PillPresentation(
+            state: .map(coordinator.state,
+                        handsFree: coordinator.isHandsFree,
+                        showSuccess: showCheckmark),
+            style: settings?.pillStyle ?? .default,
+            elapsed: max(0, Date().timeIntervalSince(recordingStarted)),
+            audioLevel: recorder.latestLevel,
+            errorMessage: errorMessage,
+            offline: coordinator.offlineBadgeVisible,
+            cleanupDegraded: coordinator.cleanupDegraded,
+            reduceMotion: reduceMotion,
+            increasedContrast: colorSchemeContrast == .increased,
+            isInstant: settings?.engineMode == "instant")
     }
 
     var body: some View {
-        Group {
-            switch coordinator.state {
-            case .idle:
-                if showCheckmark { successView } else { idleView }
-            case .recording:
-                activePill {
-                    if style == .dynamicIsland {
-                        // The island's iconic leading "live" dot.
-                        Circle().fill(.red).frame(width: 7, height: 7)
-                    } else if settings?.engineMode == "instant" {
-                        Image(systemName: "bolt.fill").font(.system(size: 9)).foregroundStyle(.yellow)
-                    }
-                    // Always show the waveform during recording — user prefers no live
-                    // transcript in the pill; the cleaned text is inserted at the end.
-                    WaveformCanvasView(recorder: recorder, color: contentForeground)
-                    Text(recordingStarted, style: .timer) // spec §7: recording timer
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(contentForeground.opacity(0.85))
-                    cancelButton
-                }
-            case .transcribing, .cleaning, .inserting:
-                activePill {
-                    ProgressView().controlSize(.small).tint(contentForeground)
-                    Text(statusLabel).font(.caption).foregroundStyle(contentForeground.opacity(0.85))
-                    cancelButton
-                }
-            case .error(let message):
-                errorView(message)
-            }
-        }
-        // Dynamic Island docks at the top of the panel (which PillLayout pins to
-        // top-center near the notch); every other style sits at the bottom.
-        .frame(width: 260, height: 56, alignment: style == .dynamicIsland ? .top : .bottom)
-        .padding(style == .dynamicIsland ? .top : .bottom, 2)
-        .animation(.spring(duration: 0.3), value: coordinator.state)
-        .animation(.spring(duration: 0.3), value: showCheckmark)
-        .overlay(alignment: .topTrailing) {
-            // Phase 3's offline-fallback badge (spec §10) — re-applied on top of
-            // this full replacement; do not drop it.
-            if coordinator.offlineBadgeVisible {
-                Text("offline").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(.orange.opacity(0.9), in: Capsule()).foregroundStyle(.white)
-                    .offset(y: -4)
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            // spec §6/§10: cleanup failed → raw text was inserted. A labeled "raw"
-            // badge (not a bare triangle) makes the degraded state legible; the
-            // tooltip carries the actual cause captured by the coordinator.
-            if coordinator.cleanupDegraded {
-                HStack(spacing: 3) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                    Text("RAW")
-                }
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.yellow)
-                // A subtle dark backing + shadow so the yellow stays legible on
-                // any wallpaper without filling the badge yellow.
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(.black.opacity(0.35), in: Capsule())
-                .shadow(color: .black.opacity(0.5), radius: 1.5, y: 0.5)
-                .offset(y: -4)
-                .help(coordinator.cleanupFailureReason
-                      ?? "Cleanup failed — inserted the raw transcript.")
-            }
-        }
-        .contextMenu {
-            Button("Hide for 1 hour") { onHideForHour() }
-            Button("Hide permanently") { onHidePermanently() }
-        }
+        PillRendererView(
+            presentation: presentation,
+            levelSource: recorder,
+            recordingStartedAt: recordingStarted,
+            cleanupFailureReason: coordinator.cleanupFailureReason,
+            onCancel: { coordinator.cancel() },
+            onHideForHour: onHideForHour,
+            onHidePermanently: onHidePermanently)
         .onChange(of: coordinator.state) { _, newState in
             if newState == .recording { recordingStarted = .now }
         }
@@ -117,38 +57,179 @@ struct FlowBarView: View {
         }
     }
 
-    // MARK: pill text helper
-
     /// Last `max` Characters of `s` (grapheme-safe — never splits an emoji).
-    /// Kept (with tests) for the upcoming settings redesign; the pill currently always
-    /// shows the waveform during recording (user preference: no transcript in the pill).
     static func tail(_ s: String, max: Int) -> String {
         s.count <= max ? s : String(s.suffix(max))
     }
+}
 
-    // MARK: idle
+/// The shared native renderer used by the production non-activating panel.
+struct PillRendererView: View {
+    let presentation: PillPresentation
+    let levelSource: any AudioLevelReading
+    var recordingStartedAt: Date?
+    var cleanupFailureReason: String?
+    var onCancel: () -> Void = {}
+    var onHideForHour: () -> Void = {}
+    var onHidePermanently: () -> Void = {}
+
+    @State private var handsFreeExpanded = false
+
+    private var style: PillStyle { presentation.style }
+    private var isChromeless: Bool {
+        style == .bareWaveform || style == .inkLine || style == .calmFlowRibbon ||
+            style == .bareWave || style == .hidden
+    }
+    private var isOrganicWaveform: Bool {
+        style == .inkLine || style == .calmFlowRibbon || style == .bareWave
+    }
+    private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
+    private var motion: PillMotionProfile {
+        .resolve(reduceMotion: presentation.reduceMotion)
+    }
+    private var isHandsFree: Bool {
+        if case .recording(handsFree: true) = presentation.state { true } else { false }
+    }
+
+    var body: some View {
+        Group {
+            switch presentation.state {
+            case .idle:
+                idleView
+            case .success:
+                successView
+            case .recording:
+                activePill {
+                    if style == .dynamicIsland {
+                        Circle().fill(.red).frame(width: 7, height: 7)
+                    } else if presentation.isInstant {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                    }
+                    if isOrganicWaveform {
+                        OrganicWaveformView(style: style, levelSource: levelSource,
+                                            presentation: presentation, color: contentForeground)
+                    } else {
+                        WaveformCanvasView(recorder: levelSource, color: contentForeground)
+                            .accessibilityHidden(true)
+                    }
+                    timerView
+                    cancelButton
+                }
+            case .transcribing, .cleaning, .inserting:
+                activePill {
+                    ProgressView().controlSize(.small).tint(contentForeground)
+                    Text(presentation.statusLabel ?? "Polishing…")
+                        .font(.caption)
+                        .foregroundStyle(contentForeground.opacity(0.85))
+                    cancelButton
+                }
+            case .error:
+                errorView(presentation.errorMessage ?? "Dictation failed")
+            }
+        }
+        .frame(width: PillLayout.panelSize.width,
+               height: PillLayout.panelSize.height,
+               alignment: style == .dynamicIsland ? .top : .bottom)
+        .padding(style == .dynamicIsland ? .top : .bottom, 2)
+        .scaleEffect(isHandsFree
+                     ? (handsFreeExpanded ? motion.handsFreeMaximumScale
+                                          : motion.handsFreeMinimumScale)
+                     : 1)
+        .animation(presentation.reduceMotion
+                   ? .easeOut(duration: motion.entryDuration)
+                   : .spring(duration: motion.entryDuration),
+                   value: presentation.state)
+        .overlay(alignment: .topTrailing) {
+            if presentation.offline {
+                Text("offline")
+                    .font(.caption2)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.orange.opacity(0.9), in: Capsule())
+                    .foregroundStyle(.white)
+                    .offset(y: -4)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if presentation.cleanupDegraded {
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("RAW")
+                }
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.yellow)
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(.black.opacity(0.35), in: Capsule())
+                .shadow(color: .black.opacity(0.5), radius: 1.5, y: 0.5)
+                .offset(y: -4)
+                .help(cleanupFailureReason ?? "Cleanup failed — inserted the raw transcript.")
+            }
+        }
+        .contextMenu {
+            Button("Hide for 1 hour") { onHideForHour() }
+            Button("Hide permanently") { onHidePermanently() }
+        }
+        .modifier(PillAccessibilityModifier(
+            presentation: presentation,
+            onCancel: onCancel,
+            onHideForHour: onHideForHour,
+            onHidePermanently: onHidePermanently))
+        .onAppear { updateHandsFreeAnimation() }
+        .onChange(of: isHandsFree) { _, _ in updateHandsFreeAnimation() }
+        .onChange(of: presentation.reduceMotion) { _, _ in updateHandsFreeAnimation() }
+    }
+
+    @ViewBuilder private var timerView: some View {
+        if let recordingStartedAt {
+            Text(recordingStartedAt, style: .timer)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(contentForeground.opacity(0.85))
+        } else {
+            Text(Self.formattedElapsed(presentation.elapsed))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(contentForeground.opacity(0.85))
+        }
+    }
+
+    static func formattedElapsed(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded(.down)))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func updateHandsFreeAnimation() {
+        guard isHandsFree, !presentation.reduceMotion else {
+            handsFreeExpanded = false
+            return
+        }
+        handsFreeExpanded = false
+        withAnimation(.easeInOut(duration: motion.handsFreeDuration).repeatForever(autoreverses: true)) {
+            handsFreeExpanded = true
+        }
+    }
 
     @ViewBuilder private var idleView: some View {
         switch style {
         case .hidden:
-            Color.clear.frame(width: 1, height: 1) // panel is ordered out anyway
+            Color.clear.frame(width: 1, height: 1)
         case .bareWaveform:
-            // Three faint dots — a calm "listening soon" hint, not a hard shape.
             HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { _ in
                     Circle().fill(Color.primary.opacity(0.4)).frame(width: 4, height: 4)
                 }
             }
             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+        case .inkLine, .calmFlowRibbon, .bareWave:
+            OrganicWaveformView(style: style, levelSource: levelSource,
+                                presentation: presentation, color: contentForeground)
+                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
         case .frostedGlass:
-            // A small translucent glass lozenge that picks up the desktop behind it.
             Capsule().fill(.ultraThinMaterial)
                 .frame(width: 60, height: 11)
-                .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+                .overlay(Capsule().strokeBorder(.white.opacity(presentation.increasedContrast ? 0.7 : 0.3),
+                                                lineWidth: presentation.increasedContrast ? 1 : 0.5))
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
         case .dynamicIsland:
-            // A small black pill that reads as an extension of the camera notch;
-            // it grows into the full island when a dictation starts.
             Capsule().fill(.black)
                 .frame(width: 96, height: 20)
                 .overlay(alignment: .trailing) {
@@ -157,8 +238,6 @@ struct FlowBarView: View {
                 .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
         }
     }
-
-    // MARK: success / error
 
     @ViewBuilder private var successView: some View {
         if isChromeless {
@@ -170,7 +249,8 @@ struct FlowBarView: View {
         } else {
             content(accent: .green) {
                 Image(systemName: "checkmark").font(.caption.bold())
-                    .foregroundStyle(style == .frostedGlass ? AnyShapeStyle(.green) : AnyShapeStyle(.white))
+                    .foregroundStyle(style == .frostedGlass
+                                     ? AnyShapeStyle(.green) : AnyShapeStyle(.white))
             }
         }
     }
@@ -186,41 +266,33 @@ struct FlowBarView: View {
         } else {
             content(accent: .red) {
                 Text(message).font(.caption)
-                    .foregroundStyle(style == .frostedGlass ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
+                    .foregroundStyle(style == .frostedGlass
+                                     ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
                     .lineLimit(1).truncationMode(.tail)
             }
         }
     }
 
-    /// .plain draws no focusable bezel; the panel is .nonactivatingPanel, so the
-    /// click is handled here while the target app keeps key status and its caret.
     private var cancelButton: some View {
-        Button { coordinator.cancel() } label: {
+        Button(action: onCancel) {
             Image(systemName: "xmark")
                 .font(.caption.bold())
                 .foregroundStyle(contentForeground.opacity(0.85))
         }
         .buttonStyle(.plain)
         .help("Cancel dictation")
+        .accessibilityLabel("Cancel dictation")
     }
 
-    // MARK: chrome
-
-    /// The active-state row of content, wrapped per style: chromeless styles get
-    /// only a drop shadow; frosted glass a translucent capsule; dynamic island a
-    /// dark capsule (interim until its phase).
     private func activePill(@ViewBuilder content: () -> some View) -> some View {
-        self.content(accent: nil) {
-            HStack(spacing: 8) { content() }
-        }
+        self.content(accent: nil) { HStack(spacing: 8) { content() } }
+            .transition(.scale(scale: motion.entryMinimumScale).combined(with: .opacity))
     }
 
-    /// `accent` nil = the style's neutral background (material or dark capsule);
-    /// a color = a tinted background for success (green) / error (red).
     @ViewBuilder
     private func content(accent: Color?, @ViewBuilder _ inner: () -> some View) -> some View {
         switch style {
-        case .bareWaveform, .hidden:
+        case .bareWaveform, .inkLine, .calmFlowRibbon, .bareWave, .hidden:
             inner()
                 .frame(height: 34)
                 .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
@@ -228,9 +300,10 @@ struct FlowBarView: View {
             inner()
                 .padding(.horizontal, 16)
                 .frame(height: 34)
-                .background(accent.map { AnyShapeStyle($0.opacity(0.55)) } ?? AnyShapeStyle(.ultraThinMaterial),
-                            in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+                .background(accent.map { AnyShapeStyle($0.opacity(0.55)) }
+                            ?? AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(presentation.increasedContrast ? 0.7 : 0.3),
+                                                lineWidth: presentation.increasedContrast ? 1 : 0.5))
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
         case .dynamicIsland:
             inner()
@@ -238,6 +311,28 @@ struct FlowBarView: View {
                 .frame(height: 34)
                 .background(accent?.opacity(0.85) ?? .black.opacity(0.78), in: Capsule())
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+        }
+    }
+}
+
+private struct PillAccessibilityModifier: ViewModifier {
+    let presentation: PillPresentation
+    let onCancel: () -> Void
+    let onHideForHour: () -> Void
+    let onHidePermanently: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let accessible = content
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(presentation.accessibilityLabel)
+            .accessibilityAction(named: "Hide for 1 hour", onHideForHour)
+            .accessibilityAction(named: "Hide permanently", onHidePermanently)
+
+        if presentation.isCancellable {
+            accessible.accessibilityAction(named: "Cancel dictation", onCancel)
+        } else {
+            accessible
         }
     }
 }

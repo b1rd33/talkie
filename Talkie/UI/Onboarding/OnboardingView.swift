@@ -3,13 +3,10 @@ import AVFoundation
 import ApplicationServices
 
 enum OnboardingStep: Int, CaseIterable {
-    // Talkie is free — no trial/license step. (TrialOrLicenseStep is kept below,
-    // unused, so re-enabling paid licensing later is a one-line change.)
     case welcome, microphone, accessibility, fnKey, engineChoice, practice, done
 }
 
 struct OnboardingView: View {
-    let entitlements: EntitlementStore
     let keychain: KeychainStore
     let settings: SettingsStore
     let modelDownloader: ModelDownloader
@@ -99,69 +96,6 @@ private struct WelcomeStep: View {
     }
 }
 
-private struct TrialOrLicenseStep: View {
-    let entitlements: EntitlementStore
-    let advance: () -> Void
-
-    @State private var keyInput = ""
-    @State private var errorText: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Try Talkie free for 14 days")
-                .font(.title2.bold())
-            switch entitlements.current {
-            case .licensed:
-                Label("Licensed — you're all set.", systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
-                Button("Continue") { advance() }
-                    .buttonStyle(.borderedProminent)
-            case .trial(let daysLeft):
-                Label("Trial active — \(daysLeft) days left.", systemImage: "clock.fill")
-                Button("Continue") { advance() }
-                    .buttonStyle(.borderedProminent)
-            case .expired:
-                if entitlements.trialHasStarted {
-                    Label("Your trial has ended — activate a license to keep dictating.",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                } else {
-                    Text("Full-featured, no API keys of ours required — you bring your own. The trial starts only when you click the button.")
-                        .foregroundStyle(.secondary)
-                    Button("Start 14-day trial") {
-                        entitlements.startTrial()
-                        advance()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Divider()
-                Text("Already have a license key?")
-                    .font(.headline)
-                HStack {
-                    TextField("XXXXX-XXXXX-XXXXX-XXXXX", text: $keyInput)
-                        .font(.body.monospaced())
-                        .autocorrectionDisabled()
-                    Button("Activate") {
-                        let result = entitlements.activate(
-                            keyInput.trimmingCharacters(in: .whitespacesAndNewlines))
-                        if result == .valid { advance() } else { errorText = result.message }
-                    }
-                    .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                Text("Machine ID: \(entitlements.machineID)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                if let errorText {
-                    Text(errorText)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .onAppear { entitlements.refresh() } // cached `current` may predate this re-run
-    }
-}
-
 private struct MicrophoneStep: View {
     @State private var status = AVCaptureDevice.authorizationStatus(for: .audio)
 
@@ -169,7 +103,7 @@ private struct MicrophoneStep: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Microphone access")
                 .font(.title2.bold())
-            Text("Talkie records only while you hold the dictation key. Audio is discarded right after transcription.")
+            Text("Talkie records while you hold the dictation key or while hands-free recording is active. \(PrivacyCopy.audioRetentionSummary)")
                 .foregroundStyle(.secondary)
             switch status {
             case .authorized:
@@ -210,7 +144,7 @@ private struct AccessibilityStep: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Accessibility permission")
                 .font(.title2.bold())
-            Text("Needed to watch the fn key globally and paste text at your cursor. Talkie never reads your screen.")
+            Text("Needed to watch the fn key globally and insert text at your cursor. Nearby editable text is read only if you enable smart insertion; secure fields are excluded.")
                 .foregroundStyle(.secondary)
             if trusted {
                 Label("Accessibility granted.", systemImage: "checkmark.circle.fill")
@@ -288,6 +222,8 @@ private struct KeyChoiceStep: View {
                 .font(.title2.bold())
             Text("Pick what you have — Talkie sets up a matching profile. You can change it anytime in Settings → Profiles.")
                 .foregroundStyle(.secondary)
+            Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
+                .font(.caption)
             Picker("Key choice", selection: Binding(
                 get: { choice },
                 set: { if let c = $0 { select(c) } })) {

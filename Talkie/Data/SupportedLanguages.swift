@@ -5,9 +5,21 @@ import Foundation
 /// picker row. Codes are ISO-639-1 (sent to the ASR verbatim); nil = auto-detect.
 enum SupportedLanguages {
     static let all: [(name: String, code: String?)] = [
-        ("Auto-detect", nil), ("English", "en"), ("German", "de"), ("French", "fr"),
-        ("Spanish", "es"), ("Italian", "it"), ("Portuguese", "pt"), ("Dutch", "nl"),
-        ("Polish", "pl"), ("Russian", "ru"), ("Ukrainian", "uk"), ("Turkish", "tr"),
-        ("Japanese", "ja"), ("Korean", "ko"), ("Chinese", "zh"), ("Hindi", "hi"),
+        ("Auto-detect", nil),
+        ("English", "en"), ("English (US)", "en-US"), ("English (UK)", "en-GB"),
+        ("English (Australia)", "en-AU"), ("German", "de"), ("French", "fr"),
+        ("French (Canada)", "fr-CA"), ("Spanish", "es"), ("Spanish (Mexico)", "es-MX"),
+        ("Italian", "it"), ("Portuguese", "pt"), ("Portuguese (Brazil)", "pt-BR"),
+        ("Dutch", "nl"), ("Polish", "pl"), ("Czech", "cs"), ("Danish", "da"),
+        ("Finnish", "fi"), ("Greek", "el"), ("Hungarian", "hu"), ("Norwegian", "no"),
+        ("Romanian", "ro"), ("Swedish", "sv"), ("Russian", "ru"), ("Ukrainian", "uk"),
+        ("Turkish", "tr"), ("Arabic", "ar"), ("Hebrew", "he"), ("Hindi", "hi"),
+        ("Indonesian", "id"), ("Malay", "ms"), ("Thai", "th"), ("Vietnamese", "vi"),
+        ("Japanese", "ja"), ("Korean", "ko"), ("Chinese (Simplified)", "zh-Hans"),
+        ("Chinese (Traditional)", "zh-Hant"),
     ]
+
+    static func transcriptionCode(for code: String?) -> String? {
+        code?.split(separator: "-").first.map(String.init)
+    }
 }

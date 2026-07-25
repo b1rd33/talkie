@@ -31,6 +31,7 @@ enum HotkeyGesture {
 final class DictationCoordinator {
     private(set) var state: DictationState = .idle
     private(set) var lastResult: DictationResult?
+    private var lastDeliveryTargetBundleID: String?
 
     private let recorder: AudioRecording
     private let engine: TranscriptionEngine
@@ -41,6 +42,9 @@ final class DictationCoordinator {
     private let notifier: Notifying?
     private let history: HistoryStore?
     private let frontmostApp: () -> (bundleID: String?, name: String?)
+    private let focusReturnPollCount: Int
+    private let focusPollInterval: Duration
+    private let focusPollSleep: (Duration) async -> Void
     private var recordingStartedAt: Date?
     private var processingTask: Task<Void, Never>?
     private var capTask: Task<Void, Never>?
@@ -49,6 +53,10 @@ final class DictationCoordinator {
     private(set) var offlineBadgeVisible = false
     private var targetApp: (bundleID: String?, name: String?) = (nil, nil)
     private let dictionaryTermsProvider: () -> [String]
+    private let dictionaryPromptTermsProvider: () -> [String]
+    private let snippetExpansionsProvider: () -> [SnippetExpansion]
+    private let pressEnterEnabledProvider: () -> Bool
+    private let focusedContextProvider: () -> FocusedContext?
     private let cleanupLevelProvider: () -> CleanupLevel
     private let stylePresetProvider: (String?) -> StylePreset
     private let pinnedLanguageProvider: () -> String?
@@ -57,7 +65,6 @@ final class DictationCoordinator {
     private let instantSkipCleanupProvider: () -> Bool
     private let liveTypeProvider: () -> Bool
     private let liveInserter: LiveTextInserting?
-    private let entitlement: (() -> EntitlementError?)?
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
@@ -69,6 +76,10 @@ final class DictationCoordinator {
     /// Latest streamed text while recording in instant mode (throttled ~12.5 Hz).
     private(set) var liveTranscript: String = ""
     private var activeTerms: [String] = []
+    private var activePromptTerms: [String] = []
+    private var activeSnippets: [SnippetExpansion] = []
+    private var activePressEnterEnabled = false
+    private var activeContext: FocusedContext?
     private var activeLevel: CleanupLevel = .high
     private var activeStyle: StylePreset = .neutral
     /// Press-time snapshot of instantSkipCleanup (same contract as activeLevel).
@@ -93,7 +104,16 @@ final class DictationCoordinator {
          notifier: Notifying? = nil,
          history: HistoryStore? = nil,
          frontmostApp: @escaping () -> (bundleID: String?, name: String?) = { (nil, nil) },
+         focusReturnPollCount: Int = 8,
+         focusPollInterval: Duration = .milliseconds(20),
+         focusPollSleep: @escaping (Duration) async -> Void = { duration in
+             try? await Task.sleep(for: duration)
+         },
          dictionaryTermsProvider: @escaping () -> [String] = { [] },
+         dictionaryPromptTermsProvider: (() -> [String])? = nil,
+         snippetExpansionsProvider: @escaping () -> [SnippetExpansion] = { [] },
+         pressEnterEnabledProvider: @escaping () -> Bool = { false },
+         focusedContextProvider: @escaping () -> FocusedContext? = { nil },
          cleanupLevelProvider: @escaping () -> CleanupLevel = { .high },
          stylePresetProvider: @escaping (String?) -> StylePreset = { _ in .neutral },
          pinnedLanguageProvider: @escaping () -> String? = { nil },
@@ -102,7 +122,6 @@ final class DictationCoordinator {
          instantSkipCleanupProvider: @escaping () -> Bool = { false },
          liveTypeProvider: @escaping () -> Bool = { false },
          liveInserter: LiveTextInserting? = nil,
-         entitlement: (() -> EntitlementError?)? = nil,
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
@@ -113,7 +132,14 @@ final class DictationCoordinator {
         self.notifier = notifier
         self.history = history
         self.frontmostApp = frontmostApp
+        self.focusReturnPollCount = focusReturnPollCount
+        self.focusPollInterval = focusPollInterval
+        self.focusPollSleep = focusPollSleep
         self.dictionaryTermsProvider = dictionaryTermsProvider
+        self.dictionaryPromptTermsProvider = dictionaryPromptTermsProvider ?? dictionaryTermsProvider
+        self.snippetExpansionsProvider = snippetExpansionsProvider
+        self.pressEnterEnabledProvider = pressEnterEnabledProvider
+        self.focusedContextProvider = focusedContextProvider
         self.cleanupLevelProvider = cleanupLevelProvider
         self.stylePresetProvider = stylePresetProvider
         self.pinnedLanguageProvider = pinnedLanguageProvider
@@ -122,7 +148,6 @@ final class DictationCoordinator {
         self.instantSkipCleanupProvider = instantSkipCleanupProvider
         self.liveTypeProvider = liveTypeProvider
         self.liveInserter = liveInserter
-        self.entitlement = entitlement
         self.liveSessionFactory = liveSessionFactory
     }
 
@@ -166,10 +191,6 @@ final class DictationCoordinator {
         // presses of a stop-double-tap bounce it off-then-on. So while hands-free
         // is recording, a stray press falls through to the guard below and no-ops.
         guard state == .idle || isErrorState else { return } // one dictation in flight
-        if let entitlement, let gateError = entitlement() {
-            fail(gateError) // fail() disarms hands-free
-            return
-        }
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
         liveTranscript = ""     // clear any stale streamed preview
         liveBox.clear()
@@ -177,6 +198,10 @@ final class DictationCoordinator {
         liveTapActive = false
         targetApp = frontmostApp()
         activeTerms = dictionaryTermsProvider()
+        activePromptTerms = dictionaryPromptTermsProvider()
+        activeSnippets = snippetExpansionsProvider()
+        activePressEnterEnabled = pressEnterEnabledProvider()
+        activeContext = focusedContextProvider()
         activeLevel = cleanupLevelProvider()
         activeStyle = stylePresetProvider(targetApp.bundleID)
         activeInstantSkipCleanup = instantSkipCleanupProvider()
@@ -363,10 +388,10 @@ final class DictationCoordinator {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
                     // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
-                    transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+                    transcript = try await engine.transcribe(audio, dictionaryTerms: activePromptTerms)
                 }
             } else {
-                transcript = try await engine.transcribe(audio, dictionaryTerms: activeTerms)
+                transcript = try await engine.transcribe(audio, dictionaryTerms: activePromptTerms)
             }
             try Task.checkCancellation()
 
@@ -376,17 +401,30 @@ final class DictationCoordinator {
             // Collapses ANY base level (incl. .custom) to .none when skipping.
             let liveTypeAttempted = activeLiveType && liveTapActive
             let effectiveLevel: CleanupLevel = (activeInstantSkipCleanup && (usedRealtime || liveTypeAttempted)) ? .none : activeLevel
+            let voiceActions = VoiceActionProcessor.process(
+                transcript.text, allowPressEnter: activePressEnterEnabled)
+            let protectedSnippets = SnippetProcessor.protect(voiceActions.text,
+                                                              snippets: activeSnippets)
             let cleaned: String
             if effectiveLevel == .none {
-                cleaned = transcript.text // spec §6: None = raw ASR text, no LLM call
+                let formatted = SmartInsertionProcessor.format(
+                    protectedSnippets.text, precedingText: activeContext?.precedingText)
+                cleaned = protectedSnippets.restore(formatted)
             } else {
                 state = .cleaning
                 do {
-                    cleaned = try await cleanup.clean(transcript.text, dictionaryTerms: activeTerms,
-                                                      level: effectiveLevel, style: activeStyle,
-                                                      pinnedLanguage: pinnedLanguageProvider())
+                    let processed = try await cleanup.clean(
+                        protectedSnippets.text, dictionaryTerms: activeTerms,
+                        level: effectiveLevel, style: activeStyle,
+                        pinnedLanguage: pinnedLanguageProvider(),
+                        context: activeContext?.cleanupContext)
+                    let formatted = SmartInsertionProcessor.format(
+                        processed, precedingText: activeContext?.precedingText)
+                    cleaned = protectedSnippets.restore(formatted)
                 } catch {
-                    cleaned = transcript.text // spec §6: raw transcript beats nothing
+                    let formatted = SmartInsertionProcessor.format(
+                        protectedSnippets.text, precedingText: activeContext?.precedingText)
+                    cleaned = protectedSnippets.restore(formatted)
                     cleanupDegraded = true    // spec §6/§10: badge the pill with a subtle warning
                     cleanupFailureReason = (error as? LocalizedError)?.errorDescription
                         ?? "Cleanup failed — inserted the raw transcript."
@@ -405,31 +443,41 @@ final class DictationCoordinator {
             // Never post a keystroke into an app other than the press-time target: if
             // focus left before release (the user switched apps), leave the text on the
             // clipboard and notify instead of pasting/typing into the wrong app.
-            let onTarget = frontmostApp().bundleID == targetApp.bundleID
+            let onTarget = await pressTimeTargetIsFrontmost()
             let liveTypeDelivered = activeLiveType && usedRealtime
+            var deliveredOnTarget = false
             if !onTarget {
                 stopLivePump()
                 inserter.copyToClipboard(cleaned)
             } else if liveTypeDelivered, let liveInserter {
                 stopLivePump() // no in-flight pump append racing the final delivery
-                if effectiveLevel == .none {
+                if effectiveLevel == .none, cleaned == transcript.text {
                     // Raw kept (skip-cleanup): cleaned == raw == what was typed. Flush
                     // the final suffix the pump may have missed; fall back to a normal
                     // insert if typing wasn't viable (AX not trusted) or realtime fell
                     // back to batch (B-7: deliver the result, not partial realtime text).
                     let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
                     if !viable { try await inserter.insert(cleaned) }
+                    deliveredOnTarget = true
                 } else {
                     // Cleanup ran: erase the live-typed raw and replace it with the cleaned
                     // text. Only insert cleaned when the erase actually succeeded — otherwise
                     // we'd leave the raw AND add cleaned (duplicate); fall back to clipboard.
                     let erased = (try? liveInserter.eraseTyped()) ?? false
-                    if erased { try await inserter.insert(cleaned) }
+                    if erased {
+                        try await inserter.insert(cleaned)
+                        deliveredOnTarget = true
+                    }
                     else { inserter.copyToClipboard(cleaned) }
                 }
             } else {
                 try await inserter.insert(cleaned)
+                deliveredOnTarget = true
             }
+            if deliveredOnTarget, voiceActions.pressEnter {
+                _ = inserter.pressEnter()
+            }
+            lastDeliveryTargetBundleID = deliveredOnTarget ? targetApp.bundleID : nil
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
                                          duration: audio.duration)
             lastCompletedAt = Date()
@@ -465,6 +513,29 @@ final class DictationCoordinator {
         }
     }
 
+    /// Undo is posted only while the app that received the last insertion remains
+    /// frontmost, so ⌘Z can never affect an unrelated application.
+    func undoLastInsertion() -> Bool {
+        guard let target = lastDeliveryTargetBundleID,
+              frontmostApp().bundleID == target else { return false }
+        let undone = inserter.undo()
+        if undone { lastDeliveryTargetBundleID = nil }
+        return undone
+    }
+
+    /// LaunchServices can lag a click by a few run-loop turns. Poll briefly for
+    /// the press-time target to become frontmost, but never activate it ourselves.
+    /// If the user stays elsewhere, the caller uses the clipboard-safe route.
+    private func pressTimeTargetIsFrontmost() async -> Bool {
+        if frontmostApp().bundleID == targetApp.bundleID { return true }
+        guard focusReturnPollCount > 0 else { return false }
+        for _ in 0..<focusReturnPollCount {
+            await focusPollSleep(focusPollInterval)
+            if frontmostApp().bundleID == targetApp.bundleID { return true }
+        }
+        return false
+    }
+
     /// Moves a recorded file into Application Support for later retry (spec §8/§10).
     /// Returns the destination path, or nil if there was no file or the move failed.
     private func keepAudioForRetry(_ url: URL?, into subfolder: String = "FailedAudio") -> String? {
@@ -489,7 +560,8 @@ final class DictationCoordinator {
         do {
             state = .transcribing
             let terms = dictionaryTermsProvider()
-            let transcript = try await engine.transcribe(audio, dictionaryTerms: terms)
+            let transcript = try await engine.transcribe(
+                audio, dictionaryTerms: dictionaryPromptTermsProvider())
             let level = cleanupLevelProvider()
             var cleaned = transcript.text
             if level != .none {
@@ -517,17 +589,13 @@ final class DictationCoordinator {
     private func fail(_ error: Error) {
         isHandsFree = false // any failure disarms hands-free, else the next PTT inherits it
         if let engineError = error as? EngineError, engineError == .missingAPIKey {
-            if let concrete = notifier as? Notifier {
-                concrete.notify(title: "API key missing",
-                                body: "Add your OpenAI key in Talkie's Settings → Engines.",
-                                openSettingsOnTap: true)
-            } else {
-                notifier?.notify(title: "API key missing",
-                                 body: "Add your OpenAI key in Talkie's Settings → Engines.")
-            }
+            notifier?.notify(title: "API key missing",
+                             body: "Add your OpenAI key in Talkie's Settings → Engines.",
+                             destination: .engines)
         } else if let audioError = error as? AudioError, case .microphoneDenied = audioError {
             notifier?.notify(title: "Microphone unavailable",
-                             body: "Check System Settings → Privacy & Security → Microphone.")
+                             body: "Allow Talkie in System Settings → Privacy & Security → Microphone.",
+                             destination: .microphone)
         }
         state = .error((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         Task { [weak self] in

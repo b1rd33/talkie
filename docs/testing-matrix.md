@@ -56,19 +56,6 @@ app never loses focus.
       "No internet connection.", nothing inserted.
       Re-download models afterwards.
 
-## Licensing & trial (spec §9)
-
-- [ ] Trial expiry: remove the license key
-      (`security delete-generic-password -s com.archiev.talkie.license -a license_key`)
-      but KEEP the sealed trial (start one via onboarding if none exists),
-      then System Settings → Date & Time → disable auto and set the clock
-      >14 days AHEAD of the sealed start → dictation gated with the "trial
-      expired" pill state; Hub/History/Settings still open. Restore the
-      clock afterwards.
-- [ ] Entering a valid license key unlocks dictation immediately
-- [ ] Clock rollback (set system clock before the sealed trial start) →
-      treated as expired
-
 ## Fresh-machine onboarding (spec §11)
 
 On a NEW macOS user account (or a clean VM):
@@ -76,15 +63,132 @@ On a NEW macOS user account (or a clean VM):
 - [ ] Mount the DMG, drag Talkie to /Applications, launch → no Gatekeeper
       block ("Apple checked it for malicious software" path, no right-click
       bypass needed)
-- [ ] Onboarding walks through: welcome → trial/license → microphone →
+- [ ] Onboarding walks through: welcome → microphone →
       accessibility → fn-key setup (🌐 key → Do Nothing deep link works) →
       engine choice → live practice → done
 - [ ] First dictation after onboarding works in TextEdit
+- [ ] Select “Start dictating”, quit, relaunch, then restart/login → onboarding
+      never reopens
+- [ ] Close onboarding before Done → it reopens on the next launch
+- [ ] Upgrade a configured legacy install → setup migrates to completed and
+      onboarding does not appear
+- [ ] Run Setup Assistant manually after completion → completion remains set
+
+## Permission recovery
+
+- [ ] Revoke Microphone after setup and relaunch → no onboarding or focus steal;
+      one notification links directly to Microphone settings and Settings shows red
+- [ ] Revoke Accessibility after setup and relaunch → no onboarding or focus steal;
+      delivery uses clipboard and repair links target Accessibility settings
+
+## Realtime and focus switching
+
+- [ ] Instant mode: switch away during speech, return to the original app just
+      before releasing `fn` → the complete result lands once in the original app
+- [ ] Remain in a different app on release → no keystroke lands there; complete
+      text is copied to clipboard
+- [ ] Repeat with delayed speech immediately before release and with two VAD
+      pauses → no missing, duplicated, or reordered segment
+
+## Productivity and privacy
+
+- [ ] Snippet triggers match whole phrases case-insensitively and preserve the
+      expansion byte-for-byte through cleanup
+- [ ] “new line” and “new paragraph” produce the expected layout
+- [ ] “press enter” is inert by default; when opted in it works only as a suffix
+      while the press-time target remains focused
+- [ ] Switch language from the menu bar for one session; regional formatting is
+      honored and local mode clearly reports its English-only model limit
+- [ ] Enable context awareness → spacing/capitalization fits cursor context;
+      disable it or exclude the app → no field text is read
+- [ ] Password/secure fields never provide context; surrounding/selected text is
+      absent from History, JSONL reports, Console logs, and transcription requests
+- [ ] Change or disconnect the selected microphone → Talkie falls back cleanly
+      and surfaces the active device
+- [ ] Selection transform preview shows original/result/diff; apply, retry, and
+      undo work without persisting the selected text
+
+## Signed host matrix
+
+- [ ] Automated signed checks pass in TextEdit, Notes, and Terminal using fixture
+      audio/provider responses with the real focus and insertion stack
+- [ ] Assisted checks pass in Slack, Mail, Safari, and Xcode
+- [ ] Secure-field, physical `fn`, real microphone, launch-at-login, offline mode,
+      Gatekeeper, clean-user install, signature seal, and update identity pass
+
+## Native pill and icon
+
+- [ ] Switch the real Appearance picker through Ink Line, Calm Flow Ribbon, and
+      Bare Wave; each is chromeless and clearly distinct while dictating
+- [ ] Real microphone energy produces a smooth response without jitter; silence
+      settles instead of continuing to fabricate activity
+- [ ] Each organic style stays legible over light and dark desktops, with no
+      capsule, glass, notch, or background surface
+- [ ] Reduce Motion removes repeating scale/pulse motion while state changes and
+      cancellation remain immediate; Increase Contrast keeps the outline readable
+- [ ] Physical `fn` push-to-talk and hands-free transitions show recording,
+      processing, success, error, offline, and raw-fallback states correctly
+- [ ] The non-activating production pill stays positioned correctly on multiple
+      displays, Spaces, top/bottom placements, and after display-scale changes
+- [ ] Native Depth icon is crisp at small, medium, and large Dock sizes and is
+      recognizable in Finder, Spotlight, Launchpad, and the app switcher
+- [ ] Icon transparency, rounded margin, shadow, glass capsule, and five waveform
+      bars are not clipped in either light or dark macOS appearance
 
 ## Updates
 
 - [ ] Updates are manual: download the new zip, replace `Talkie.app`. After an
       ad-hoc update, re-grant Accessibility if dictation only copies to clipboard
       (see docs/install-free.md).
+
+## Verification evidence — 2026-07-25
+
+Scope: a fresh single-branch clone at commit
+`5936517933326e998afdff5b7ec93d2be9f7e064`, on Apple silicon with macOS 27.0
+(build 26A5378n) and Xcode 27.0 beta (build 27A5194q). This evidence does not
+replace the unchecked manual release cases above.
+
+### Passed
+
+- Public/static gates: dependency-mirror, generated-project, documentation,
+  26-field intake schema, public-readiness, release-pipeline simulation, and
+  repository sensitive-file scans.
+- Pinned official Gitleaks 8.30.1 scan of the current clean-clone tree: no
+  findings.
+- Real `ReleaseAdhoc` community-preview archive and package: archive succeeded;
+  exported and unpacked apps passed strict deep ad-hoc seal verification; the
+  packaged SHA-256 checksum matched; bundled `LICENSE`, `NOTICE`, and
+  `THIRD_PARTY_NOTICES.txt` matched the repository files byte-for-byte.
+- Community-preview metadata: version 1.0.0, build 1, minimum macOS 14.0, and a
+  universal arm64/x86_64 executable. The seal explicitly reports `adhoc` with
+  no team identifier; this is not a supported Developer ID release.
+- Supported-release interface assertions: `--help` succeeded, and
+  `--validate-environment` failed closed before network access when all signing
+  and notarization variables were deliberately absent.
+
+### Blocked by local Xcode automation infrastructure
+
+- The exact deterministic logic-test selection compiled and linked, but the
+  native XCTest runner did not begin a test case within the 90-second bound.
+  The run was interrupted and is neither a pass nor a product-test failure.
+- Targeted UI automation previously timed out waiting for the macOS automation
+  session, and the signed-host runner previously failed to connect to
+  `testmanagerd`. They were not rerun in this gate because the same local
+  automation dependency remained blocked.
+
+### Pending assisted/release checks
+
+- Full-history Gitleaks is pending the separately authorized final history
+  rewrite: the current tree passes, while the old blob containing the former
+  fixed UUID-shaped test token remains reachable in Git history.
+- Deterministic logic, UI, and signed-host suites remain pending on a working
+  local Xcode automation/test-manager environment.
+- Supported Developer ID signing, identity/seal validation, notarization,
+  stapling, Gatekeeper assessment, clean installation, and update identity
+  remain pending.
+- Restart/login launch, physical `fn` behavior, real microphone and audio-device
+  behavior, TCC grant/revoke recovery, live-provider calls, and assisted host
+  coverage across TextEdit, Notes, Terminal, Slack, Mail, Safari, and Xcode
+  remain pending.
 
 Result: PASS / FAIL — blockers filed: ____________________

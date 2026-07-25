@@ -21,8 +21,19 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(store.showDockIcon)
         XCTAssertFalse(store.keepRecordings)
         XCTAssertFalse(store.instantSkipCleanup)
+        XCTAssertFalse(store.enablePressEnterAction)
+        XCTAssertFalse(store.contextAwarenessEnabled)
+        XCTAssertTrue(store.contextExcludedBundleIDs.isEmpty)
         XCTAssertEqual(store.pillStyle, .bareWaveform)
         XCTAssertEqual(store.pillPosition, "bottomCenter")
+    }
+
+    func testPressEnterActionRoundTrips() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = SettingsStore(defaults: defaults)
+        store.enablePressEnterAction = true
+        XCTAssertTrue(SettingsStore(defaults: defaults).enablePressEnterAction)
     }
 
     func testInstantSkipCleanupRoundTrips() {
@@ -64,6 +75,15 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         store.pillStyle = .frostedGlass
         XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, .frostedGlass)
+    }
+
+    func testOrganicPillStylesSurviveMigrationAndRoundTrip() {
+        let cases: [PillStyle] = [.inkLine, .calmFlowRibbon, .bareWave]
+        for style in cases {
+            let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+            defaults.set(style.rawValue, forKey: "pillStyle")
+            XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, style)
+        }
     }
 
     func testStyleDefaults() {

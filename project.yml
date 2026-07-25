@@ -14,23 +14,27 @@ configs:
 packages:
   HotKey:
     url: https://github.com/soffes/HotKey
-    from: 0.2.0
+    exactVersion: 0.2.1
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
-    from: 0.15.2
+    exactVersion: 0.15.5
 settings:
   base:
     SWIFT_VERSION: "5.10"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     CODE_SIGN_STYLE: Automatic
-    # Both targets must sign with the same team or the test bundle fails dlopen
-    # ("different Team IDs"). Release overrides with the Developer ID team.
-    DEVELOPMENT_TEAM: EB2QMSLYN4
 targets:
   Talkie:
     type: application
     platform: macOS
-    sources: [Talkie]
+    sources:
+      - path: Talkie
+      - path: LICENSE
+        buildPhase: resources
+      - path: NOTICE
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES.txt
+        buildPhase: resources
     info:
       path: Talkie/Info.plist
       properties:
@@ -40,7 +44,7 @@ targets:
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         LSUIElement: true
         NSPrincipalClass: NSApplication
-        NSMicrophoneUsageDescription: "Talkie listens while you hold the dictation key so it can transcribe your speech."
+        NSMicrophoneUsageDescription: "Talkie records for transcription while you hold the dictation key or while hands-free recording is active."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
@@ -51,17 +55,19 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Debug:
-          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
+          OTHER_CODE_SIGN_FLAGS: "--options=runtime"
+          ENABLE_DEBUG_DYLIB: NO
+          CODE_SIGN_ENTITLEMENTS: Talkie/TalkieDebug.entitlements
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
-          DEVELOPMENT_TEAM: YOURTEAMID  # ⚠️ HUMAN: real Team ID (Human inputs #1)
         # Account-less distribution: ad-hoc signature, hardened runtime OFF so the
         # ad-hoc-signed embedded frameworks (FluidAudio/HotKey) still load.
         ReleaseAdhoc:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "-"
-          DEVELOPMENT_TEAM: ""
           ENABLE_HARDENED_RUNTIME: NO
     dependencies:
       - package: HotKey
@@ -69,10 +75,32 @@ targets:
   TalkieTests:
     type: bundle.unit-test
     platform: macOS
-    sources: [TalkieTests]
+    sources:
+      - TalkieTests
+      - TalkieHostIntegrationTests/HostIntegrationGate.swift
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES  # test bundle needs an Info.plist or signing fails
+    dependencies:
+      - target: Talkie
+  TalkieUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [TalkieUITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Talkie
+    dependencies:
+      - target: Talkie
+  TalkieHostIntegrationTests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [TalkieHostIntegrationTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Talkie
     dependencies:
       - target: Talkie
 schemes:
@@ -84,4 +112,11 @@ schemes:
       config: Debug
     test:
       config: Debug
-      targets: [TalkieTests]
+      targets: [TalkieTests, TalkieUITests]
+  TalkieHostIntegration:
+    build:
+      targets:
+        Talkie: all
+    test:
+      config: Debug
+      targets: [TalkieHostIntegrationTests]

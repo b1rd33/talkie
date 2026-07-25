@@ -12,6 +12,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         var sent: [String] = []
         var inbox: [Data] = []
         var connectError: Error?
+        var disconnectAfterInbox = false
         private var committed = false
         private var receiveIndex = 0
 
@@ -31,6 +32,10 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
                     lock.unlock()
                     return next
                 }
+                if committed, disconnectAfterInbox {
+                    lock.unlock()
+                    throw EngineError.offline
+                }
                 lock.unlock()
                 // parks until commit (or until cleanup() cancels the receive loop)
                 try await Task.sleep(for: .milliseconds(2))
@@ -42,9 +47,9 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
     func testHappyPathAccumulatesAndFinishes() async throws {
         let transport = FakeTransport()
         transport.inbox = [
-            Data(#"{"type":"input_audio_buffer.committed"}"#.utf8),
-            Data(#"{"type":"conversation.item.input_audio_transcription.delta","delta":"hello "}"#.utf8),
-            Data(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":"hello world"}"#.utf8),
+            Self.committed("item-1"),
+            Self.delta("hello ", itemID: "item-1"),
+            Self.completed("hello world", itemID: "item-1"),
         ]
         let session = OpenAIRealtimeSession(transport: transport, model: "gpt-realtime-whisper",
                                             vocabulary: nil, language: nil,
@@ -63,10 +68,10 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
     func testPartialSinkReceivesCumulativeDeltas() async throws {
         let transport = FakeTransport()
         transport.inbox = [
-            Data(#"{"type":"input_audio_buffer.committed"}"#.utf8),
-            Data(#"{"type":"conversation.item.input_audio_transcription.delta","delta":"hello "}"#.utf8),
-            Data(#"{"type":"conversation.item.input_audio_transcription.delta","delta":"world"}"#.utf8),
-            Data(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":"hello world"}"#.utf8),
+            Self.committed("item-1"),
+            Self.delta("hello ", itemID: "item-1"),
+            Self.delta("world", itemID: "item-1"),
+            Self.completed("hello world", itemID: "item-1"),
         ]
         let lock = NSLock()
         var partials: [String] = []
@@ -108,6 +113,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         var sent: [String] = []
         var streamInbox: [Data] = []
         var commitInbox: [Data] = []
+        var commitDelaysMS: [Int] = []
         private var committed = false
         private var streamIndex = 0
         private var commitIndex = 0
@@ -127,7 +133,13 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
                     let next = streamInbox[streamIndex]; streamIndex += 1; lock.unlock(); return next
                 }
                 if committed, commitIndex < commitInbox.count {
-                    let next = commitInbox[commitIndex]; commitIndex += 1; lock.unlock(); return next
+                    let index = commitIndex
+                    let next = commitInbox[index]
+                    commitIndex += 1
+                    let delay = index < commitDelaysMS.count ? commitDelaysMS[index] : 0
+                    lock.unlock()
+                    if delay > 0 { try await Task.sleep(for: .milliseconds(delay)) }
+                    return next
                 }
                 lock.unlock()
                 try await Task.sleep(for: .milliseconds(2))
@@ -136,17 +148,28 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         func close() {}
     }
 
-    private static func delta(_ s: String) -> Data { Data(#"{"type":"conversation.item.input_audio_transcription.delta","delta":"\#(s)"}"#.utf8) }
-    private static func completed(_ s: String) -> Data { Data(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":"\#(s)"}"#.utf8) }
-    private static let committedEvent = Data(#"{"type":"input_audio_buffer.committed"}"#.utf8)
-    private static let commitEmptyEvent = Data(#"{"type":"error","error":{"code":"input_audio_buffer_commit_empty","message":"buffer too small"}}"#.utf8)
+    private static func delta(_ s: String, itemID: String) -> Data {
+        Data(#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"\#(itemID)","delta":"\#(s)"}"#.utf8)
+    }
+    private static func completed(_ s: String, itemID: String) -> Data {
+        Data(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"\#(itemID)","transcript":"\#(s)"}"#.utf8)
+    }
+    private static func committed(_ itemID: String) -> Data {
+        Data(#"{"type":"input_audio_buffer.committed","item_id":"\#(itemID)"}"#.utf8)
+    }
+    private static func commitEmpty(clientEventID: String) -> Data {
+        Data(#"{"type":"error","error":{"code":"input_audio_buffer_commit_empty","message":"buffer too small","event_id":"\#(clientEventID)"}}"#.utf8)
+    }
+    private static func failed(_ message: String, itemID: String) -> Data {
+        Data(#"{"type":"conversation.item.input_audio_transcription.failed","item_id":"\#(itemID)","error":{"message":"\#(message)"}}"#.utf8)
+    }
 
     /// Two VAD segments — one streamed mid-hold, one flushed by finish()'s trailing
     /// commit — concatenate in order, and onPartial grows monotonically across them.
     func testMultipleVADSegmentsConcatenateAcrossFinish() async throws {
         let transport = StreamingFakeTransport()
-        transport.streamInbox = [Self.committedEvent, Self.delta("Hello"), Self.completed("Hello")]
-        transport.commitInbox = [Self.committedEvent, Self.delta(" world"), Self.completed("world")]
+        transport.streamInbox = [Self.committed("item-1"), Self.delta("Hello", itemID: "item-1"), Self.completed("Hello", itemID: "item-1")]
+        transport.commitInbox = [Self.committed("item-2"), Self.delta(" world", itemID: "item-2"), Self.completed("world", itemID: "item-2")]
         let lock = NSLock(); var partials: [String] = []
         let sawSegment1 = expectation(description: "segment 1 streamed mid-hold")
         sawSegment1.assertForOverFulfill = false // "Hello" is emitted on its delta and again on its completed
@@ -172,18 +195,106 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
     /// error — that must NOT throw; the accumulated segments are returned.
     func testCommitEmptyOnFinishReturnsAccumulated() async throws {
         let transport = StreamingFakeTransport()
-        transport.streamInbox = [Self.committedEvent, Self.delta("Hello world"), Self.completed("Hello world")]
-        transport.commitInbox = [Self.commitEmptyEvent]
+        transport.streamInbox = [Self.committed("item-1"), Self.delta("Hello world", itemID: "item-1"), Self.completed("Hello world", itemID: "item-1")]
+        transport.commitInbox = [Self.commitEmpty(clientEventID: "finish-test")]
         let sawSegment = expectation(description: "segment streamed mid-hold")
         sawSegment.assertForOverFulfill = false // emitted on its delta and again on its completed
         let session = OpenAIRealtimeSession(transport: transport, model: "m", vocabulary: nil, language: nil,
                                             encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
-                                            onPartial: { if $0 == "Hello world" { sawSegment.fulfill() } })
+                                            onPartial: { if $0 == "Hello world" { sawSegment.fulfill() } },
+                                            eventIDProvider: { "finish-test" })
         try await session.begin()
         await session.feed([0.1, 0.2, 0.3])
         await fulfillment(of: [sawSegment], timeout: 2)
         let transcript = try await session.finish()
         XCTAssertEqual(transcript.text, "Hello world") // no throw on empty trailing commit
+    }
+
+    func testOutOfOrderCompletionsPreserveCommitOrder() async throws {
+        let transport = StreamingFakeTransport()
+        transport.commitInbox = [
+            Self.committed("item-1"), Self.committed("item-2"),
+            Self.completed("second", itemID: "item-2"),
+            Self.completed("first", itemID: "item-1"),
+        ]
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            settlingInterval: .milliseconds(20), finishTimeout: .seconds(1))
+        try await session.begin()
+
+        let transcript = try await session.finish()
+
+        XCTAssertEqual(transcript.text, "first second")
+    }
+
+    func testDelayedCommitWithinSettlingWindowIsDrained() async throws {
+        let transport = StreamingFakeTransport()
+        transport.commitInbox = [
+            Self.committed("vad-item"),
+            Self.completed("first", itemID: "vad-item"),
+            Self.committed("finish-item"),
+            Self.completed("second", itemID: "finish-item"),
+        ]
+        transport.commitDelaysMS = [0, 0, 30, 0]
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            settlingInterval: .milliseconds(80), finishTimeout: .seconds(1))
+        try await session.begin()
+
+        let transcript = try await session.finish()
+
+        XCTAssertEqual(transcript.text, "first second")
+    }
+
+    func testDuplicateEventsDoNotDuplicateTranscript() async throws {
+        let transport = StreamingFakeTransport()
+        transport.commitInbox = [
+            Self.committed("item-1"), Self.committed("item-1"),
+            Self.completed("hello", itemID: "item-1"),
+            Self.completed("hello", itemID: "item-1"),
+        ]
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            settlingInterval: .milliseconds(20), finishTimeout: .seconds(1))
+        try await session.begin()
+        let transcript = try await session.finish()
+        XCTAssertEqual(transcript.text, "hello")
+    }
+
+    func testTranscriptionFailureFallsBackWithError() async throws {
+        let transport = StreamingFakeTransport()
+        transport.commitInbox = [Self.committed("item-1"), Self.failed("unintelligible", itemID: "item-1")]
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000))
+        try await session.begin()
+
+        do {
+            _ = try await session.finish()
+            XCTFail("expected transcription failure")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("unintelligible"))
+        }
+    }
+
+    func testConnectionLossWhileFinishingThrows() async throws {
+        let transport = FakeTransport()
+        transport.disconnectAfterInbox = true
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            finishTimeout: .seconds(1))
+        try await session.begin()
+
+        do {
+            _ = try await session.finish()
+            XCTFail("expected connection loss")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("connection lost"))
+        }
     }
 
     func testConnectFailureThrowsFromBegin() async {

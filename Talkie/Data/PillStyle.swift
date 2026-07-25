@@ -5,6 +5,12 @@ import Foundation
 enum PillStyle: String, CaseIterable, Sendable {
     /// Chromeless live waveform; three faint dots when idle. The new default.
     case bareWaveform
+    /// A single, slender organic line with no pill background.
+    case inkLine
+    /// Three quiet, layered lines that drift together.
+    case calmFlowRibbon
+    /// A continuous organic waveform with no background or capsule.
+    case bareWave
     /// Black island docked top-center that morphs between idle and active.
     case dynamicIsland
     /// Translucent frosted-glass capsule.
@@ -20,6 +26,9 @@ enum PillStyle: String, CaseIterable, Sendable {
     init(migrating raw: String?) {
         switch raw {
         case PillStyle.bareWaveform.rawValue: self = .bareWaveform
+        case PillStyle.inkLine.rawValue: self = .inkLine
+        case PillStyle.calmFlowRibbon.rawValue: self = .calmFlowRibbon
+        case PillStyle.bareWave.rawValue: self = .bareWave
         case PillStyle.dynamicIsland.rawValue: self = .dynamicIsland
         case PillStyle.frostedGlass.rawValue: self = .frostedGlass
         case PillStyle.hidden.rawValue: self = .hidden

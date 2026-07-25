@@ -8,6 +8,7 @@ struct Transcript: Sendable, Equatable {
 
 enum EngineError: Error, Equatable, LocalizedError {
     case missingAPIKey
+    case localModelsUnavailable
     case requestFailed(status: Int, message: String)
     case invalidResponse
     case offline
@@ -15,6 +16,8 @@ enum EngineError: Error, Equatable, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey: "API key missing — add it in Settings."
+        case .localModelsUnavailable:
+            "On-device models aren't downloaded. Download them in Settings → Engines, or explicitly switch to Cloud or Instant."
         case .requestFailed(let status, let message): "Request failed (\(status)): \(message)"
         case .invalidResponse: "The API returned an unreadable response."
         case .offline: "No internet connection."

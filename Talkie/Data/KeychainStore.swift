@@ -5,11 +5,9 @@ import Security
 /// @unchecked Sendable: stateless beyond the immutable service string; the Security
 /// framework handles its own synchronization.
 final class KeychainStore: @unchecked Sendable {
-    enum Key: String {
+    enum Key: String, Hashable {
         case openAIKey = "openai_api_key"
         case openRouterKey = "openrouter_api_key"
-        case licenseKey = "license_key"
-        case trialSeal = "trial_seal"
     }
 
     private let service: String

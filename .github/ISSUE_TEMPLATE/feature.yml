@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose an improvement by starting with the user problem.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Privacy warning**
+
+        Do not paste API keys, transcripts, recordings, clipboard contents, crash logs containing personal paths, or other private data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What are you trying to accomplish, and what makes it difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_behavior
+    attributes:
+      label: Proposed behavior
+      description: What should Talkie do from the user's point of view?
+    validations:
+      required: true
+  - type: textarea
+    id: privacy_impact
+    attributes:
+      label: Privacy impact
+      description: What data would this feature read, store, send, or expose? Say "No additional data" if none.
+    validations:
+      required: true
+  - type: textarea
+    id: local_offline_impact
+    attributes:
+      label: Local and offline impact
+      description: How should this behave in On this Mac mode or without a network connection?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or other approaches have you tried? Say "None" if there are no alternatives.
+    validations:
+      required: true

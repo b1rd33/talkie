@@ -8,6 +8,14 @@ final class TextInserterTests: XCTestCase {
         func notify(title: String, body: String) { messages.append(title) }
     }
 
+    final class MockPasteboardGuard: PasteboardGuarding {
+        var writes: [String] = []
+        var restoreCount = 0
+
+        func snapshotAndWrite(_ text: String) { writes.append(text) }
+        func restoreIfUnchanged() { restoreCount += 1 }
+    }
+
     private func makeInserter(secureInput: Bool = false, axTrusted: Bool = true,
                               notifier: MockNotifier? = nil)
     -> (TextInserter, MockNotifier, () -> Int) {
@@ -24,13 +32,17 @@ final class TextInserterTests: XCTestCase {
     }
 
     func testInsertsViaPasteAndRestores() async throws {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("user copy", forType: .string)
-        let (inserter, _, pastes) = makeInserter()
+        let guard_ = MockPasteboardGuard()
+        var pastes = 0
+        let inserter = TextInserter(pasteKeystroke: { pastes += 1; return true },
+                                    secureInputCheck: { false },
+                                    axTrustedCheck: { true },
+                                    pasteboardGuard: guard_,
+                                    restoreDelay: .milliseconds(1))
         try await inserter.insert("Hello from Talkie")
-        XCTAssertEqual(pastes(), 1)
-        // restore already ran (1ms delay) — user's copy is back
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "user copy")
+        XCTAssertEqual(pastes, 1)
+        XCTAssertEqual(guard_.writes, ["Hello from Talkie"])
+        XCTAssertEqual(guard_.restoreCount, 1)
     }
 
     func testEmptyTextDoesNothing() async throws {

@@ -6,147 +6,229 @@ import UserNotifications
 
 @MainActor
 final class AppServices {
-    static let shared = AppServices()
+    static let shared = AppServices(environment: .launch())
 
-    let keychain = KeychainStore()
-    let settings = SettingsStore()
-    let profiles = ProfileStore()
-    let fnMonitor = FnKeyMonitor()
-    let escMonitor = EscKeyMonitor()
-    let recorder = AudioRecorder()
-    let activeApp = ActiveAppMonitor()
-    let shortcuts = ShortcutManager()
-    let pasteLastInserter = TextInserter(notifier: Notifier())
+    // Must precede SettingsStore/ProfileStore: both may persist defaults during
+    // initialization, while setup migration needs the pre-initialization domain.
+    let environment: AppEnvironment
+    let setupState: SetupStateStore
+    let keychain: KeychainStore
+    let settings: SettingsStore
+    let profiles: ProfileStore
+    let fnMonitor: FnKeyMonitor
+    let escMonitor: EscKeyMonitor
+    let recorder: AudioRecorder
+    let activeApp: ActiveAppMonitor
+    let contextReader: FocusedContextReader
+    let shortcuts: ShortcutManager
+    let permissions: PermissionManager
+    let notifier: Notifier
+    let pasteLastInserter: TextInserter
     let coordinator: DictationCoordinator
     let history: HistoryStore?
-    let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
-    let licenseManager: LicenseManager
-    let entitlements: EntitlementStore
-    let onboarding = OnboardingWindow()
+    let modelDownloader: ModelDownloader
+    let onboarding: OnboardingWindow
+    let selectionTransforms: SelectionTransformCoordinator
+    let selectionTransformWindow: SelectionTransformWindow
     private(set) var flowBar: FlowBarPanel?
+#if DEBUG
+    private var e2eBridge: E2ETestControlBridge?
+    private var screenshotDemoPill: ScreenshotDemoPillPanel?
+#endif
 
-    private init() {
-        let licenseKeychain = KeychainStore(service: "com.archiev.talkie.license")
-        let license = LicenseManager(keychain: licenseKeychain)
-        licenseManager = license
-        let entitlementStore = EntitlementStore(
-            license: license,
-            trial: TrialManager(keychain: licenseKeychain))
-        entitlements = entitlementStore
+    init(environment: AppEnvironment) {
+        self.environment = environment
+        let defaults = environment.defaults
+        // Preserve this construction order: setup migration inspects the domain
+        // before SettingsStore persists any normalized defaults.
+        let setupState = SetupStateStore(defaults: defaults)
+        let keychain = KeychainStore(service: environment.keychainService)
+        let settings = SettingsStore(defaults: defaults)
+        let profiles = ProfileStore(defaults: defaults)
+        let fnMonitor = FnKeyMonitor()
+        let escMonitor = EscKeyMonitor()
+        let recorder = AudioRecorder(preferredDeviceUID: {
+            defaults.string(forKey: "preferredAudioDeviceUID")
+        })
+        let activeApp = ActiveAppMonitor()
+        let contextReader = FocusedContextReader()
+        let shortcuts = ShortcutManager()
+        let permissions = PermissionManager()
+        let notifier = Notifier()
+        let pasteLastInserter = TextInserter(notifier: notifier)
+        let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
+        let onboarding = OnboardingWindow()
+
+        let credentialOverrides = environment.credentialOverrides
+        let credential: @Sendable (KeychainStore.Key) -> String? = { key in
+            credentialOverrides[key] ?? keychain.read(key)
+        }
         let engine = OpenAIEngine(
-            apiKeyProvider: { KeychainStore().read(.openAIKey) },
-            modelProvider: { UserDefaults.standard.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
-            languageProvider: { UserDefaults.standard.string(forKey: "pinnedLanguage") }
+            apiKeyProvider: { credential(.openAIKey) },
+            modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
+            languageProvider: {
+                SupportedLanguages.transcriptionCode(for: defaults.string(forKey: "pinnedLanguage"))
+            }
         )
         let cleanup = CleanupService(
             apiKeyProvider: {
-                let provider = UserDefaults.standard.string(forKey: "cleanupProvider") ?? "openrouter"
-                return KeychainStore().read(provider == "openai" ? .openAIKey : .openRouterKey)
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+                return credential(provider == "openai" ? .openAIKey : .openRouterKey)
             },
-            modelProvider: { UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite" },
+            modelProvider: { defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite" },
             endpointProvider: {
-                let provider = UserDefaults.standard.string(forKey: "cleanupProvider") ?? "openrouter"
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
                 return URL(string: provider == "openai"
                     ? "https://api.openai.com/v1/chat/completions"
                     : "https://openrouter.ai/api/v1/chat/completions")!
             },
             extraPayloadProvider: {
-                let provider = UserDefaults.standard.string(forKey: "cleanupProvider") ?? "openrouter"
-                let model = UserDefaults.standard.string(forKey: "cleanupModel") ?? ""
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+                let model = defaults.string(forKey: "cleanupModel") ?? ""
                 // gpt-5-family reasoning models: skip the thinking pass (~1.3s saved).
                 return (provider == "openai" && model.hasPrefix("gpt-5")) ? ["reasoning_effort": "none"] : [:]
             },
             customInstructionsProvider: {
-                UserDefaults.standard.string(forKey: "customCleanupPrompt")
+                defaults.string(forKey: "customCleanupPrompt")
             }
         )
+        let selectionTransformer = LLMSelectionTransformer(
+            apiKeyProvider: {
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+                return credential(provider == "openai" ? .openAIKey : .openRouterKey)
+            },
+            modelProvider: { defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite" },
+            endpointProvider: {
+                URL(string: (defaults.string(forKey: "cleanupProvider") ?? "openrouter") == "openai"
+                    ? "https://api.openai.com/v1/chat/completions"
+                    : "https://openrouter.ai/api/v1/chat/completions")!
+            },
+            extraPayloadProvider: {
+                let provider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
+                let model = defaults.string(forKey: "cleanupModel") ?? ""
+                return provider == "openai" && model.hasPrefix("gpt-5")
+                    ? ["reasoning_effort": "none"] : [:]
+            })
+        let selectionTransforms = SelectionTransformCoordinator(transformer: selectionTransformer)
+        let selectionTransformWindow = SelectionTransformWindow()
         let orTranscription = OpenRouterTranscriptionEngine(
-            apiKeyProvider: { KeychainStore().read(.openRouterKey) },
-            modelProvider: { UserDefaults.standard.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe" }
+            apiKeyProvider: { credential(.openRouterKey) },
+            modelProvider: { defaults.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe" }
         )
         let cloudSwitch = CloudEngineSwitch(openai: engine, openrouter: orTranscription)
         let backend = FluidAudioBackend()
         let localEngine = ParakeetEngine(backend: backend)
         let router = EngineRouter(
             cloud: cloudSwitch, local: localEngine,
-            mode: { UserDefaults.standard.string(forKey: "engineMode") ?? "cloud" },
+            mode: { defaults.string(forKey: "engineMode") ?? "cloud" },
             localAvailable: { FluidAudioBackend.modelsPresent })
-        let history = try? HistoryStore()
-        self.history = history
-        let activeApp = self.activeApp
-        let notifier = Notifier()
+        let history = try? HistoryStore(inMemory: environment.historyInMemory)
         let resolver = StyleResolver(overrides: { [history] in
             history?.styleOverridesByBundleID() ?? [:]
         })
-        coordinator = DictationCoordinator(
+        let coordinator = DictationCoordinator(
             recorder: recorder, engine: router, cleanup: cleanup,
             inserter: TextInserter(notifier: notifier),
             notifier: notifier, // Phase 2: cap + failure notifications
             history: history,
             frontmostApp: { activeApp.frontmost },
             dictionaryTermsProvider: { [history] in history?.dictionaryTermStrings() ?? [] },
+            dictionaryPromptTermsProvider: { [history] in history?.dictionaryPromptTerms() ?? [] },
+            snippetExpansionsProvider: { [history] in history?.snippetExpansions() ?? [] },
+            pressEnterEnabledProvider: {
+                defaults.object(forKey: "enablePressEnterAction") as? Bool ?? false
+            },
+            focusedContextProvider: {
+                let target = activeApp.frontmost.bundleID
+                let enabled = defaults.object(forKey: "contextAwarenessEnabled") as? Bool ?? false
+                let excluded = defaults.stringArray(forKey: "contextExcludedBundleIDs") ?? []
+                guard ContextPolicy.mayRead(enabled: enabled, bundleID: target,
+                                            exclusions: excluded) else { return nil }
+                return contextReader.read()
+            },
             cleanupLevelProvider: {
-                CleanupLevel(rawValue: UserDefaults.standard.string(forKey: "cleanupLevel") ?? "high") ?? .high
+                CleanupLevel(rawValue: defaults.string(forKey: "cleanupLevel") ?? "high") ?? .high
             },
             stylePresetProvider: { bundleID in resolver.resolve(bundleID: bundleID) },
             pinnedLanguageProvider: {
                 // Settings stores the ISO code ("de"); the prompt wants a name ("German").
-                UserDefaults.standard.string(forKey: "pinnedLanguage").flatMap {
-                    Locale(identifier: "en").localizedString(forLanguageCode: $0)
+                defaults.string(forKey: "pinnedLanguage").flatMap {
+                    Locale(identifier: "en").localizedString(forIdentifier: $0)
                 }
             },
             cleanupModelProvider: {
                 // Stamped into DictationRecord.cleanupModel (spec §8) — same key CleanupService reads.
-                UserDefaults.standard.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
+                defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
             },
             keepRecordingsProvider: {
-                UserDefaults.standard.object(forKey: "keepRecordings") as? Bool ?? false
+                defaults.object(forKey: "keepRecordings") as? Bool ?? false
             },
             instantSkipCleanupProvider: {
-                UserDefaults.standard.object(forKey: "instantSkipCleanup") as? Bool ?? false
+                defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
             },
             liveTypeProvider: {
-                UserDefaults.standard.object(forKey: "instantLiveType") as? Bool ?? false
+                defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
             liveInserter: LiveTextInserter(),
-            entitlement: nil, // Talkie is free — dictation is never gated by a trial/license.
             liveSessionFactory: { [history] onPartial in
-                guard UserDefaults.standard.string(forKey: "engineMode") == "instant" else {
+                guard defaults.string(forKey: "engineMode") == "instant" else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
                 }
-                let key = KeychainStore().read(.openAIKey) ?? ""
+                let key = credential(.openAIKey) ?? ""
                 guard !key.isEmpty else { throw EngineError.missingAPIKey }
                 // Same source as the batch path's dictionaryTermsProvider (Phase 4) — spec §3/§6
                 // carries ASR-level vocabulary biasing and the pinned language into instant mode too.
-                let terms = history?.dictionaryTermStrings() ?? []
+                let terms = history?.dictionaryPromptTerms() ?? []
                 let session = OpenAIRealtimeSession(
                     transport: OpenAIRealtimeTransport(apiKey: key),
                     model: "gpt-4o-mini-transcribe",
                     vocabulary: terms.isEmpty ? nil : terms.joined(separator: ", "),
-                    language: UserDefaults.standard.string(forKey: "pinnedLanguage"), // nil = auto-detect
+                    language: defaults.string(forKey: "pinnedLanguage"), // nil = auto-detect
                     encoder: RealtimePCMEncoder(),
                     onPartial: onPartial)
                 try await session.begin()
                 return session
             })
+
+        self.setupState = setupState
+        self.keychain = keychain
+        self.settings = settings
+        self.profiles = profiles
+        self.fnMonitor = fnMonitor
+        self.escMonitor = escMonitor
+        self.recorder = recorder
+        self.activeApp = activeApp
+        self.contextReader = contextReader
+        self.shortcuts = shortcuts
+        self.permissions = permissions
+        self.notifier = notifier
+        self.pasteLastInserter = pasteLastInserter
+        self.coordinator = coordinator
+        self.history = history
+        self.modelDownloader = modelDownloader
+        self.onboarding = onboarding
+        self.selectionTransforms = selectionTransforms
+        self.selectionTransformWindow = selectionTransformWindow
     }
 
-    /// First launch (or licensed-but-broken setup): show onboarding when there is
-    /// no entitlement yet (never licensed AND trial never started) OR a required
-    /// permission is missing (spec §7 / §9).
+    /// Automatically show setup only for a genuinely incomplete installation.
+    /// Permission loss after completion is handled by targeted recovery UI.
     func showOnboardingIfNeeded() {
-        // Talkie is free — onboarding is driven purely by missing permissions now,
-        // not by entitlement (no trial/license to start).
         let micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let axTrusted = AXIsProcessTrusted()
-        guard !micGranted || !axTrusted else { return }
+        guard SetupLaunchPolicy.shouldShowOnboarding(
+            setupCompleted: setupState.setupCompleted,
+            microphoneGranted: micGranted,
+            accessibilityGranted: axTrusted
+        ) else { return }
         showOnboarding()
     }
 
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
-        onboarding.show(entitlements: entitlements, keychain: keychain,
-                        settings: settings, modelDownloader: modelDownloader, profiles: profiles)
+        onboarding.show(keychain: keychain, settings: settings,
+                        modelDownloader: modelDownloader, profiles: profiles,
+                        setupState: setupState)
     }
 
     private var pillReshowTask: Task<Void, Never>?
@@ -182,9 +264,19 @@ final class AppServices {
         fnMonitor.start()
         escMonitor.onEsc = { [coordinator] in coordinator.cancel() }
         trackDictationActivity()
-        shortcuts.enablePasteLast { [coordinator] in
+        shortcuts.enablePasteLast { [coordinator, pasteLastInserter] in
             guard let last = coordinator.lastResult?.cleanedText else { return }
-            Task { try? await AppServices.shared.pasteLastInserter.insert(last) }
+            Task { try? await pasteLastInserter.insert(last) }
+        }
+        shortcuts.enableSelectionTransform { [contextReader, selectionTransforms,
+                                               selectionTransformWindow, history, notifier] in
+            guard let target = contextReader.captureSelectionTarget() else {
+                notifier.notify(title: "Select text first",
+                                body: "Highlight editable text, then press ⇧⌥T.")
+                return
+            }
+            selectionTransforms.capture(target)
+            selectionTransformWindow.show(coordinator: selectionTransforms, history: history)
         }
         trackPillVisibility()
         trackCustomShortcuts()
@@ -192,6 +284,60 @@ final class AppServices {
         trackPillPosition()
         trackPillActivity()
         showOnboardingIfNeeded()
+        checkPermissionHealthOnce()
+    }
+
+#if DEBUG
+    func startE2E() {
+        guard let configuration = environment.e2e,
+              let reporter = try? E2EReporter(configuration: configuration) else { return }
+        let activeApp = self.activeApp
+        let runtime = E2ERuntime(reporter: reporter,
+                                 targetBundleID: { activeApp.frontmost.bundleID },
+                                 inserter: TextInserter(notifier: notifier),
+                                 fixtureText: configuration.fixtureText)
+        let bridge = E2ETestControlBridge(configuration: configuration, runtime: runtime)
+        do {
+            try bridge.start()
+            e2eBridge = bridge
+        } catch {
+            assertionFailure("E2E bridge initialization failed")
+        }
+    }
+
+    func stopE2E() {
+        e2eBridge?.stop()
+        e2eBridge = nil
+    }
+
+    func startScreenshotDemo() {
+        screenshotDemoPill = ScreenshotDemoPillPanel()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+#endif
+
+    private var permissionHealthChecked = false
+
+    /// Recheck TCC health on every launch without opening or activating a window.
+    /// Notifications only take the user to repair UI after an explicit click.
+    private func checkPermissionHealthOnce() {
+        guard setupState.setupCompleted, !permissionHealthChecked else { return }
+        permissionHealthChecked = true
+        permissions.refresh()
+        for missing in permissions.health.missing {
+            switch missing {
+            case .microphone:
+                notifier.notify(title: "Microphone access needed",
+                                body: "Talkie cannot record until microphone access is restored.",
+                                destination: .microphone)
+            case .accessibility:
+                notifier.notify(title: "Accessibility access needed",
+                                body: "Dictation will be copied to the clipboard until access is restored.",
+                                destination: .accessibility)
+            case .engines:
+                break
+            }
+        }
     }
 
     private var pillFlashTask: Task<Void, Never>?
@@ -289,20 +435,67 @@ final class AppServices {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    enum LaunchAction: Equatable {
+        case startProductionUI
+        case startE2E
+        case startScreenshotDemo
+        case terminate
+    }
+
     static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    static func launchAction(for mode: AppRuntimeMode) -> LaunchAction {
+        switch mode {
+        case .production:
+            .startProductionUI
+        case .e2e:
+            .startE2E
+        case .invalidE2E:
+            .terminate
+        case .screenshotDemo:
+            .startScreenshotDemo
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self // harmless under tests
         guard !Self.isRunningTests else { return }
+#if DEBUG
+        switch Self.launchAction(for: AppServices.shared.environment.mode) {
+        case .startE2E:
+            AppServices.shared.startE2E()
+            return
+        case .startScreenshotDemo:
+            AppServices.shared.startScreenshotDemo()
+            return
+        case .terminate:
+            NSApp.terminate(nil)
+            return
+        case .startProductionUI:
+            break
+        }
+#endif
         AppServices.shared.startUI()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+#if DEBUG
+        AppServices.shared.stopE2E()
+#endif
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.notification.request.content.userInfo["talkie.action"] as? String == "openEngineSettings" {
+        if let action = response.notification.request.content.userInfo["talkie.action"] as? String,
+           let destination = NotificationDestination(action: action) {
+            if let url = destination.systemSettingsURL {
+                NSWorkspace.shared.open(url)
+                completionHandler()
+                return
+            }
             NSApp.activate(ignoringOtherApps: true)
             // SwiftUI Settings has no public programmatic opener; this selector is the
             // established workaround on macOS 14 — verify it still resolves on the SDK you build with.

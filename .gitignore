@@ -4,10 +4,25 @@ DerivedData/
 .build/
 Talkie.xcodeproj/
 *.xcresult
-tools/keygen/talkie-keygen
 
-# ad-hoc/release build artifacts
+# Build and release artifacts
 build/
 
-# Isolated Codex implementation worktrees
+# Local agent and planning state
+.superpowers/
 .worktrees/
+AGENTS.md
+.impeccable.md
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+!.env.template
+*.p8
+*.p12
+*.pem
+*.key
+*.cer
+*.mobileprovision
+ExportOptions.local.plist

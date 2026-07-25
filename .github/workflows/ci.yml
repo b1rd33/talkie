@@ -1,0 +1,117 @@
+name: Talkie CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: talkie-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  logic-and-ui:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Scan tracked files for sensitive content
+        run: scripts/scan-sensitive-content.sh --tracked-only
+
+      - name: Install pinned XcodeGen
+        env:
+          XCODEGEN_VERSION: "2.46.0"
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          archive="$RUNNER_TEMP/xcodegen.zip"
+          curl --fail --location --silent --show-error \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip" \
+            --output "$archive"
+          echo "${XCODEGEN_SHA256}  ${archive}" | shasum -a 256 --check
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Verify portable project configuration
+        run: scripts/verify-project-config.sh
+
+      - name: Run deterministic test suites
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Talkie.xcodeproj \
+            -scheme Talkie \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/TalkieDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/TalkieTests.xcresult" \
+            -skip-testing:TalkieUITests \
+            -skip-testing:TalkieHostIntegrationTests \
+            | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Run deterministic app UI suite
+        timeout-minutes: 8
+        run: |
+          set -o pipefail
+          : > "$RUNNER_TEMP/xcodebuild-ui.log"
+          xcodebuild test \
+            -project Talkie.xcodeproj \
+            -scheme Talkie \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/TalkieUIDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/TalkieUITests.xcresult" \
+            -only-testing:TalkieUITests \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 120 \
+            | tee "$RUNNER_TEMP/xcodebuild-ui.log"
+
+      - name: Produce concise test summary
+        if: failure()
+        run: |
+          if [ -d "$RUNNER_TEMP/TalkieTests.xcresult" ]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/TalkieTests.xcresult" \
+              > "$RUNNER_TEMP/test-summary.txt" || true
+          fi
+          if [ -d "$RUNNER_TEMP/TalkieUITests.xcresult" ]; then
+            xcrun xcresulttool get test-results summary \
+              --path "$RUNNER_TEMP/TalkieUITests.xcresult" \
+              > "$RUNNER_TEMP/ui-test-summary.txt" || true
+          fi
+          tail -n 200 "$RUNNER_TEMP/xcodebuild.log" \
+            > "$RUNNER_TEMP/xcodebuild-tail.txt" || true
+          tail -n 200 "$RUNNER_TEMP/xcodebuild-ui.log" \
+            > "$RUNNER_TEMP/xcodebuild-ui-tail.txt" || true
+          {
+            echo "## Test diagnostics"
+            echo
+            echo "The complete result bundles and logs are attached to the failure artifact."
+            echo
+            echo "### UI test log tail"
+            echo '```text'
+            cat "$RUNNER_TEMP/xcodebuild-ui-tail.txt" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: talkie-test-results
+          if-no-files-found: warn
+          retention-days: 3
+          path: |
+            ${{ runner.temp }}/TalkieTests.xcresult
+            ${{ runner.temp }}/TalkieUITests.xcresult
+            ${{ runner.temp }}/test-summary.txt
+            ${{ runner.temp }}/ui-test-summary.txt
+            ${{ runner.temp }}/xcodebuild-tail.txt
+            ${{ runner.temp }}/xcodebuild-ui.log
+            ${{ runner.temp }}/xcodebuild-ui-tail.txt

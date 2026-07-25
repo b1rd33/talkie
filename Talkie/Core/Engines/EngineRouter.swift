@@ -4,7 +4,7 @@ import Foundation
 /// - mode "cloud": cloud first; on connectivity loss or a server-side (5xx) failure,
 ///   fall back to local if available. 4xx does NOT fall back — a 401/403 must surface
 ///   as the invalid-key error (spec §10 row 3) instead of being masked by local.
-/// - mode "local": local if models are present, else cloud (never strand the user).
+/// - mode "local": local only. Missing models fail closed and never contact cloud.
 struct EngineRouter: TranscriptionEngine {
     let cloud: TranscriptionEngine
     let local: TranscriptionEngine
@@ -12,7 +12,8 @@ struct EngineRouter: TranscriptionEngine {
     var localAvailable: @Sendable () -> Bool  // models downloaded?
 
     func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
-        if mode() == "local", localAvailable() {
+        if mode() == "local" {
+            guard localAvailable() else { throw EngineError.localModelsUnavailable }
             return try await local.transcribe(audio, dictionaryTerms: dictionaryTerms)
         }
         do {

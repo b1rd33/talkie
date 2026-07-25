@@ -5,6 +5,15 @@ import XCTest
 /// app bundle — built from the same project.yml settings as the Release bundle.
 final class ReleaseConfigurationTests: XCTestCase {
     private var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
+    private let microphoneUsage = "Talkie records for transcription while you hold the dictation key or while hands-free recording is active."
+
+    private func repositoryFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath),
+                          encoding: .utf8)
+    }
 
     /// codesign writes -d output to stderr; merge both streams.
     private func codesign(_ arguments: [String]) throws -> String {
@@ -34,15 +43,63 @@ final class ReleaseConfigurationTests: XCTestCase {
                        "sandbox must stay OFF — AX insertion is incompatible (see Talkie.entitlements)")
     }
 
-    func testPlistMigrationKeepsMenuBarOnlyAndMicUsage() {
+    func testPlistMigrationKeepsMenuBarOnlyAndMicUsage() throws {
         XCTAssertEqual(info["LSUIElement"] as? Bool, true)
-        XCTAssertEqual((info["NSMicrophoneUsageDescription"] as? String)?.isEmpty, false)
+        XCTAssertEqual(info["NSMicrophoneUsageDescription"] as? String, microphoneUsage)
         XCTAssertEqual(info["CFBundleDisplayName"] as? String, "Talkie")
+
+        let sourcePlist = try repositoryFile("Talkie/Info.plist")
+        let projectConfig = try repositoryFile("project.yml")
+        XCTAssertTrue(sourcePlist.contains("<string>\(microphoneUsage)</string>"))
+        XCTAssertTrue(projectConfig.contains(
+            "NSMicrophoneUsageDescription: \"\(microphoneUsage)\""
+        ))
     }
 
     func testVersionIsReleaseSemver() {
         let version = info["CFBundleShortVersionString"] as? String ?? ""
         XCTAssertNotNil(version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression),
                         "MARKETING_VERSION not set in project.yml (got '\(version)')")
+    }
+
+    func testBundleContainsCanonicalLicenseNotices() throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: resources.appendingPathComponent("LICENSE").path),
+            "Apache LICENSE must be included in the distributed app bundle"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: resources.appendingPathComponent("NOTICE").path),
+            "Apache NOTICE must be included in the distributed app bundle"
+        )
+
+        let thirdPartyNoticeURL = resources.appendingPathComponent("THIRD_PARTY_NOTICES.txt")
+        let notice = try String(contentsOf: thirdPartyNoticeURL, encoding: .utf8)
+        XCTAssertEqual(
+            notice,
+            """
+            Copyright (c) 2017–2019 Sam Soffes, http://soff.es
+
+            Permission is hereby granted, free of charge, to any person obtaining
+            a copy of this software and associated documentation files (the
+            "Software"), to deal in the Software without restriction, including
+            without limitation the rights to use, copy, modify, merge, publish,
+            distribute, sublicense, and/or sell copies of the Software, and to
+            permit persons to whom the Software is furnished to do so, subject to
+            the following conditions:
+
+            The above copyright notice and this permission notice shall be
+            included in all copies or substantial portions of the Software.
+
+            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+            EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+            MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+            NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+            LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+            OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+            WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+            """
+        )
     }
 }

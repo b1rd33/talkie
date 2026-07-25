@@ -8,13 +8,18 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Settings mode", selection: $settings.simpleMode) {
-                Text("Simple").tag(true)
-                Text("Advanced").tag(false)
+            HStack {
+                Picker("Settings mode", selection: $settings.simpleMode) {
+                    Text("Simple").tag(true)
+                    Text("Advanced").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+                Spacer()
+                Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
+                    .font(.caption)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 220)
             .padding(8)
             Divider()
             if settings.simpleMode {
@@ -24,7 +29,16 @@ struct SettingsView: View {
                 devTabs
             }
         }
-        .frame(width: 560, height: 480)
+        .frame(width: screenshotReadableWidth, height: 480)
+    }
+
+    private var screenshotReadableWidth: CGFloat {
+#if DEBUG
+        if AppServices.shared.environment.mode == .screenshotDemo {
+            return 720
+        }
+#endif
+        return 560
     }
 
     private var devTabs: some View {
@@ -38,8 +52,6 @@ struct SettingsView: View {
                 .tabItem { Label("Engines", systemImage: "waveform") }
             StyleSettingsTab(settings: settings, history: AppServices.shared.history)
                 .tabItem { Label("Style", systemImage: "textformat") }
-            // Talkie is free — no License tab. (LicenseSettingsTab kept in the
-            // codebase so paid licensing can be re-enabled later.)
         }
     }
 }
@@ -168,6 +180,13 @@ private struct StyleSettingsTab: View {
                         Text(language.name).tag(language.code)
                     }
                 }
+                if settings.engineMode == "local" {
+                    Text("The current on-device Parakeet model is English-only. Choose Cloud or Instant for the expanded language list.")
+                        .font(.caption).foregroundStyle(.orange)
+                } else {
+                    Text("Regional variants guide formatting; transcription receives the provider-supported base language code.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Per-app style") {
                 if overrides.isEmpty {
@@ -283,11 +302,26 @@ private struct GeneralSettingsTab: View {
                     }
                 }
                 LabeledContent("Paste last dictation", value: "⇧⌥V")
+                Toggle("Allow suffix command “press enter”",
+                       isOn: $settings.enablePressEnterAction)
+                Text("Off by default. When enabled, Talkie presses Return only when those words end a dictation and the original app still has focus.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Microphone", selection: $settings.preferredAudioDeviceUID) {
+                    Text("System default").tag(String?.none)
+                    ForEach(SystemAudioDeviceCatalog().inputDevices()) { device in
+                        Text(device.name).tag(Optional(device.uid))
+                    }
+                }
+                Text("Selection uses the device’s stable UID. If it disconnects, Talkie automatically uses the system default.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
                 Picker("Pill style", selection: $settings.pillStyle) {
                     Text("Bare waveform — chromeless, dots when idle").tag(PillStyle.bareWaveform)
+                    Text("Ink Line — a quiet, living line").tag(PillStyle.inkLine)
+                    Text("Calm Flow Ribbon — layered flowing lines").tag(PillStyle.calmFlowRibbon)
+                    Text("Bare Wave — continuous organic waveform").tag(PillStyle.bareWave)
                     Text("Dynamic Island — docked top-center").tag(PillStyle.dynamicIsland)
                     Text("Frosted glass — translucent capsule").tag(PillStyle.frostedGlass)
                     Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
@@ -302,13 +336,22 @@ private struct GeneralSettingsTab: View {
             }
             Section("Privacy") {
                 Toggle("Keep audio recordings", isOn: $settings.keepRecordings)
-                Text("Off (default): audio is deleted after transcription. On: saved to Application Support/Talkie/Recordings.")
+                Text(PrivacyCopy.audioRetentionSummary)
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Use nearby text for smart insertion", isOn: $settings.contextAwarenessEnabled)
+                Text("Off by default. When on, Talkie reads a bounded portion of the focused editable field. It never reads password fields, stores the text, or sends it to transcription; cleanup providers may receive it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextField("Excluded bundle IDs (comma-separated)", text: Binding(
+                    get: { settings.contextExcludedBundleIDs.joined(separator: ", ") },
+                    set: { value in
+                        settings.contextExcludedBundleIDs = value.split(separator: ",")
+                            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .filter { !$0.isEmpty }
+                    }))
+                    .disabled(!settings.contextAwarenessEnabled)
             }
-            Section("Setup") {
-                Button("Run Setup Assistant…") {
-                    AppServices.shared.showOnboarding()
-                }
+            Section("Permissions") {
+                PermissionSettingsRows(permissions: AppServices.shared.permissions)
             }
             Section("Startup") {
                 Toggle("Launch Talkie at login", isOn: $settings.launchAtLogin)
@@ -321,6 +364,10 @@ private struct GeneralSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { AppServices.shared.permissions.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            AppServices.shared.permissions.refresh()
+        }
     }
 }
 
@@ -354,6 +401,10 @@ private struct EngineSettingsTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Local models") {
+                if settings.engineMode == "local", !FluidAudioBackend.modelsPresent {
+                    Text("Local mode will not use cloud automatically. Download models below or switch to Cloud or Instant explicitly.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 switch downloader.state {
                 case .ready:
                     LabeledContent("Status", value: "Downloaded")

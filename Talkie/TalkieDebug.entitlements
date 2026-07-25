@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for microphone capture in portable Debug builds. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- XCTest and XCUITest inject teamless, ad-hoc-signed bundles into the
+         hardened Debug host. Release keeps library validation enabled. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

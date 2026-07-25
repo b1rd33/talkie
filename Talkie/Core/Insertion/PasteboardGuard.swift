@@ -1,9 +1,15 @@
 import AppKit
 
+@MainActor
+protocol PasteboardGuarding: AnyObject {
+    func snapshotAndWrite(_ text: String)
+    func restoreIfUnchanged()
+}
+
 /// Snapshots the pasteboard, writes our transcript, and restores the user's
 /// contents afterwards — unless someone else wrote in between (their copy wins).
 @MainActor
-final class PasteboardGuard {
+final class PasteboardGuard: PasteboardGuarding {
     private struct Snapshot {
         let items: [[String: Data]]
         let changeCountAfterWrite: Int

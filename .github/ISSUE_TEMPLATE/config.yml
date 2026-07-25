@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question in Discussions
+    url: https://github.com/b1rd33/talkie/discussions
+    about: Get help, share ideas, and talk with the Talkie community.
+  - name: Report a security vulnerability
+    url: https://github.com/b1rd33/talkie/security/policy
+    about: Read the security policy and use GitHub's private vulnerability reporting.
