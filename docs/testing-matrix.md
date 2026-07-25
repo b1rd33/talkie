@@ -141,4 +141,54 @@ On a NEW macOS user account (or a clean VM):
       ad-hoc update, re-grant Accessibility if dictation only copies to clipboard
       (see docs/install-free.md).
 
+## Verification evidence — 2026-07-25
+
+Scope: a fresh single-branch clone at commit
+`5936517933326e998afdff5b7ec93d2be9f7e064`, on Apple silicon with macOS 27.0
+(build 26A5378n) and Xcode 27.0 beta (build 27A5194q). This evidence does not
+replace the unchecked manual release cases above.
+
+### Passed
+
+- Public/static gates: dependency-mirror, generated-project, documentation,
+  26-field intake schema, public-readiness, release-pipeline simulation, and
+  repository sensitive-file scans.
+- Pinned official Gitleaks 8.30.1 scan of the current clean-clone tree: no
+  findings.
+- Real `ReleaseAdhoc` community-preview archive and package: archive succeeded;
+  exported and unpacked apps passed strict deep ad-hoc seal verification; the
+  packaged SHA-256 checksum matched; bundled `LICENSE`, `NOTICE`, and
+  `THIRD_PARTY_NOTICES.txt` matched the repository files byte-for-byte.
+- Community-preview metadata: version 1.0.0, build 1, minimum macOS 14.0, and a
+  universal arm64/x86_64 executable. The seal explicitly reports `adhoc` with
+  no team identifier; this is not a supported Developer ID release.
+- Supported-release interface assertions: `--help` succeeded, and
+  `--validate-environment` failed closed before network access when all signing
+  and notarization variables were deliberately absent.
+
+### Blocked by local Xcode automation infrastructure
+
+- The exact deterministic logic-test selection compiled and linked, but the
+  native XCTest runner did not begin a test case within the 90-second bound.
+  The run was interrupted and is neither a pass nor a product-test failure.
+- Targeted UI automation previously timed out waiting for the macOS automation
+  session, and the signed-host runner previously failed to connect to
+  `testmanagerd`. They were not rerun in this gate because the same local
+  automation dependency remained blocked.
+
+### Pending assisted/release checks
+
+- Full-history Gitleaks is pending the separately authorized final history
+  rewrite: the current tree passes, while the old blob containing the former
+  fixed UUID-shaped test token remains reachable in Git history.
+- Deterministic logic, UI, and signed-host suites remain pending on a working
+  local Xcode automation/test-manager environment.
+- Supported Developer ID signing, identity/seal validation, notarization,
+  stapling, Gatekeeper assessment, clean installation, and update identity
+  remain pending.
+- Restart/login launch, physical `fn` behavior, real microphone and audio-device
+  behavior, TCC grant/revoke recovery, live-provider calls, and assisted host
+  coverage across TextEdit, Notes, Terminal, Slack, Mail, Safari, and Xcode
+  remain pending.
+
 Result: PASS / FAIL — blockers filed: ____________________
