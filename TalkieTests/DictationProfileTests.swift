@@ -82,6 +82,15 @@ final class DictationProfileTests: XCTestCase {
         }
     }
 
+    func testBuiltInOpenAIProfilesUseNewBatchDefault() {
+        let openAIProfiles = DictationProfile.builtIns.filter {
+            $0.transcriptionProvider == "openai"
+        }
+        XCTAssertTrue(openAIProfiles.allSatisfy {
+            $0.transcriptionModel == OpenAITranscriptionModel.gptTranscribe.rawValue
+        })
+    }
+
     func testBuiltInsHaveStableUniqueIDs() {
         let ids = DictationProfile.builtIns.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count) // unique

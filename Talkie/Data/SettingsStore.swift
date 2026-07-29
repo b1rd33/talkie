@@ -9,6 +9,21 @@ final class SettingsStore {
     @ObservationIgnored private let defaults: UserDefaults
 
     var transcriptionModel: String { didSet { defaults.set(transcriptionModel, forKey: "transcriptionModel") } }
+    var realtimeTranscriptionModel: String {
+        didSet { defaults.set(realtimeTranscriptionModel, forKey: "realtimeTranscriptionModel") }
+    }
+    var realtimeTranscriptionDelay: RealtimeTranscriptionDelay {
+        didSet { defaults.set(realtimeTranscriptionDelay.rawValue, forKey: "realtimeTranscriptionDelay") }
+    }
+    var transcriptionContextPrompt: String {
+        didSet { defaults.set(transcriptionContextPrompt, forKey: "transcriptionContextPrompt") }
+    }
+    var expectedInputLanguages: [String] {
+        didSet { defaults.set(expectedInputLanguages, forKey: "expectedInputLanguages") }
+    }
+    var streamBatchTranscription: Bool {
+        didSet { defaults.set(streamBatchTranscription, forKey: "streamBatchTranscription") }
+    }
     var cleanupModel: String { didSet { defaults.set(cleanupModel, forKey: "cleanupModel") } }
     /// "openrouter" | "openai" — which API the cleanup chat call goes to.
     var cleanupProvider: String { didSet { defaults.set(cleanupProvider, forKey: "cleanupProvider") } }
@@ -76,7 +91,25 @@ final class SettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe"
+        transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? "gpt-transcribe"
+        realtimeTranscriptionModel =
+            defaults.string(forKey: "realtimeTranscriptionModel") ?? "gpt-live-transcribe"
+        realtimeTranscriptionDelay = defaults.string(forKey: "realtimeTranscriptionDelay")
+            .flatMap(RealtimeTranscriptionDelay.init(rawValue:)) ?? .medium
+        transcriptionContextPrompt =
+            defaults.string(forKey: "transcriptionContextPrompt") ?? ""
+        if defaults.object(forKey: "expectedInputLanguages") == nil {
+            let migratedLanguages = defaults.string(forKey: "pinnedLanguage")
+                .flatMap(SupportedLanguages.openAITranscriptionCode(for:))
+                .map { [$0] } ?? []
+            expectedInputLanguages = migratedLanguages
+            defaults.set(migratedLanguages, forKey: "expectedInputLanguages")
+        } else {
+            expectedInputLanguages =
+                defaults.stringArray(forKey: "expectedInputLanguages") ?? []
+        }
+        streamBatchTranscription =
+            defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true
         cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
         cleanupProvider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
         transcriptionProvider = defaults.string(forKey: "transcriptionProvider") ?? "openai"

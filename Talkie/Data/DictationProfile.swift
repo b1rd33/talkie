@@ -111,7 +111,7 @@ extension DictationProfile {
         id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A4")!,
         name: "Best Accuracy", builtIn: true,
         engineMode: "cloud", instantSkipCleanup: false, instantLiveType: false,
-        transcriptionProvider: "openai", transcriptionModel: ModelPresets.transcription[1],
+        transcriptionProvider: "openai", transcriptionModel: ModelPresets.openAIBatch[0],
         openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
         cleanupLevel: "high", cleanupProvider: "openai", cleanupModel: ModelPresets.openaiCleanup[1],
         customCleanupPrompt: "")
