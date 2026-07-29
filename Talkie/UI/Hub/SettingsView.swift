@@ -394,7 +394,7 @@ private struct EngineSettingsTab: View {
         Form {
             Section("Engine") {
                 Picker("Transcription runs", selection: $settings.engineMode) {
-                    Text("Cloud — batch (≈ $0.18/hr)").tag("cloud")
+                    Text("Cloud — batch (≈ $0.27/hr)").tag("cloud")
                     Text("Cloud — instant streaming (≈ $1.02/hr)").tag("instant")
                     Text("On this Mac — free, offline").tag("local")
                 }

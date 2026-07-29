@@ -68,6 +68,18 @@ final class DictationProfileTests: XCTestCase {
         XCTAssertEqual(s.cleanupModel, "google/gemini-2.5-flash-lite")
     }
 
+    func testApplyAndSnapshotPreserveRealtimeModel() {
+        let source = freshStore()
+        source.realtimeTranscriptionModel = "gpt-realtime-whisper"
+        let profile = DictationProfile(snapshot: source)
+        let destination = freshStore()
+        destination.realtimeTranscriptionModel = "gpt-live-transcribe"
+
+        profile.apply(to: destination)
+
+        XCTAssertEqual(destination.realtimeTranscriptionModel, "gpt-realtime-whisper")
+    }
+
     // MARK: preset membership (no built-in pins a typo'd / retired model)
 
     func testBuiltInModelsAreKnownPresets() {

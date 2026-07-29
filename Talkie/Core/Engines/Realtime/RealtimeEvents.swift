@@ -34,8 +34,15 @@ enum RealtimeClientEvent {
                     transcription["delay"] = delay.rawValue
                 }
             } else {
-                if let prompt = context.prompt {
-                    transcription["prompt"] = prompt
+                let vocabularyPrompt = context.keywords.isEmpty
+                    ? nil
+                    : "Vocabulary: \(context.keywords.joined(separator: ", "))"
+                let legacyPrompt = [context.prompt, vocabularyPrompt]
+                    .compactMap { $0 }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+                if !legacyPrompt.isEmpty {
+                    transcription["prompt"] = legacyPrompt
                 }
                 if let language = context.legacyLanguage {
                     transcription["language"] = language

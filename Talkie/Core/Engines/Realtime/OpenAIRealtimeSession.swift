@@ -41,7 +41,7 @@ actor OpenAIRealtimeSession {
     private var items: [String: ItemState] = [:]
     /// finish() was called — fn released; we're draining the trailing segment.
     private var finishing = false
-    private enum FinalCommitOutcome { case pending, accepted, empty }
+    private enum FinalCommitOutcome { case pending, commitObserved, empty }
     private var finalCommitOutcome: FinalCommitOutcome = .pending
     private var finalCommitEventID: String?
     private let eventIDProvider: @Sendable () -> String
@@ -78,7 +78,7 @@ actor OpenAIRealtimeSession {
         eventIDProvider: @escaping @Sendable () -> String = {
             "finish-\(UUID().uuidString)"
         },
-        settlingInterval: Duration = .milliseconds(200),
+        settlingInterval: Duration = .milliseconds(500),
         finishTimeout: Duration = .seconds(8)
     ) {
         self.transport = transport
@@ -104,7 +104,7 @@ actor OpenAIRealtimeSession {
         eventIDProvider: @escaping @Sendable () -> String = {
             "finish-\(UUID().uuidString)"
         },
-        settlingInterval: Duration = .milliseconds(200),
+        settlingInterval: Duration = .milliseconds(500),
         finishTimeout: Duration = .seconds(8)
     ) {
         self.transport = transport
@@ -203,7 +203,7 @@ actor OpenAIRealtimeSession {
                 noteActivity()
                 if !committedItemIDs.contains(itemID) { committedItemIDs.append(itemID) }
                 if items[itemID] == nil { items[itemID] = ItemState() }
-                if finishing { finalCommitOutcome = .accepted }
+                if finishing { finalCommitOutcome = .commitObserved }
                 scheduleSettlingIfEligible()
             case .transcriptCompleted(
                 let itemID, let transcript, let detectedLanguages
@@ -255,9 +255,9 @@ actor OpenAIRealtimeSession {
         return committedItemIDs.allSatisfy { items[$0]?.isTerminal == true }
     }
 
-    /// The server does not echo a successful commit's client event ID. A short
-    /// quiet window therefore closes the race where a delayed VAD commit is
-    /// observed before the manual finish commit's committed item.
+    /// The server does not echo a successful commit's client event ID. A bounded,
+    /// activity-resetting quiet window therefore drains a delayed VAD commit and
+    /// the subsequent manual finish commit before the socket is closed.
     private func scheduleSettlingIfEligible() {
         guard isReadyToSettle else { return }
         let generation = activityGeneration

@@ -30,4 +30,14 @@ final class OpenAISSEParserTests: XCTestCase {
         XCTAssertThrowsError(try parser.append(
             Data("data: {\"type\":\"transcript.text.done\"}\n\n".utf8)))
     }
+
+    func testParsesCRLFDelimitedEvents() throws {
+        var parser = OpenAISSEParser()
+
+        let events = try parser.append(Data(
+            "data: {\"type\":\"transcript.text.delta\",\"delta\":\"Hi\"}\r\n\r\n"
+                .utf8))
+
+        XCTAssertEqual(events, [.delta("Hi")])
+    }
 }

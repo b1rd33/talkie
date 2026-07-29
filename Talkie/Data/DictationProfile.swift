@@ -23,6 +23,7 @@ struct DictationProfile: Codable, Equatable, Identifiable {
     var instantLiveType: Bool
     var transcriptionProvider: String   // "openai" | "openrouter"
     var transcriptionModel: String
+    var realtimeTranscriptionModel: String? = nil
     var openrouterTranscriptionModel: String
     var cleanupLevel: String            // "none" | "light" | "medium" | "high" | "custom"
     var cleanupProvider: String         // "openai" | "openrouter"
@@ -66,6 +67,9 @@ struct DictationProfile: Codable, Equatable, Identifiable {
         s.engineMode = engineMode
         s.transcriptionProvider = transcriptionProvider
         s.transcriptionModel = transcriptionModel
+        if let realtimeTranscriptionModel {
+            s.realtimeTranscriptionModel = realtimeTranscriptionModel
+        }
         s.openrouterTranscriptionModel = openrouterTranscriptionModel
         s.cleanupLevel = cleanupLevel
         s.cleanupProvider = cleanupProvider
@@ -85,6 +89,7 @@ extension DictationProfile {
         name: "Private / Offline", builtIn: true,
         engineMode: "local", instantSkipCleanup: false, instantLiveType: false,
         transcriptionProvider: "openai", transcriptionModel: ModelPresets.transcription[0],
+        realtimeTranscriptionModel: OpenAITranscriptionModel.gptLiveTranscribe.rawValue,
         openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
         cleanupLevel: "none", cleanupProvider: "openai", cleanupModel: ModelPresets.openaiCleanup[0],
         customCleanupPrompt: "")
@@ -94,6 +99,7 @@ extension DictationProfile {
         name: "Live Typing", builtIn: true,
         engineMode: "instant", instantSkipCleanup: true, instantLiveType: true,
         transcriptionProvider: "openai", transcriptionModel: ModelPresets.transcription[0],
+        realtimeTranscriptionModel: OpenAITranscriptionModel.gptLiveTranscribe.rawValue,
         openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
         cleanupLevel: "none", cleanupProvider: "openai", cleanupModel: ModelPresets.openaiCleanup[0],
         customCleanupPrompt: "")
@@ -103,6 +109,7 @@ extension DictationProfile {
         name: "Instant", builtIn: true,
         engineMode: "instant", instantSkipCleanup: false, instantLiveType: false,
         transcriptionProvider: "openai", transcriptionModel: ModelPresets.transcription[0],
+        realtimeTranscriptionModel: OpenAITranscriptionModel.gptLiveTranscribe.rawValue,
         openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
         cleanupLevel: "medium", cleanupProvider: "openai", cleanupModel: ModelPresets.openaiCleanup[0],
         customCleanupPrompt: "")
@@ -112,6 +119,7 @@ extension DictationProfile {
         name: "Best Accuracy", builtIn: true,
         engineMode: "cloud", instantSkipCleanup: false, instantLiveType: false,
         transcriptionProvider: "openai", transcriptionModel: ModelPresets.openAIBatch[0],
+        realtimeTranscriptionModel: OpenAITranscriptionModel.gptLiveTranscribe.rawValue,
         openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
         cleanupLevel: "high", cleanupProvider: "openai", cleanupModel: ModelPresets.openaiCleanup[1],
         customCleanupPrompt: "")
@@ -121,6 +129,7 @@ extension DictationProfile {
         name: "Cheapest Cloud", builtIn: true,
         engineMode: "cloud", instantSkipCleanup: false, instantLiveType: false,
         transcriptionProvider: "openrouter", transcriptionModel: ModelPresets.transcription[0],
+        realtimeTranscriptionModel: OpenAITranscriptionModel.gptLiveTranscribe.rawValue,
         openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
         cleanupLevel: "medium", cleanupProvider: "openrouter", cleanupModel: ModelPresets.openrouterCleanup[0],
         customCleanupPrompt: "")
@@ -171,6 +180,7 @@ extension DictationProfile {
             engineMode: s.engineMode, instantSkipCleanup: s.instantSkipCleanup,
             instantLiveType: s.instantLiveType, transcriptionProvider: s.transcriptionProvider,
             transcriptionModel: s.transcriptionModel,
+            realtimeTranscriptionModel: s.realtimeTranscriptionModel,
             openrouterTranscriptionModel: s.openrouterTranscriptionModel,
             cleanupLevel: s.cleanupLevel, cleanupProvider: s.cleanupProvider,
             cleanupModel: s.cleanupModel, customCleanupPrompt: s.customCleanupPrompt)
@@ -193,6 +203,7 @@ extension DictationProfile {
             && instantLiveType == other.instantLiveType
             && transcriptionProvider == other.transcriptionProvider
             && transcriptionModel == other.transcriptionModel
+            && realtimeTranscriptionModel == other.realtimeTranscriptionModel
             && openrouterTranscriptionModel == other.openrouterTranscriptionModel
             && cleanupLevel == other.cleanupLevel
             && cleanupProvider == other.cleanupProvider

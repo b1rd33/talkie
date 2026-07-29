@@ -258,6 +258,26 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         XCTAssertEqual(transcript.text, "first second")
     }
 
+    func testDelayedManualCommitBeyondLegacySettlingWindowIsDrained() async throws {
+        let transport = StreamingFakeTransport()
+        transport.commitInbox = [
+            Self.committed("delayed-vad-item"),
+            Self.completed("first", itemID: "delayed-vad-item"),
+            Self.committed("manual-finish-item"),
+            Self.completed("second", itemID: "manual-finish-item"),
+        ]
+        transport.commitDelaysMS = [0, 0, 300, 0]
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            finishTimeout: .seconds(2))
+        try await session.begin()
+
+        let transcript = try await session.finish()
+
+        XCTAssertEqual(transcript.text, "first second")
+    }
+
     func testDuplicateEventsDoNotDuplicateTranscript() async throws {
         let transport = StreamingFakeTransport()
         transport.commitInbox = [

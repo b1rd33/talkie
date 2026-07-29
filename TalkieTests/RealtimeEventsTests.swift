@@ -33,11 +33,11 @@ final class RealtimeEventsTests: XCTestCase {
             "server_vad")
     }
 
-    func testLegacySessionUpdateKeepsPromptAndSingularLanguage() throws {
+    func testLegacySessionUpdateFoldsKeywordsIntoPromptAndKeepsSingularLanguage() throws {
         let event = RealtimeClientEvent.sessionUpdate(
             model: "gpt-realtime-whisper",
             context: TranscriptionContext(
-                prompt: "Vocabulary: Talkie, Archiev",
+                prompt: "Meeting notes",
                 keywords: ["Talkie", "Archiev"],
                 languages: ["de", "en"]),
             delay: .low)
@@ -51,11 +51,31 @@ final class RealtimeEventsTests: XCTestCase {
             input["transcription"] as? [String: Any])
         XCTAssertEqual(
             transcription["prompt"] as? String,
-            "Vocabulary: Talkie, Archiev")
+            "Meeting notes\nVocabulary: Talkie, Archiev")
         XCTAssertEqual(transcription["language"] as? String, "de")
         XCTAssertNil(transcription["keywords"])
         XCTAssertNil(transcription["languages"])
         XCTAssertNil(transcription["delay"])
+    }
+
+    func testLegacySessionUpdateUsesVocabularyPromptWhenNoPromptExists() throws {
+        let event = RealtimeClientEvent.sessionUpdate(
+            model: "gpt-realtime-whisper",
+            context: TranscriptionContext(
+                prompt: nil,
+                keywords: ["Talkie", "Archiev"],
+                languages: []),
+            delay: .medium)
+
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: event.encoded()) as? [String: Any])
+        let session = try XCTUnwrap(root["session"] as? [String: Any])
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
+        XCTAssertEqual(
+            transcription["prompt"] as? String,
+            "Vocabulary: Talkie, Archiev")
     }
 
     func testAudioAppendEncodesBase64() throws {

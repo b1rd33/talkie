@@ -11,9 +11,13 @@ struct OpenAISSEParser {
     mutating func append(_ data: Data) throws -> [OpenAISSEEvent] {
         buffer.append(data)
         var events: [OpenAISSEEvent] = []
-        let delimiter = Data("\n\n".utf8)
+        let lineFeedDelimiter = Data("\n\n".utf8)
+        let carriageReturnDelimiter = Data("\r\n\r\n".utf8)
 
-        while let range = buffer.range(of: delimiter) {
+        while let range = [
+            buffer.range(of: lineFeedDelimiter),
+            buffer.range(of: carriageReturnDelimiter),
+        ].compactMap({ $0 }).min(by: { $0.lowerBound < $1.lowerBound }) {
             let frame = buffer[..<range.lowerBound]
             buffer.removeSubrange(..<range.upperBound)
             guard let line = String(data: frame, encoding: .utf8)?
