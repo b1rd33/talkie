@@ -128,6 +128,8 @@ expect_pattern "$codeql" 'branches:[[:space:]]+\[main\]' "main branch push trigg
 expect_pattern "$codeql" 'cron:[[:space:]]+['"'"'"][^'"'"'"]+['"'"'"]' "weekly schedule missing"
 expect_pattern "$codeql" 'xcodegen generate' "CodeQL build must generate the project"
 expect_pattern "$codeql" 'CODE_SIGNING_ALLOWED=NO' "CodeQL build must not require signing credentials"
+expect_pattern "$codeql" 'APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING=NO' \
+  "CodeQL build must disable App Shortcuts metadata matching to avoid traced-build hangs"
 if [[ -f "$codeql" ]]; then
   while IFS= read -r action; do
     if [[ ! "$action" =~ ^[[:space:]]*uses:[[:space:]]+[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+\#[[:space:]]+v[0-9] ]]; then
