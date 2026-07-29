@@ -134,6 +134,10 @@ expect_pattern "$codeql" 'SWIFT_ENABLE_EXPLICIT_MODULES=NO' \
   "CodeQL build must disable explicit Swift modules to avoid traced extractor stalls"
 expect_pattern "$codeql" 'CLANG_ENABLE_EXPLICIT_MODULES=NO' \
   "CodeQL build must disable explicit Clang modules to avoid traced extractor stalls"
+expect_pattern "$codeql" 'Prebuild dependencies before CodeQL' \
+  "CodeQL must prebuild third-party dependencies outside the traced build"
+expect_pattern "$codeql" 'find Talkie.+name.+swift.+touch' \
+  "CodeQL must invalidate Talkie Swift sources after the untraced dependency prebuild"
 if [[ -f "$codeql" ]]; then
   while IFS= read -r action; do
     if [[ ! "$action" =~ ^[[:space:]]*uses:[[:space:]]+[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+\#[[:space:]]+v[0-9] ]]; then

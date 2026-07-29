@@ -28,12 +28,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-
       - name: Install pinned XcodeGen
         env:
           XCODEGEN_VERSION: "2.46.0"
@@ -49,6 +43,27 @@ jobs:
 
       - name: Generate project
         run: xcodegen generate
+
+      - name: Prebuild dependencies before CodeQL
+        run: |
+          xcodebuild build \
+            -project Talkie.xcodeproj \
+            -scheme Talkie \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/TalkieCodeQLDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING=NO \
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO \
+            CLANG_ENABLE_EXPLICIT_MODULES=NO
+          find Talkie -type f -name '*.swift' -exec touch {} +
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
 
       - name: Build for CodeQL
         run: |
