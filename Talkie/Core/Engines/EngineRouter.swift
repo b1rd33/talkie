@@ -11,15 +11,22 @@ struct EngineRouter: TranscriptionEngine {
     var mode: @Sendable () -> String          // "cloud" | "local"
     var localAvailable: @Sendable () -> Bool  // models downloaded?
 
-    func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
         if mode() == "local" {
             guard localAvailable() else { throw EngineError.localModelsUnavailable }
-            return try await local.transcribe(audio, dictionaryTerms: dictionaryTerms)
+            return try await local.transcribe(
+                audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
         }
         do {
-            return try await cloud.transcribe(audio, dictionaryTerms: dictionaryTerms)
+            return try await cloud.transcribe(
+                audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
         } catch let error as EngineError where Self.triggersFallback(error) && localAvailable() {
-            var transcript = try await local.transcribe(audio, dictionaryTerms: dictionaryTerms)
+            var transcript = try await local.transcribe(
+                audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
             transcript.usedFallback = true
             return transcript
         }

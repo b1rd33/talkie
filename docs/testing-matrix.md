@@ -90,6 +90,28 @@ On a NEW macOS user account (or a clean VM):
 - [ ] Repeat with delayed speech immediately before release and with two VAD
       pauses → no missing, duplicated, or reordered segment
 
+## OpenAI transcription model rollout
+
+Pricing reference for these checks: `gpt-transcribe` is currently estimated at
+`$0.0045/min`; `gpt-live-transcribe` is currently estimated at `$0.017/min`.
+Provider prices may change.
+
+- [ ] Fresh install receives `gpt-transcribe` for batch and
+      `gpt-live-transcribe` for instant mode
+- [ ] Upgrade an existing install with a legacy model selected → the selection
+      survives; changing back to a new default remains possible
+- [ ] A domain-term fixture improves when supplied through dictionary keywords
+      without the keyword appearing in a silent fixture
+- [ ] English/German code-switching works with both **expected speech languages**
+      selected
+- [ ] Each instant delay choice changes only latency/accuracy tuning
+- [ ] Batch SSE partials update the pill but never insert before the final event
+- [ ] Disconnect before the SSE done event → nothing inserts and retry is offered
+- [ ] Detected languages appear only on `gpt-transcribe` history results
+- [ ] **Recording context** reaches direct OpenAI transcription, but bounded
+      surrounding field text does not
+- [ ] Local and OpenRouter modes send none of the new OpenAI fields
+
 ## Productivity and privacy
 
 - [ ] Snippet triggers match whole phrases case-insensitively and preserve the

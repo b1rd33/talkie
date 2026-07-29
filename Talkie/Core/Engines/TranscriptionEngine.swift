@@ -4,6 +4,7 @@ struct Transcript: Sendable, Equatable {
     let text: String
     var engineID: String = "openai"
     var usedFallback: Bool = false
+    var detectedLanguages: [String] = []
 }
 
 enum EngineError: Error, Equatable, LocalizedError {
@@ -25,6 +26,24 @@ enum EngineError: Error, Equatable, LocalizedError {
     }
 }
 
+typealias TranscriptionProgressSink = @Sendable (String) -> Void
+
 protocol TranscriptionEngine: Sendable {
-    func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript
+}
+
+extension TranscriptionEngine {
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String]
+    ) async throws -> Transcript {
+        try await transcribe(
+            audio,
+            dictionaryTerms: dictionaryTerms,
+            onPartial: nil)
+    }
 }

@@ -5,11 +5,45 @@ final class SettingsStoreTests: XCTestCase {
     func testDefaults() {
         let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
         let store = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store.transcriptionModel, "gpt-4o-mini-transcribe")
+        XCTAssertEqual(store.transcriptionModel, "gpt-transcribe")
         XCTAssertEqual(store.cleanupModel, "google/gemini-2.5-flash-lite") // measured 3x faster than flash
         XCTAssertEqual(store.cleanupProvider, "openrouter")
         XCTAssertEqual(store.transcriptionProvider, "openai")
         XCTAssertEqual(store.openrouterTranscriptionModel, "mistralai/voxtral-mini-transcribe")
+    }
+
+    func testNewTranscriptionDefaults() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        let store = SettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.transcriptionModel, "gpt-transcribe")
+        XCTAssertEqual(store.realtimeTranscriptionModel, "gpt-live-transcribe")
+        XCTAssertEqual(store.realtimeTranscriptionDelay, .medium)
+        XCTAssertEqual(store.transcriptionContextPrompt, "")
+        XCTAssertEqual(store.expectedInputLanguages, [])
+        XCTAssertTrue(store.streamBatchTranscription)
+    }
+
+    func testExistingModelSelectionIsPreserved() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        defaults.set("gpt-4o-mini-transcribe", forKey: "transcriptionModel")
+
+        XCTAssertEqual(
+            SettingsStore(defaults: defaults).transcriptionModel,
+            "gpt-4o-mini-transcribe")
+    }
+
+    func testExpectedLanguagesMigrateOnceFromPinnedLanguage() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        defaults.set("de", forKey: "pinnedLanguage")
+
+        let store = SettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.expectedInputLanguages, ["de"])
+        XCTAssertEqual(defaults.stringArray(forKey: "expectedInputLanguages"), ["de"])
+
+        store.expectedInputLanguages = []
+        XCTAssertEqual(SettingsStore(defaults: defaults).expectedInputLanguages, [])
     }
 
     func testNewDefaults() {

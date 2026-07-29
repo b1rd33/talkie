@@ -7,6 +7,9 @@ import Foundation
 enum PriceBook {
     /// ASR $/minute by the engine id stored in DictationRecord.engine.
     static let transcriptionPerMinute: [String: Double] = [
+        "gpt-transcribe": 0.0045,
+        "gpt-live-transcribe": 0.017,
+        "gpt-realtime-whisper": 0.017,
         "gpt-4o-mini-transcribe": 0.003,
         "gpt-4o-transcribe": 0.006,
         "realtime": 0.017,                          // gpt-realtime-whisper, billed by duration

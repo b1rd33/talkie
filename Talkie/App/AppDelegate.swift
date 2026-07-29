@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 import Foundation
+import SwiftUI
 import UserNotifications
 
 @MainActor
@@ -65,9 +66,16 @@ final class AppServices {
         }
         let engine = OpenAIEngine(
             apiKeyProvider: { credential(.openAIKey) },
-            modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
-            languageProvider: {
-                SupportedLanguages.transcriptionCode(for: defaults.string(forKey: "pinnedLanguage"))
+            modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-transcribe" },
+            contextProvider: { dictionaryTerms in
+                TranscriptionContext.build(
+                    prompt: defaults.string(forKey: "transcriptionContextPrompt") ?? "",
+                    dictionaryTerms: dictionaryTerms,
+                    languageCodes:
+                        defaults.stringArray(forKey: "expectedInputLanguages") ?? [])
+            },
+            streamProvider: {
+                defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true
             }
         )
         let cleanup = CleanupService(
@@ -166,6 +174,10 @@ final class AppServices {
             instantSkipCleanupProvider: {
                 defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
             },
+            batchProgressEnabledProvider: {
+                (defaults.string(forKey: "engineMode") ?? "cloud") == "cloud"
+                    && (defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true)
+            },
             liveTypeProvider: {
                 defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
@@ -176,14 +188,23 @@ final class AppServices {
                 }
                 let key = credential(.openAIKey) ?? ""
                 guard !key.isEmpty else { throw EngineError.missingAPIKey }
-                // Same source as the batch path's dictionaryTermsProvider (Phase 4) — spec §3/§6
-                // carries ASR-level vocabulary biasing and the pinned language into instant mode too.
                 let terms = history?.dictionaryPromptTerms() ?? []
+                let context = TranscriptionContext.build(
+                    prompt: defaults.string(forKey: "transcriptionContextPrompt") ?? "",
+                    dictionaryTerms: terms,
+                    languageCodes:
+                        defaults.stringArray(forKey: "expectedInputLanguages") ?? [])
+                let model = defaults.string(forKey: "realtimeTranscriptionModel")
+                    ?? "gpt-live-transcribe"
+                let delay = RealtimeTranscriptionDelay(
+                    rawValue:
+                        defaults.string(forKey: "realtimeTranscriptionDelay") ?? "")
+                    ?? .medium
                 let session = OpenAIRealtimeSession(
                     transport: OpenAIRealtimeTransport(apiKey: key),
-                    model: "gpt-4o-mini-transcribe",
-                    vocabulary: terms.isEmpty ? nil : terms.joined(separator: ", "),
-                    language: defaults.string(forKey: "pinnedLanguage"), // nil = auto-detect
+                    model: model,
+                    context: context,
+                    delay: delay,
                     encoder: RealtimePCMEncoder(),
                     onPartial: onPartial)
                 try await session.begin()
@@ -435,6 +456,10 @@ final class AppServices {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+#if DEBUG
+    private var e2eSettingsWindow: NSWindow?
+#endif
+
     enum LaunchAction: Equatable {
         case startProductionUI
         case startE2E
@@ -461,6 +486,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self // harmless under tests
+#if DEBUG
+        if AppServices.shared.environment.e2e?.scenario == "settings-model-controls" {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.showE2ESettingsWindow()
+                }
+            }
+        }
+#endif
         guard !Self.isRunningTests else { return }
 #if DEBUG
         switch Self.launchAction(for: AppServices.shared.environment.mode) {
@@ -479,6 +513,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
         AppServices.shared.startUI()
     }
+
+#if DEBUG
+    @MainActor
+    private func showE2ESettingsWindow() {
+        let content = SettingsView(
+            keychain: AppServices.shared.keychain,
+            settings: AppServices.shared.settings)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false)
+        window.title = "Talkie Settings"
+        window.contentViewController = NSHostingController(rootView: content)
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.orderFrontRegardless()
+        window.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        e2eSettingsWindow = window
+    }
+#endif
 
     func applicationWillTerminate(_ notification: Notification) {
 #if DEBUG

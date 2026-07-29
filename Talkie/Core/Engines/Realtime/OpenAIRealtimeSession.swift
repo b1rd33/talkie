@@ -19,8 +19,8 @@ typealias PartialTranscriptSink = @Sendable (String) -> Void
 actor OpenAIRealtimeSession {
     private let transport: RealtimeTransport
     private let model: String
-    private let vocabulary: String?
-    private let language: String?
+    private let context: TranscriptionContext
+    private let delay: RealtimeTranscriptionDelay
     private let encoder: RealtimePCMEncoder
 
     private let onPartial: PartialTranscriptSink?
@@ -28,6 +28,7 @@ actor OpenAIRealtimeSession {
     private struct ItemState {
         var deltas = ""
         var finalTranscript: String?
+        var detectedLanguages: [String] = []
         var failure: String?
 
         var isTerminal: Bool { finalTranscript != nil || failure != nil }
@@ -40,7 +41,7 @@ actor OpenAIRealtimeSession {
     private var items: [String: ItemState] = [:]
     /// finish() was called — fn released; we're draining the trailing segment.
     private var finishing = false
-    private enum FinalCommitOutcome { case pending, accepted, empty }
+    private enum FinalCommitOutcome { case pending, commitObserved, empty }
     private var finalCommitOutcome: FinalCommitOutcome = .pending
     private var finalCommitEventID: String?
     private let eventIDProvider: @Sendable () -> String
@@ -67,15 +68,52 @@ actor OpenAIRealtimeSession {
         }
     }
 
-    init(transport: RealtimeTransport, model: String, vocabulary: String?, language: String?,
-         encoder: RealtimePCMEncoder, onPartial: PartialTranscriptSink? = nil,
-         eventIDProvider: @escaping @Sendable () -> String = { "finish-\(UUID().uuidString)" },
-         settlingInterval: Duration = .milliseconds(200),
-         finishTimeout: Duration = .seconds(8)) {
+    init(
+        transport: RealtimeTransport,
+        model: String,
+        context: TranscriptionContext,
+        delay: RealtimeTranscriptionDelay,
+        encoder: RealtimePCMEncoder,
+        onPartial: PartialTranscriptSink? = nil,
+        eventIDProvider: @escaping @Sendable () -> String = {
+            "finish-\(UUID().uuidString)"
+        },
+        settlingInterval: Duration = .milliseconds(500),
+        finishTimeout: Duration = .seconds(8)
+    ) {
         self.transport = transport
         self.model = model
-        self.vocabulary = vocabulary
-        self.language = language
+        self.context = context
+        self.delay = delay
+        self.encoder = encoder
+        self.onPartial = onPartial
+        self.eventIDProvider = eventIDProvider
+        self.settlingInterval = settlingInterval
+        self.finishTimeout = finishTimeout
+    }
+
+    /// Source-compatible bridge for existing legacy callers while settings and
+    /// tests migrate to the context-aware initializer.
+    init(
+        transport: RealtimeTransport,
+        model: String,
+        vocabulary: String?,
+        language: String?,
+        encoder: RealtimePCMEncoder,
+        onPartial: PartialTranscriptSink? = nil,
+        eventIDProvider: @escaping @Sendable () -> String = {
+            "finish-\(UUID().uuidString)"
+        },
+        settlingInterval: Duration = .milliseconds(500),
+        finishTimeout: Duration = .seconds(8)
+    ) {
+        self.transport = transport
+        self.model = model
+        self.context = TranscriptionContext(
+            prompt: vocabulary,
+            keywords: [],
+            languages: language.map { [$0] } ?? [])
+        self.delay = .medium
         self.encoder = encoder
         self.onPartial = onPartial
         self.eventIDProvider = eventIDProvider
@@ -85,7 +123,11 @@ actor OpenAIRealtimeSession {
 
     func begin() async throws {
         try await transport.connect()
-        try await transport.send(RealtimeClientEvent.sessionUpdate(model: model, vocabulary: vocabulary, language: language).encoded())
+        try await transport.send(
+            RealtimeClientEvent.sessionUpdate(
+                model: model,
+                context: context,
+                delay: delay).encoded())
         receiveLoop = Task { await self.runReceiveLoop() }
     }
 
@@ -123,7 +165,10 @@ actor OpenAIRealtimeSession {
                 finishContinuation = continuation
             }
         }
-        return Transcript(text: text, engineID: "realtime")
+        return Transcript(
+            text: text,
+            engineID: model,
+            detectedLanguages: detectedLanguageCodes())
     }
 
     func cancel() {
@@ -158,15 +203,18 @@ actor OpenAIRealtimeSession {
                 noteActivity()
                 if !committedItemIDs.contains(itemID) { committedItemIDs.append(itemID) }
                 if items[itemID] == nil { items[itemID] = ItemState() }
-                if finishing { finalCommitOutcome = .accepted }
+                if finishing { finalCommitOutcome = .commitObserved }
                 scheduleSettlingIfEligible()
-            case .transcriptCompleted(let itemID, let transcript):
+            case .transcriptCompleted(
+                let itemID, let transcript, let detectedLanguages
+            ):
                 guard items[itemID]?.isTerminal != true else { continue }
                 var item = items[itemID, default: ItemState()]
                 let completed = transcript.isEmpty
                     ? item.deltas.trimmingCharacters(in: .whitespacesAndNewlines)
                     : transcript
                 item.finalTranscript = completed
+                item.detectedLanguages = detectedLanguages
                 items[itemID] = item
                 noteActivity()
                 onPartial?(liveCumulative())
@@ -195,15 +243,21 @@ actor OpenAIRealtimeSession {
         settlingTask = nil
     }
 
+    private func detectedLanguageCodes() -> [String] {
+        var seen = Set<String>()
+        return committedItemIDs.flatMap { items[$0]?.detectedLanguages ?? [] }
+            .filter { seen.insert($0).inserted }
+    }
+
     private var isReadyToSettle: Bool {
         guard finishing, completedTranscript == nil else { return false }
         guard finalCommitOutcome != .pending else { return false }
         return committedItemIDs.allSatisfy { items[$0]?.isTerminal == true }
     }
 
-    /// The server does not echo a successful commit's client event ID. A short
-    /// quiet window therefore closes the race where a delayed VAD commit is
-    /// observed before the manual finish commit's committed item.
+    /// The server does not echo a successful commit's client event ID. A bounded,
+    /// activity-resetting quiet window therefore drains a delayed VAD commit and
+    /// the subsequent manual finish commit before the socket is closed.
     private func scheduleSettlingIfEligible() {
         guard isReadyToSettle else { return }
         let generation = activityGeneration

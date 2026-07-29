@@ -39,9 +39,32 @@ final class DictationCoordinatorTests: XCTestCase {
         init(result: Result<Transcript, Error> = .success(Transcript(text: "raw text"))) {
             self.result = result
         }
-        func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+        func transcribe(
+            _ audio: RecordedAudio,
+            dictionaryTerms: [String],
+            onPartial: TranscriptionProgressSink?
+        ) async throws -> Transcript {
             receivedTerms.append(dictionaryTerms)
             return try result.get()
+        }
+    }
+
+    final class BatchProgressEngine: TranscriptionEngine, @unchecked Sendable {
+        let emitted: XCTestExpectation
+
+        init(emitted: XCTestExpectation) {
+            self.emitted = emitted
+        }
+
+        func transcribe(
+            _ audio: RecordedAudio,
+            dictionaryTerms: [String],
+            onPartial: TranscriptionProgressSink?
+        ) async throws -> Transcript {
+            onPartial?("partial batch text")
+            emitted.fulfill()
+            try await Task.sleep(for: .milliseconds(120))
+            return Transcript(text: "final batch text", engineID: "gpt-transcribe")
         }
     }
 
@@ -139,6 +162,53 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(coordinator.lastResult?.cleanedText, "Clean text.")
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+    }
+
+    func testDetectedLanguagesAreSavedWithCompletedHistory() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let engine = MockEngine(result: .success(Transcript(
+            text: "Hallo",
+            engineID: "gpt-transcribe",
+            detectedLanguages: ["de", "en"])))
+        let (coordinator, _, _) = makeCoordinator(
+            engine: engine,
+            history: history)
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        let record = try XCTUnwrap(history.recent(limit: 1).first)
+        XCTAssertEqual(record.language, nil)
+        XCTAssertEqual(record.detectedLanguages, ["de", "en"])
+    }
+
+    func testBatchProgressPreviewsInPillButOnlyFinalTextIsInserted() async {
+        let emitted = expectation(description: "batch partial emitted")
+        let inserter = MockInserter()
+        let liveInserter = MockLiveInserter()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: BatchProgressEngine(emitted: emitted),
+            cleanup: MockCleanup(),
+            inserter: inserter,
+            minimumHold: 0,
+            cleanupLevelProvider: { .none },
+            batchProgressEnabledProvider: { true },
+            liveTypeProvider: { true },
+            liveInserter: liveInserter)
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await fulfillment(of: [emitted], timeout: 1)
+        try? await Task.sleep(for: .milliseconds(70))
+
+        XCTAssertEqual(coordinator.liveTranscript, "partial batch text")
+        XCTAssertTrue(liveInserter.typedUpTo.isEmpty)
+
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["final batch text"])
+        XCTAssertEqual(coordinator.liveTranscript, "")
     }
 
     func testUndoLastInsertionRequiresOriginalTargetToRemainFocused() async {
@@ -1021,7 +1091,11 @@ final class DictationCoordinatorTests: XCTestCase {
 
     func testCancelDuringTranscriptionInsertsNothing() async {
         struct SlowEngine: TranscriptionEngine {
-            func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+            func transcribe(
+                _ audio: RecordedAudio,
+                dictionaryTerms: [String],
+                onPartial: TranscriptionProgressSink?
+            ) async throws -> Transcript {
                 try await Task.sleep(for: .seconds(5)) // cancellation interrupts this sleep
                 return Transcript(text: "too late")
             }

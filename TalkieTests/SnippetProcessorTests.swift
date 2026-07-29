@@ -33,7 +33,7 @@ final class SnippetProcessorTests: XCTestCase {
         try history.addSnippet(trigger: "My Address", expansion: "42 Main St.")
         XCTAssertThrowsError(try history.addSnippet(trigger: " my   address ", expansion: "Other"))
 
-        history.addTerm("Talkie", soundsLike: "talk e")
+        try history.addTerm("Talkie", soundsLike: "talk e")
         XCTAssertThrowsError(try history.addSnippet(trigger: "Talk E", expansion: "Talkie"))
     }
 }

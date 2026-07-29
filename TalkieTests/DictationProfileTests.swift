@@ -68,6 +68,18 @@ final class DictationProfileTests: XCTestCase {
         XCTAssertEqual(s.cleanupModel, "google/gemini-2.5-flash-lite")
     }
 
+    func testApplyAndSnapshotPreserveRealtimeModel() {
+        let source = freshStore()
+        source.realtimeTranscriptionModel = "gpt-realtime-whisper"
+        let profile = DictationProfile(snapshot: source)
+        let destination = freshStore()
+        destination.realtimeTranscriptionModel = "gpt-live-transcribe"
+
+        profile.apply(to: destination)
+
+        XCTAssertEqual(destination.realtimeTranscriptionModel, "gpt-realtime-whisper")
+    }
+
     // MARK: preset membership (no built-in pins a typo'd / retired model)
 
     func testBuiltInModelsAreKnownPresets() {
@@ -80,6 +92,15 @@ final class DictationProfileTests: XCTestCase {
             XCTAssertTrue(cleanupPresets.contains(p.cleanupModel),
                           "\(p.name): cleanupModel \(p.cleanupModel) not a known \(p.cleanupProvider) preset")
         }
+    }
+
+    func testBuiltInOpenAIProfilesUseNewBatchDefault() {
+        let openAIProfiles = DictationProfile.builtIns.filter {
+            $0.transcriptionProvider == "openai"
+        }
+        XCTAssertTrue(openAIProfiles.allSatisfy {
+            $0.transcriptionModel == OpenAITranscriptionModel.gptTranscribe.rawValue
+        })
     }
 
     func testBuiltInsHaveStableUniqueIDs() {

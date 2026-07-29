@@ -16,11 +16,13 @@ final class HistoryStore {
 
     func save(rawText: String, cleanedText: String, appBundleID: String?, appName: String?,
               duration: TimeInterval, engine: String, status: DictationStatus,
-              cleanupModel: String? = nil, language: String? = nil, audioPath: String? = nil) {
+              cleanupModel: String? = nil, language: String? = nil,
+              detectedLanguages: [String] = [], audioPath: String? = nil) {
         let record = DictationRecord(rawText: rawText, cleanedText: cleanedText,
                                      appBundleID: appBundleID, appName: appName,
                                      durationSec: duration, engine: engine, status: status,
                                      cleanupModel: cleanupModel, language: language,
+                                     detectedLanguages: detectedLanguages,
                                      audioPath: audioPath)
         context.insert(record)
         try? context.save()
@@ -39,18 +41,24 @@ final class HistoryStore {
 
     // MARK: - Dictionary (spec §7/§8)
 
-    func addTerm(_ term: String, soundsLike: String? = nil) {
+    func addTerm(_ term: String, soundsLike: String? = nil) throws {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        context.insert(DictionaryEntry(term: trimmed, soundsLike: normalized(soundsLike)))
+        let soundsLike = normalized(soundsLike)
+        try DictionaryKeywordValidator.validate(trimmed)
+        if let soundsLike { try DictionaryKeywordValidator.validate(soundsLike) }
+        context.insert(DictionaryEntry(term: trimmed, soundsLike: soundsLike))
         try? context.save()
     }
 
-    func updateTerm(_ entry: DictionaryEntry, term: String, soundsLike: String?) {
+    func updateTerm(_ entry: DictionaryEntry, term: String, soundsLike: String?) throws {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let soundsLike = normalized(soundsLike)
+        try DictionaryKeywordValidator.validate(trimmed)
+        if let soundsLike { try DictionaryKeywordValidator.validate(soundsLike) }
         entry.term = trimmed
-        entry.soundsLike = normalized(soundsLike)
+        entry.soundsLike = soundsLike
         try? context.save()
     }
 

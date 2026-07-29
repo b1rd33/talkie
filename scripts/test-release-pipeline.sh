@@ -14,6 +14,18 @@ fail() {
   failures+=("$1")
 }
 
+expect_pattern() {
+  local path="$1" pattern="$2" message="$3"
+  grep -Eq "$pattern" "$repository_root/$path" || fail "$message"
+}
+
+expect_pattern scripts/live-verify.sh 'model=gpt-transcribe' \
+  "live verification must exercise gpt-transcribe"
+expect_pattern scripts/live-verify.sh 'stream=true' \
+  "live verification must exercise completed-file streaming"
+expect_pattern scripts/live-verify.sh 'gpt-live-transcribe' \
+  "live verification must exercise gpt-live-transcribe"
+
 assert_contains() {
   local value="$1" expected="$2" message="$3"
   [[ "$value" == *"$expected"* ]] || fail "$message"

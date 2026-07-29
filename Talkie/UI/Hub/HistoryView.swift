@@ -101,6 +101,13 @@ private struct HistoryListView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            if !record.detectedLanguages.isEmpty {
+                Label(
+                    "Detected: \(localizedLanguageNames(record.detectedLanguages))",
+                    systemImage: "character.bubble")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if expanded, !record.rawText.isEmpty {
                 Text(record.rawText)
                     .font(.caption)
@@ -122,6 +129,12 @@ private struct HistoryListView: View {
         } else {
             expandedIDs.insert(record.persistentModelID)
         }
+    }
+
+    private func localizedLanguageNames(_ codes: [String]) -> String {
+        codes.map {
+            Locale.current.localizedString(forIdentifier: $0) ?? $0
+        }.joined(separator: ", ")
     }
 
     /// Source app icon (spec §7), resolved from the stored bundle ID.

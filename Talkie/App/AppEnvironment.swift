@@ -186,6 +186,11 @@ struct AppEnvironment {
             defaults.set(true, forKey: SetupStateStore.completedKey)
             defaults.set(SetupStateStore.currentStateVersion,
                          forKey: SetupStateStore.stateVersionKey)
+            defaults.set("gpt-transcribe", forKey: "transcriptionModel")
+            defaults.set("gpt-live-transcribe", forKey: "realtimeTranscriptionModel")
+            defaults.set("medium", forKey: "realtimeTranscriptionDelay")
+            defaults.set(["en"], forKey: "expectedInputLanguages")
+            defaults.set(false, forKey: "streamBatchTranscription")
             return AppEnvironment(
                 mode: .e2e,
                 defaults: defaults,

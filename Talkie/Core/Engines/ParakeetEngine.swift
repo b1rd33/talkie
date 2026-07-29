@@ -7,7 +7,11 @@ import Foundation
 struct ParakeetEngine: TranscriptionEngine {
     let backend: LocalASRBackend
 
-    func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
         try await backend.loadIfNeeded()
         let samples = try Self.decodeSamples(from: audio.fileURL)
         let text = try await backend.transcribe(samples)

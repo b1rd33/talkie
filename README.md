@@ -56,6 +56,20 @@ The published [v1.0.0 release](https://github.com/b1rd33/talkie/releases/tag/v1.
 
 Talkie fails closed when a local profile is selected but its models are missing; it does not silently switch that profile to cloud transcription.
 
+For new installations, direct OpenAI batch transcription defaults to
+`gpt-transcribe` (estimated at `$0.0045/min`) and instant transcription defaults
+to `gpt-live-transcribe` (estimated at `$0.017/min`). Existing legacy model
+selections survive upgrades and remain available as fallbacks. Prices are
+estimates based on current provider rates and may change.
+
+In Advanced → Engines, **expected speech languages** can provide one or more
+recognition hints, while **recording context** can supply names, terminology, or
+a short topic. OpenAI receives the recorded/streaming audio plus only those
+explicit transcription hints and applicable dictionary keywords. Surrounding
+focused-field context is never sent to the transcription provider; it is used
+only by the separately configured cleanup workflow when context awareness is
+enabled. OpenRouter and local alternatives remain available.
+
 ### Shape the result
 
 - **Profiles** apply a coherent engine, provider, model, and cleanup pipeline. Built-in profiles include Private / Offline, Live Typing, Instant, Best Accuracy, and Cheapest Cloud; custom profiles can preserve tuned settings.
@@ -78,7 +92,7 @@ Talkie has no account system, analytics, advertising, or Talkie-operated server.
 
 | Destination | When contacted | Data that may leave the Mac |
 | --- | --- | --- |
-| OpenAI | Direct batch transcription when selected; all instant transcription; cleanup or selected-text transforms when selected | Recorded or streaming audio and transcription hints; or transcript/selected text, instructions, dictionary/style/language guidance, and optional nearby context |
+| OpenAI | Direct batch transcription when selected; all instant transcription; cleanup or selected-text transforms when selected | Recorded or streaming audio plus explicit recording context, expected speech languages, and dictionary hints; or transcript/selected text, cleanup instructions, style/language guidance, and optional nearby context. Nearby context is never included in transcription requests. |
 | OpenRouter | Batch transcription, cleanup, or selected-text transforms when selected; credit lookup from Home when a key is saved | Recorded audio and transcription settings; or transcript/selected text, instructions, optional nearby context; or an authenticated credits request. OpenRouter may route model requests onward. |
 | Hugging Face | Downloading the FluidAudio/Parakeet model | Model download requests and ordinary network metadata; not dictated audio, transcripts, or nearby context |
 | No provider | Private / Offline profile with cleanup disabled | Dictated audio and transcript processing stay on the Mac; local history and retained recordings remain local |

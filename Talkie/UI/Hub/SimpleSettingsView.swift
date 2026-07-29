@@ -30,12 +30,15 @@ struct SimpleSettingsView: View {
                 if let selected = profiles.selectedProfile {
                     Text(selected.simpleDescription).font(.caption).foregroundStyle(.secondary)
                 }
+                Text(activeModelSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("API key") { keyFields }
 
-            Section("Output language") {
-                Picker("Language", selection: Binding(
+            Section("Output / cleanup language") {
+                Picker("Output language", selection: Binding(
                     get: { settings.pinnedLanguage },
                     set: { settings.pinnedLanguage = $0 })) {
                     ForEach(SupportedLanguages.all, id: \.code) { lang in
@@ -43,7 +46,7 @@ struct SimpleSettingsView: View {
                     }
                 }
                 .labelsHidden()
-                Text("Pin a language so the transcriber doesn't drift to the wrong one.")
+                Text("Controls cleanup and output language. Speech-recognition hints are in Advanced → Engines.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -59,6 +62,20 @@ struct SimpleSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             AppServices.shared.permissions.refresh()
+        }
+    }
+
+    private var activeModelSummary: String {
+        switch settings.engineMode {
+        case "instant":
+            return "Live model: \(settings.realtimeTranscriptionModel)"
+        case "local":
+            return "Transcription model: On-device Parakeet"
+        default:
+            let model = settings.transcriptionProvider == "openrouter"
+                ? settings.openrouterTranscriptionModel
+                : settings.transcriptionModel
+            return "Batch model: \(model)"
         }
     }
 

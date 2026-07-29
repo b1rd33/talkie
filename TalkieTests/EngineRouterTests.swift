@@ -11,7 +11,11 @@ final class EngineRouterTests: XCTestCase {
 
     struct StubEngine: TranscriptionEngine {
         var result: Result<Transcript, Error>
-        func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+        func transcribe(
+            _ audio: RecordedAudio,
+            dictionaryTerms: [String],
+            onPartial: TranscriptionProgressSink?
+        ) async throws -> Transcript {
             try result.get()
         }
     }
@@ -21,7 +25,8 @@ final class EngineRouterTests: XCTestCase {
         var result: Result<Transcript, Error>
 
         func transcribe(_ audio: RecordedAudio,
-                        dictionaryTerms: [String]) async throws -> Transcript {
+                        dictionaryTerms: [String],
+                        onPartial: TranscriptionProgressSink?) async throws -> Transcript {
             await counter.record()
             return try result.get()
         }

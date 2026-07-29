@@ -30,6 +30,21 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.e2e?.ownsSessionDirectory, false)
         XCTAssertEqual(environment.credentialOverrides[.openAIKey], "e2e-openai-key")
         XCTAssertEqual(environment.credentialOverrides[.openRouterKey], "e2e-openrouter-key")
+        XCTAssertEqual(
+            environment.defaults.string(forKey: "transcriptionModel"),
+            "gpt-transcribe")
+        XCTAssertEqual(
+            environment.defaults.string(forKey: "realtimeTranscriptionModel"),
+            "gpt-live-transcribe")
+        XCTAssertEqual(
+            environment.defaults.string(forKey: "realtimeTranscriptionDelay"),
+            "medium")
+        XCTAssertEqual(
+            environment.defaults.stringArray(forKey: "expectedInputLanguages"),
+            ["en"])
+        XCTAssertEqual(
+            environment.defaults.object(forKey: "streamBatchTranscription") as? Bool,
+            false)
         XCTAssertEqual(AppDelegate.launchAction(for: environment.mode), .startE2E)
     }
 

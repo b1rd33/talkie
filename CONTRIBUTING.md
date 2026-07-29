@@ -39,6 +39,20 @@ scripts/verify-project-config.sh
 
 Routine tests must be deterministic and must not make live OpenAI, OpenRouter, or other provider calls. Use fakes or fixtures for provider behavior. `scripts/live-verify.sh` is an explicit, credentialed smoke check and is not part of routine testing.
 
+Maintainers can intentionally exercise the live providers with a short,
+non-sensitive audio fixture:
+
+```bash
+OPENAI_API_KEY=... OPENROUTER_API_KEY=... \
+TALKIE_LIVE_AUDIO=/absolute/path/to/non-sensitive-fixture.m4a \
+scripts/live-verify.sh
+```
+
+This checks `gpt-transcribe` as both a normal completed-file request and an SSE
+stream, `gpt-live-transcribe` over the transcription WebSocket, and the
+configured OpenRouter smoke model. It validates only that each result is
+nonempty and structurally valid; it never prints transcript text or keys.
+
 The logic command used by CI is:
 
 ```bash

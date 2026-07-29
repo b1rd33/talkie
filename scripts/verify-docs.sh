@@ -79,6 +79,23 @@ if positions.all? && positions != positions.sort
   failures << "README.md: required headings are out of order"
 end
 
+provider_documentation_terms = [
+  "gpt-transcribe",
+  "gpt-live-transcribe",
+  "$0.0045/min",
+  "$0.017/min",
+  "expected speech languages",
+  "recording context",
+]
+%w[README.md docs/testing-matrix.md].each do |document|
+  body = File.read(document).downcase
+  provider_documentation_terms.each do |term|
+    unless body.include?(term.downcase)
+      failures << "#{document}: missing transcription documentation term #{term}"
+    end
+  end
+end
+
 public_documents.each do |document|
   File.readlines(document, chomp: true).each_with_index do |line, index|
     if line.match?(/\bfree (?:build|version)\b/i)
