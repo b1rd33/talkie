@@ -524,7 +524,9 @@ final class DictationCoordinator {
                           appBundleID: targetApp.bundleID, appName: targetApp.name,
                           duration: audio.duration, engine: transcript.engineID, status: .completed,
                           cleanupModel: effectiveLevel == .none ? nil : cleanupModelProvider(),
-                          language: pinnedLanguageProvider(), audioPath: keptPath)
+                          language: pinnedLanguageProvider(),
+                          detectedLanguages: transcript.detectedLanguages,
+                          audioPath: keptPath)
         } catch is CancellationError {
             recorder.discard()
             state = .idle

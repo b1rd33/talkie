@@ -164,6 +164,25 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
     }
 
+    func testDetectedLanguagesAreSavedWithCompletedHistory() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let engine = MockEngine(result: .success(Transcript(
+            text: "Hallo",
+            engineID: "gpt-transcribe",
+            detectedLanguages: ["de", "en"])))
+        let (coordinator, _, _) = makeCoordinator(
+            engine: engine,
+            history: history)
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        let record = try XCTUnwrap(history.recent(limit: 1).first)
+        XCTAssertEqual(record.language, nil)
+        XCTAssertEqual(record.detectedLanguages, ["de", "en"])
+    }
+
     func testBatchProgressPreviewsInPillButOnlyFinalTextIsInserted() async {
         let emitted = expectation(description: "batch partial emitted")
         let inserter = MockInserter()

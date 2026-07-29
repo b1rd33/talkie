@@ -16,11 +16,13 @@ final class HistoryStore {
 
     func save(rawText: String, cleanedText: String, appBundleID: String?, appName: String?,
               duration: TimeInterval, engine: String, status: DictationStatus,
-              cleanupModel: String? = nil, language: String? = nil, audioPath: String? = nil) {
+              cleanupModel: String? = nil, language: String? = nil,
+              detectedLanguages: [String] = [], audioPath: String? = nil) {
         let record = DictationRecord(rawText: rawText, cleanedText: cleanedText,
                                      appBundleID: appBundleID, appName: appName,
                                      durationSec: duration, engine: engine, status: status,
                                      cleanupModel: cleanupModel, language: language,
+                                     detectedLanguages: detectedLanguages,
                                      audioPath: audioPath)
         context.insert(record)
         try? context.save()

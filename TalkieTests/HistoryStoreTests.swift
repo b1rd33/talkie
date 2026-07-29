@@ -3,6 +3,22 @@ import XCTest
 
 @MainActor
 final class HistoryStoreTests: XCTestCase {
+    func testDetectedLanguagesRoundTripSeparatelyFromOutputLanguage() {
+        let record = DictationRecord(
+            rawText: "Bonjour",
+            cleanedText: "Bonjour",
+            appBundleID: nil,
+            appName: nil,
+            durationSec: 1,
+            engine: "gpt-transcribe",
+            status: .completed,
+            language: "English",
+            detectedLanguages: ["fr"])
+
+        XCTAssertEqual(record.language, "English")
+        XCTAssertEqual(record.detectedLanguages, ["fr"])
+    }
+
     private func makeStore() throws -> HistoryStore {
         try HistoryStore(inMemory: true)
     }
