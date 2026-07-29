@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 import Foundation
+import SwiftUI
 import UserNotifications
 
 @MainActor
@@ -455,6 +456,10 @@ final class AppServices {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+#if DEBUG
+    private var e2eSettingsWindow: NSWindow?
+#endif
+
     enum LaunchAction: Equatable {
         case startProductionUI
         case startE2E
@@ -481,6 +486,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self // harmless under tests
+#if DEBUG
+        if AppServices.shared.environment.e2e?.scenario == "settings-model-controls" {
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.showE2ESettingsWindow()
+                }
+            }
+        }
+#endif
         guard !Self.isRunningTests else { return }
 #if DEBUG
         switch Self.launchAction(for: AppServices.shared.environment.mode) {
@@ -499,6 +513,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
         AppServices.shared.startUI()
     }
+
+#if DEBUG
+    @MainActor
+    private func showE2ESettingsWindow() {
+        let content = SettingsView(
+            keychain: AppServices.shared.keychain,
+            settings: AppServices.shared.settings)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false)
+        window.title = "Talkie Settings"
+        window.contentViewController = NSHostingController(rootView: content)
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.orderFrontRegardless()
+        window.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        e2eSettingsWindow = window
+    }
+#endif
 
     func applicationWillTerminate(_ notification: Notification) {
 #if DEBUG

@@ -16,6 +16,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 220)
+                .accessibilityIdentifier("Settings mode")
                 Spacer()
                 Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
                     .font(.caption)

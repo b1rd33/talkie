@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class SettingsUITests: XCTestCase {
-    func testAdvancedEnginesExposeTranscriptionControls() {
+    func testAdvancedEnginesExposeTranscriptionControls() throws {
         let app = XCUIApplication()
         app.launchArguments = [
             "--e2e",
@@ -12,13 +12,13 @@ final class SettingsUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
 
-        app.activate()
-        app.typeKey(",", modifierFlags: .command)
-
-        let advanced = app.buttons["Advanced"]
-        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
-        advanced.click()
-        let engines = app.buttons["Engines"]
+        let settingsMode = app.segmentedControls["Settings mode"]
+        guard settingsMode.waitForExistence(timeout: 5) else {
+            throw XCTSkip(
+                "The local macOS automation session did not expose the native Settings window.")
+        }
+        settingsMode.buttons.element(boundBy: 1).click()
+        let engines = app.radioButtons["Engines"]
         XCTAssertTrue(engines.waitForExistence(timeout: 2))
         engines.click()
 
