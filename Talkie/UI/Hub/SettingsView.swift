@@ -378,7 +378,16 @@ private struct EngineSettingsTab: View {
     @State private var openAIKey: String = ""
     @State private var openRouterKey: String = ""
 
-    private static let transcriptionPresets = ModelPresets.transcription // shared source of truth (whisper-1 retired)
+    private static let expectedLanguageOptions: [(name: String, code: String)] = {
+        var seen = Set<String>()
+        return SupportedLanguages.all.compactMap { language in
+            guard let rawCode = language.code,
+                  let providerCode = SupportedLanguages.openAITranscriptionCode(for: rawCode),
+                  seen.insert(providerCode).inserted
+            else { return nil }
+            return (language.name, providerCode)
+        }
+    }()
 
     var body: some View {
         Form {
@@ -389,7 +398,7 @@ private struct EngineSettingsTab: View {
                     Text("On this Mac — free, offline").tag("local")
                 }
                 .pickerStyle(.radioGroup)
-                Text("Instant streams audio while you speak (gpt-4o-mini-transcribe, billed per audio minute) so text lands ~1s after release. Batch waits until release (gpt-4o transcribe models).")
+                Text("Instant streams audio while you speak. Batch records first, then transcribes the completed file. Model pricing and latency vary.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Skip cleanup in instant mode (fastest)", isOn: $settings.instantSkipCleanup)
                     .disabled(settings.engineMode != "instant" || settings.instantLiveType)
@@ -459,10 +468,73 @@ private struct EngineSettingsTab: View {
                     Text("Uses your OpenRouter key. Instant mode stays OpenAI-only (realtime websocket).")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Picker("Transcription model", selection: $settings.transcriptionModel) {
-                        ForEach(Self.transcriptionPresets, id: \.self) { Text($0) }
+                    Picker("Batch transcription model", selection: $settings.transcriptionModel) {
+                        ForEach(ModelPresets.openAIBatch, id: \.self) { model in
+                            Text(modelTitle(model, recommended: "gpt-transcribe")).tag(model)
+                        }
+                    }
+                    .accessibilityIdentifier("Batch transcription model")
+                    if OpenAITranscriptionModel(rawValue: settings.transcriptionModel)?.isLegacy == true {
+                        Text("Legacy model retained for compatibility. gpt-transcribe is the recommended default for new installations.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("Legacy batch model help")
                     }
                 }
+
+                Picker("Instant transcription model", selection: $settings.realtimeTranscriptionModel) {
+                    ForEach(ModelPresets.openAIRealtime, id: \.self) { model in
+                        Text(realtimeModelTitle(model)).tag(model)
+                    }
+                }
+                .accessibilityIdentifier("Instant transcription model")
+
+                Picker("Instant latency", selection: $settings.realtimeTranscriptionDelay) {
+                    ForEach(RealtimeTranscriptionDelay.allCases, id: \.self) { delay in
+                        Text(delay.title).tag(delay)
+                    }
+                }
+                .disabled(
+                    OpenAITranscriptionModel(rawValue: settings.realtimeTranscriptionModel)?
+                        .supportsDelay != true)
+                .accessibilityIdentifier("Instant latency")
+
+                Menu("Expected speech languages") {
+                    Button {
+                        settings.expectedInputLanguages = []
+                    } label: {
+                        Label(
+                            "Auto-detect",
+                            systemImage: settings.expectedInputLanguages.isEmpty
+                                ? "checkmark" : "circle")
+                    }
+                    Divider()
+                    ForEach(Self.expectedLanguageOptions, id: \.code) { language in
+                        Button {
+                            toggleExpectedLanguage(language.code)
+                        } label: {
+                            Label(
+                                language.name,
+                                systemImage: settings.expectedInputLanguages.contains(language.code)
+                                    ? "checkmark" : "circle")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("Expected speech languages")
+
+                TextField(
+                    "Recording context",
+                    text: $settings.transcriptionContextPrompt,
+                    prompt: Text("Names, terminology, or a short topic hint"))
+                    .accessibilityIdentifier("Recording context")
+                Text("Recording context, dictionary hints, and expected languages are sent only to the configured transcription provider. Talkie never includes surrounding app text here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle(
+                    "Show batch transcription progress",
+                    isOn: $settings.streamBatchTranscription)
+                    .accessibilityIdentifier("Show batch transcription progress")
             }
             Section("Cleanup") {
                 if cleanupInactive(settings) {
@@ -514,6 +586,32 @@ private struct EngineSettingsTab: View {
 
     private func setCleanup(_ model: String) {
         settings.cleanupModel = model
+    }
+
+    private func modelTitle(_ model: String, recommended: String) -> String {
+        if model == recommended { return "\(model) — Recommended" }
+        if OpenAITranscriptionModel(rawValue: model)?.isLegacy == true {
+            return "\(model) — Legacy"
+        }
+        return model
+    }
+
+    private func realtimeModelTitle(_ model: String) -> String {
+        if model == "gpt-live-transcribe" {
+            return "\(model) — Recommended"
+        }
+        if model == "gpt-transcribe" {
+            return "\(model) — Committed turns"
+        }
+        return modelTitle(model, recommended: "gpt-live-transcribe")
+    }
+
+    private func toggleExpectedLanguage(_ code: String) {
+        if let index = settings.expectedInputLanguages.firstIndex(of: code) {
+            settings.expectedInputLanguages.remove(at: index)
+        } else {
+            settings.expectedInputLanguages.append(code)
+        }
     }
 
     private var removeModelsButton: some View {
