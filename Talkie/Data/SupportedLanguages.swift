@@ -22,4 +22,18 @@ enum SupportedLanguages {
     static func transcriptionCode(for code: String?) -> String? {
         code?.split(separator: "-").first.map(String.init)
     }
+
+    /// OpenAI's context-aware transcription models accept ISO 639-1 language
+    /// hints plus documented regional Chinese codes. Talkie's broader display
+    /// variants are reduced to a provider-supported value.
+    static func openAITranscriptionCode(for code: String) -> String? {
+        let knownCodes = Set(all.compactMap(\.code))
+        guard knownCodes.contains(code) else { return nil }
+        switch code {
+        case "zh-Hans": return "zh-cn"
+        case "zh-Hant": return "zh-tw"
+        default:
+            return code.split(separator: "-").first.map { String($0).lowercased() }
+        }
+    }
 }

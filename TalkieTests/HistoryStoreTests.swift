@@ -39,12 +39,12 @@ final class HistoryStoreTests: XCTestCase {
 
     func testDictionaryCRUD() throws {
         let store = try makeStore()
-        store.addTerm("Archiev", soundsLike: "ar-keev")
-        store.addTerm("Talkie")
+        try store.addTerm("Archiev", soundsLike: "ar-keev")
+        try store.addTerm("Talkie")
         XCTAssertEqual(store.dictionaryTermStrings(), ["Archiev", "Talkie"]) // sorted by term
         let entry = store.allTerms()[0]
         XCTAssertEqual(entry.soundsLike, "ar-keev")
-        store.updateTerm(entry, term: "Archiev GmbH", soundsLike: nil)
+        try store.updateTerm(entry, term: "Archiev GmbH", soundsLike: nil)
         XCTAssertEqual(store.allTerms().map(\.term), ["Archiev GmbH", "Talkie"])
         XCTAssertNil(store.allTerms()[0].soundsLike)
         store.deleteTerm(store.allTerms()[0])
@@ -53,7 +53,15 @@ final class HistoryStoreTests: XCTestCase {
 
     func testBlankTermIgnored() throws {
         let store = try makeStore()
-        store.addTerm("   ")
+        try store.addTerm("   ")
+        XCTAssertTrue(store.allTerms().isEmpty)
+    }
+
+    func testDictionaryRejectsInvalidTranscriptionKeywordCharacters() throws {
+        let store = try makeStore()
+
+        XCTAssertThrowsError(try store.addTerm("bad<term"))
+        XCTAssertThrowsError(try store.addTerm("two\nlines"))
         XCTAssertTrue(store.allTerms().isEmpty)
     }
 

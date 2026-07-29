@@ -39,18 +39,24 @@ final class HistoryStore {
 
     // MARK: - Dictionary (spec §7/§8)
 
-    func addTerm(_ term: String, soundsLike: String? = nil) {
+    func addTerm(_ term: String, soundsLike: String? = nil) throws {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        context.insert(DictionaryEntry(term: trimmed, soundsLike: normalized(soundsLike)))
+        let soundsLike = normalized(soundsLike)
+        try DictionaryKeywordValidator.validate(trimmed)
+        if let soundsLike { try DictionaryKeywordValidator.validate(soundsLike) }
+        context.insert(DictionaryEntry(term: trimmed, soundsLike: soundsLike))
         try? context.save()
     }
 
-    func updateTerm(_ entry: DictionaryEntry, term: String, soundsLike: String?) {
+    func updateTerm(_ entry: DictionaryEntry, term: String, soundsLike: String?) throws {
         let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let soundsLike = normalized(soundsLike)
+        try DictionaryKeywordValidator.validate(trimmed)
+        if let soundsLike { try DictionaryKeywordValidator.validate(soundsLike) }
         entry.term = trimmed
-        entry.soundsLike = normalized(soundsLike)
+        entry.soundsLike = soundsLike
         try? context.save()
     }
 
