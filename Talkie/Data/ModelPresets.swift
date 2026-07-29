@@ -8,7 +8,17 @@ import Foundation
 /// Provider convention: OpenRouter model IDs are "vendor/model" (contain a slash);
 /// OpenAI model IDs never do.
 enum ModelPresets {
-    static let transcription = ["gpt-4o-mini-transcribe", "gpt-4o-transcribe"]
+    static let openAIBatch = [
+        "gpt-transcribe",
+        "gpt-4o-mini-transcribe",
+        "gpt-4o-transcribe",
+    ]
+    static let openAIRealtime = [
+        "gpt-live-transcribe",
+        "gpt-transcribe",
+        "gpt-realtime-whisper",
+    ]
+    static let transcription = openAIBatch
     static let openrouterTranscription = ["mistralai/voxtral-mini-transcribe"]
     static let openaiCleanup = ["gpt-5.4-nano", "gpt-5.4-mini", "gpt-4.1-nano"]
     static let openrouterCleanup = ["google/gemini-2.5-flash-lite", "google/gemini-2.5-flash", "openai/gpt-5.4-nano"]
