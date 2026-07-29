@@ -27,7 +27,11 @@ struct OpenAIEngine: TranscriptionEngine {
         self.session = session
     }
 
-    func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
         guard let key = apiKeyProvider(), !key.isEmpty else { throw EngineError.missingAPIKey }
         let model = modelProvider()
         let context = contextProvider(dictionaryTerms)
@@ -63,10 +67,56 @@ struct OpenAIEngine: TranscriptionEngine {
                 field("language", language)
             }
         }
+        let shouldStream =
+            model == OpenAITranscriptionModel.gptTranscribe.rawValue
+            && streamProvider()
+        if shouldStream {
+            field("stream", "true")
+        }
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n".utf8))
         body.append(try Data(contentsOf: audio.fileURL))
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         request.httpBody = body
+
+        if shouldStream {
+            do {
+                let (bytes, response) = try await session.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw EngineError.invalidResponse
+                }
+                guard (200..<300).contains(http.statusCode) else {
+                    throw EngineError.requestFailed(
+                        status: http.statusCode,
+                        message: "")
+                }
+
+                var parser = OpenAISSEParser()
+                var accumulated = ""
+                var final: Transcript?
+                for try await byte in bytes {
+                    for event in try parser.append(Data([byte])) {
+                        switch event {
+                        case .delta(let delta):
+                            accumulated += delta
+                            onPartial?(accumulated)
+                        case .done(let text, let detectedLanguages):
+                            final = Transcript(
+                                text: text,
+                                engineID: model,
+                                detectedLanguages: detectedLanguages)
+                        }
+                    }
+                }
+                guard let final else {
+                    throw EngineError.invalidResponse
+                }
+                return final
+            } catch let urlError as URLError where
+                [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed,
+                 .cannotFindHost, .cannotConnectToHost, .timedOut].contains(urlError.code) {
+                throw EngineError.offline
+            }
+        }
 
         let (data, response): (Data, URLResponse)
         do {

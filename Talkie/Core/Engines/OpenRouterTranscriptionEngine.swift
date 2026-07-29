@@ -12,10 +12,15 @@ struct CloudEngineSwitch: TranscriptionEngine {
     let openai: TranscriptionEngine
     let openrouter: TranscriptionEngine
 
-    func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
         let provider = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "openai"
         let engine = provider == "openrouter" ? openrouter : openai
-        return try await engine.transcribe(audio, dictionaryTerms: dictionaryTerms)
+        return try await engine.transcribe(
+            audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
     }
 }
 
@@ -24,7 +29,11 @@ struct OpenRouterTranscriptionEngine: TranscriptionEngine {
     var modelProvider: @Sendable () -> String
     var session: URLSession = .shared
 
-    func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+    func transcribe(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
         guard let key = apiKeyProvider(), !key.isEmpty else { throw EngineError.missingAPIKey }
         let model = modelProvider()
 

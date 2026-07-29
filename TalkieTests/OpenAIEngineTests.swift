@@ -2,6 +2,23 @@ import XCTest
 @testable import Talkie
 
 final class OpenAIEngineTests: XCTestCase {
+    private final class PartialRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String] = []
+
+        func append(_ value: String) {
+            lock.lock()
+            storage.append(value)
+            lock.unlock()
+        }
+
+        var values: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage
+        }
+    }
+
     private var audioURL: URL!
 
     override func setUpWithError() throws {
@@ -19,13 +36,15 @@ final class OpenAIEngineTests: XCTestCase {
     private func makeEngine(
         apiKey: String? = "sk-test",
         model: String = "gpt-transcribe",
-        context: TranscriptionContext? = nil
+        context: TranscriptionContext? = nil,
+        stream: Bool = false
     ) -> OpenAIEngine {
         OpenAIEngine(apiKeyProvider: { apiKey }, modelProvider: { model },
                      contextProvider: { terms in
                          context ?? TranscriptionContext.build(
                              prompt: "", dictionaryTerms: terms, languageCodes: [])
                      },
+                     streamProvider: { stream },
                      session: StubURLProtocol.session())
     }
 
@@ -148,6 +167,68 @@ final class OpenAIEngineTests: XCTestCase {
                                               dictionaryTerms: [])
         let body = try XCTUnwrap(capturedBody.flatMap { String(data: $0, encoding: .utf8) })
         XCTAssertFalse(body.contains("name=\"language\""))
+    }
+
+    func testStreamsCompletedFileProgressAndRequiresFinalEvent() async throws {
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            let body = """
+            data: {"type":"transcript.text.delta","delta":"Hel"}
+
+            data: {"type":"transcript.text.delta","delta":"lo"}
+
+            data: {"type":"transcript.text.done","text":"Hello","languages":[{"code":"en"}]}
+
+
+            """
+            return (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"])!,
+                Data(body.utf8))
+        }
+        let partials = PartialRecorder()
+
+        let result = try await makeEngine(stream: true).transcribe(
+            RecordedAudio(fileURL: audioURL, duration: 1.0),
+            dictionaryTerms: [],
+            onPartial: { partials.append($0) })
+
+        let requestBody = try XCTUnwrap(
+            capturedBody.flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertTrue(requestBody.contains("name=\"stream\""))
+        XCTAssertTrue(requestBody.contains("\r\n\r\ntrue\r\n"))
+        XCTAssertEqual(partials.values, ["Hel", "Hello"])
+        XCTAssertEqual(result.text, "Hello")
+        XCTAssertEqual(result.detectedLanguages, ["en"])
+    }
+
+    func testStreamWithoutFinalEventFails() async {
+        StubURLProtocol.handler = { request in
+            (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"])!,
+                Data("""
+                data: {"type":"transcript.text.delta","delta":"partial"}
+
+
+                """.utf8))
+        }
+
+        do {
+            _ = try await makeEngine(stream: true).transcribe(
+                RecordedAudio(fileURL: audioURL, duration: 1.0),
+                dictionaryTerms: [])
+            XCTFail("expected a missing-final-event failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .invalidResponse)
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
     }
 
     func testOfflineErrorMapsToOfflineCase() async {

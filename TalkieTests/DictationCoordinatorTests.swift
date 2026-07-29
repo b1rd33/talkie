@@ -39,7 +39,11 @@ final class DictationCoordinatorTests: XCTestCase {
         init(result: Result<Transcript, Error> = .success(Transcript(text: "raw text"))) {
             self.result = result
         }
-        func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+        func transcribe(
+            _ audio: RecordedAudio,
+            dictionaryTerms: [String],
+            onPartial: TranscriptionProgressSink?
+        ) async throws -> Transcript {
             receivedTerms.append(dictionaryTerms)
             return try result.get()
         }
@@ -1021,7 +1025,11 @@ final class DictationCoordinatorTests: XCTestCase {
 
     func testCancelDuringTranscriptionInsertsNothing() async {
         struct SlowEngine: TranscriptionEngine {
-            func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
+            func transcribe(
+                _ audio: RecordedAudio,
+                dictionaryTerms: [String],
+                onPartial: TranscriptionProgressSink?
+            ) async throws -> Transcript {
                 try await Task.sleep(for: .seconds(5)) // cancellation interrupts this sleep
                 return Transcript(text: "too late")
             }
