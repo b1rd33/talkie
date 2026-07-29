@@ -4,11 +4,33 @@ import Foundation
 struct OpenAIEngine: TranscriptionEngine {
     var apiKeyProvider: @Sendable () -> String?
     var modelProvider: @Sendable () -> String
-    var languageProvider: @Sendable () -> String? = { nil }
-    var session: URLSession = .shared
+    var contextProvider: @Sendable ([String]) -> TranscriptionContext
+    var streamProvider: @Sendable () -> Bool
+    var session: URLSession
+
+    init(
+        apiKeyProvider: @escaping @Sendable () -> String?,
+        modelProvider: @escaping @Sendable () -> String,
+        contextProvider: @escaping @Sendable ([String]) -> TranscriptionContext = {
+            TranscriptionContext.build(
+                prompt: "",
+                dictionaryTerms: $0,
+                languageCodes: [])
+        },
+        streamProvider: @escaping @Sendable () -> Bool = { false },
+        session: URLSession = .shared
+    ) {
+        self.apiKeyProvider = apiKeyProvider
+        self.modelProvider = modelProvider
+        self.contextProvider = contextProvider
+        self.streamProvider = streamProvider
+        self.session = session
+    }
 
     func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String]) async throws -> Transcript {
         guard let key = apiKeyProvider(), !key.isEmpty else { throw EngineError.missingAPIKey }
+        let model = modelProvider()
+        let context = contextProvider(dictionaryTerms)
 
         let boundary = "talkie-\(UUID().uuidString)"
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/transcriptions")!)
@@ -21,17 +43,25 @@ struct OpenAIEngine: TranscriptionEngine {
         func field(_ name: String, _ value: String) {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
-        field("model", modelProvider())
+        field("model", model)
         field("response_format", "json")
-        if !dictionaryTerms.isEmpty {
-            // Terms are interpolated into a multipart text field — CR/LF would break framing.
-            let sanitized = dictionaryTerms.map {
-                $0.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+        if OpenAITranscriptionModel(rawValue: model)?.supportsKeywords == true {
+            if let prompt = context.prompt {
+                field("prompt", prompt)
             }
-            field("prompt", "Vocabulary: " + sanitized.joined(separator: ", "))
-        }
-        if let language = languageProvider(), !language.isEmpty {
-            field("language", language) // ISO-639-1 code, spec §3: pinned language
+            for keyword in context.keywords {
+                field("keywords[]", keyword)
+            }
+            for language in context.languages {
+                field("languages[]", language)
+            }
+        } else {
+            if !context.keywords.isEmpty {
+                field("prompt", "Vocabulary: " + context.keywords.joined(separator: ", "))
+            }
+            if let language = context.legacyLanguage {
+                field("language", language)
+            }
         }
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n".utf8))
         body.append(try Data(contentsOf: audio.fileURL))
@@ -51,10 +81,20 @@ struct OpenAIEngine: TranscriptionEngine {
             throw EngineError.requestFailed(status: http.statusCode,
                                             message: String(data: data, encoding: .utf8) ?? "")
         }
-        struct Response: Decodable { let text: String }
+        struct Response: Decodable {
+            struct Language: Decodable {
+                let code: String
+            }
+
+            let text: String
+            let languages: [Language]?
+        }
         guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else {
             throw EngineError.invalidResponse
         }
-        return Transcript(text: decoded.text, engineID: "openai")
+        return Transcript(
+            text: decoded.text,
+            engineID: model,
+            detectedLanguages: decoded.languages?.map(\.code) ?? [])
     }
 }

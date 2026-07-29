@@ -16,8 +16,16 @@ final class OpenAIEngineTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeEngine(apiKey: String? = "sk-test", model: String = "gpt-4o-mini-transcribe") -> OpenAIEngine {
+    private func makeEngine(
+        apiKey: String? = "sk-test",
+        model: String = "gpt-transcribe",
+        context: TranscriptionContext? = nil
+    ) -> OpenAIEngine {
         OpenAIEngine(apiKeyProvider: { apiKey }, modelProvider: { model },
+                     contextProvider: { terms in
+                         context ?? TranscriptionContext.build(
+                             prompt: "", dictionaryTerms: terms, languageCodes: [])
+                     },
                      session: StubURLProtocol.session())
     }
 
@@ -27,7 +35,7 @@ final class OpenAIEngineTests: XCTestCase {
         StubURLProtocol.handler = { request in
             captured = request
             capturedBody = request.httpBody ?? request.bodyStreamData()
-            let body = #"{"text": "hello world"}"#
+            let body = #"{"text":"hello world","languages":[{"code":"en"}]}"#
             return (HTTPURLResponse(url: request.url!, statusCode: 200,
                                     httpVersion: nil, headerFields: nil)!,
                     Data(body.utf8))
@@ -44,11 +52,49 @@ final class OpenAIEngineTests: XCTestCase {
         XCTAssertTrue(contentType.hasPrefix("multipart/form-data; boundary="))
         let body = try XCTUnwrap(capturedBody.flatMap { String(data: $0, encoding: .utf8) })
         XCTAssertTrue(body.contains("name=\"model\""))
-        XCTAssertTrue(body.contains("gpt-4o-mini-transcribe"))
+        XCTAssertTrue(body.contains("\r\n\r\ngpt-transcribe\r\n"))
         XCTAssertTrue(body.contains("name=\"file\"; filename=\"audio.m4a\""))
-        XCTAssertTrue(body.contains("name=\"prompt\""))
+        XCTAssertTrue(body.contains("name=\"keywords[]\""))
         XCTAssertTrue(body.contains("Talkie"))
         XCTAssertTrue(body.contains("fake-audio"))
+        XCTAssertEqual(result.engineID, "gpt-transcribe")
+        XCTAssertEqual(result.detectedLanguages, ["en"])
+    }
+
+    func testNewModelSendsPromptKeywordsAndMultipleLanguages() async throws {
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            return (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200,
+                    httpVersion: nil, headerFields: nil)!,
+                Data(#"{"text":"Hallo Talkie","languages":[{"code":"de"}]}"#.utf8))
+        }
+        let context = TranscriptionContext(
+            prompt: "Product demo",
+            keywords: ["Talkie"],
+            languages: ["en", "de"])
+
+        let result = try await makeEngine(context: context).transcribe(
+            RecordedAudio(fileURL: audioURL, duration: 1.0),
+            dictionaryTerms: ["ignored by explicit test context"])
+
+        let body = try XCTUnwrap(
+            capturedBody.flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertTrue(body.contains("name=\"model\""))
+        XCTAssertTrue(body.contains("\r\n\r\ngpt-transcribe\r\n"))
+        XCTAssertTrue(body.contains("name=\"prompt\""))
+        XCTAssertTrue(body.contains("\r\n\r\nProduct demo\r\n"))
+        XCTAssertTrue(body.contains("name=\"keywords[]\""))
+        XCTAssertTrue(body.contains("\r\n\r\nTalkie\r\n"))
+        XCTAssertTrue(body.contains("name=\"languages[]\""))
+        XCTAssertTrue(body.contains("\r\n\r\nen\r\n"))
+        XCTAssertTrue(body.contains("\r\n\r\nde\r\n"))
+        XCTAssertFalse(body.contains("name=\"language\""))
+        XCTAssertEqual(result.text, "Hallo Talkie")
+        XCTAssertEqual(result.engineID, "gpt-transcribe")
+        XCTAssertEqual(result.detectedLanguages, ["de"])
     }
 
     func testMissingKeyThrows() async {
@@ -69,15 +115,25 @@ final class OpenAIEngineTests: XCTestCase {
                                     httpVersion: nil, headerFields: nil)!,
                     Data(#"{"text": "hallo welt"}"#.utf8))
         }
-        let engine = OpenAIEngine(apiKeyProvider: { "sk-test" },
-                                  modelProvider: { "gpt-4o-mini-transcribe" },
-                                  languageProvider: { "de" },
-                                  session: StubURLProtocol.session())
+        let engine = OpenAIEngine(
+            apiKeyProvider: { "sk-test" },
+            modelProvider: { "gpt-4o-mini-transcribe" },
+            contextProvider: { terms in
+                TranscriptionContext(
+                    prompt: "Legacy context",
+                    keywords: terms,
+                    languages: ["de"])
+            },
+            session: StubURLProtocol.session())
         _ = try await engine.transcribe(RecordedAudio(fileURL: audioURL, duration: 1.0),
-                                        dictionaryTerms: [])
+                                        dictionaryTerms: ["Talkie"])
         let body = try XCTUnwrap(capturedBody.flatMap { String(data: $0, encoding: .utf8) })
         XCTAssertTrue(body.contains("name=\"language\""))
         XCTAssertTrue(body.contains("\r\n\r\nde\r\n"))
+        XCTAssertTrue(body.contains("name=\"prompt\""))
+        XCTAssertTrue(body.contains("Vocabulary: Talkie"))
+        XCTAssertFalse(body.contains("name=\"keywords[]\""))
+        XCTAssertFalse(body.contains("name=\"languages[]\""))
     }
 
     func testNoLanguageFieldByDefault() async throws {

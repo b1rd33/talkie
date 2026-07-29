@@ -65,9 +65,12 @@ final class AppServices {
         }
         let engine = OpenAIEngine(
             apiKeyProvider: { credential(.openAIKey) },
-            modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-4o-mini-transcribe" },
-            languageProvider: {
-                SupportedLanguages.transcriptionCode(for: defaults.string(forKey: "pinnedLanguage"))
+            modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-transcribe" },
+            contextProvider: { dictionaryTerms in
+                TranscriptionContext.build(
+                    prompt: "",
+                    dictionaryTerms: dictionaryTerms,
+                    languageCodes: defaults.string(forKey: "pinnedLanguage").map { [$0] } ?? [])
             }
         )
         let cleanup = CleanupService(

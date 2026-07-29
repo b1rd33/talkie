@@ -4,6 +4,7 @@ struct Transcript: Sendable, Equatable {
     let text: String
     var engineID: String = "openai"
     var usedFallback: Bool = false
+    var detectedLanguages: [String] = []
 }
 
 enum EngineError: Error, Equatable, LocalizedError {
