@@ -60,7 +60,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/TalkieCodeQLDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING=NO
+            APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING=NO \
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO \
+            CLANG_ENABLE_EXPLICIT_MODULES=NO
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4

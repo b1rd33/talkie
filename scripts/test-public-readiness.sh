@@ -130,6 +130,10 @@ expect_pattern "$codeql" 'xcodegen generate' "CodeQL build must generate the pro
 expect_pattern "$codeql" 'CODE_SIGNING_ALLOWED=NO' "CodeQL build must not require signing credentials"
 expect_pattern "$codeql" 'APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING=NO' \
   "CodeQL build must disable App Shortcuts metadata matching to avoid traced-build hangs"
+expect_pattern "$codeql" 'SWIFT_ENABLE_EXPLICIT_MODULES=NO' \
+  "CodeQL build must disable explicit Swift modules to avoid traced extractor stalls"
+expect_pattern "$codeql" 'CLANG_ENABLE_EXPLICIT_MODULES=NO' \
+  "CodeQL build must disable explicit Clang modules to avoid traced extractor stalls"
 if [[ -f "$codeql" ]]; then
   while IFS= read -r action; do
     if [[ ! "$action" =~ ^[[:space:]]*uses:[[:space:]]+[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+\#[[:space:]]+v[0-9] ]]; then
