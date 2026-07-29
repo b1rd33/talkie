@@ -49,6 +49,25 @@ final class DictationCoordinatorTests: XCTestCase {
         }
     }
 
+    final class BatchProgressEngine: TranscriptionEngine, @unchecked Sendable {
+        let emitted: XCTestExpectation
+
+        init(emitted: XCTestExpectation) {
+            self.emitted = emitted
+        }
+
+        func transcribe(
+            _ audio: RecordedAudio,
+            dictionaryTerms: [String],
+            onPartial: TranscriptionProgressSink?
+        ) async throws -> Transcript {
+            onPartial?("partial batch text")
+            emitted.fulfill()
+            try await Task.sleep(for: .milliseconds(120))
+            return Transcript(text: "final batch text", engineID: "gpt-transcribe")
+        }
+    }
+
     final class MockCleanup: CleanupServicing, @unchecked Sendable {
         var result: Result<String, Error>
         private(set) var calls: [(terms: [String], level: CleanupLevel, style: StylePreset, language: String?)] = []
@@ -143,6 +162,34 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state, .idle)
         XCTAssertEqual(coordinator.lastResult?.cleanedText, "Clean text.")
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+    }
+
+    func testBatchProgressPreviewsInPillButOnlyFinalTextIsInserted() async {
+        let emitted = expectation(description: "batch partial emitted")
+        let inserter = MockInserter()
+        let liveInserter = MockLiveInserter()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: BatchProgressEngine(emitted: emitted),
+            cleanup: MockCleanup(),
+            inserter: inserter,
+            minimumHold: 0,
+            cleanupLevelProvider: { .none },
+            batchProgressEnabledProvider: { true },
+            liveTypeProvider: { true },
+            liveInserter: liveInserter)
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await fulfillment(of: [emitted], timeout: 1)
+        try? await Task.sleep(for: .milliseconds(70))
+
+        XCTAssertEqual(coordinator.liveTranscript, "partial batch text")
+        XCTAssertTrue(liveInserter.typedUpTo.isEmpty)
+
+        await coordinator.waitForIdle()
+        XCTAssertEqual(inserter.inserted, ["final batch text"])
+        XCTAssertEqual(coordinator.liveTranscript, "")
     }
 
     func testUndoLastInsertionRequiresOriginalTargetToRemainFocused() async {

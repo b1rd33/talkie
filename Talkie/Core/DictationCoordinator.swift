@@ -63,6 +63,7 @@ final class DictationCoordinator {
     private let cleanupModelProvider: () -> String?
     private let keepRecordingsProvider: () -> Bool
     private let instantSkipCleanupProvider: () -> Bool
+    private let batchProgressEnabledProvider: () -> Bool
     private let liveTypeProvider: () -> Bool
     private let liveInserter: LiveTextInserting?
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
@@ -84,6 +85,7 @@ final class DictationCoordinator {
     private var activeStyle: StylePreset = .neutral
     /// Press-time snapshot of instantSkipCleanup (same contract as activeLevel).
     private var activeInstantSkipCleanup = false
+    private var activeBatchProgressEnabled = false
     /// Press-time snapshot of instantLiveType; whether a live session was created.
     private var activeLiveType = false
     private var liveTapActive = false
@@ -120,6 +122,7 @@ final class DictationCoordinator {
          cleanupModelProvider: @escaping () -> String? = { nil },
          keepRecordingsProvider: @escaping () -> Bool = { false },
          instantSkipCleanupProvider: @escaping () -> Bool = { false },
+         batchProgressEnabledProvider: @escaping () -> Bool = { false },
          liveTypeProvider: @escaping () -> Bool = { false },
          liveInserter: LiveTextInserting? = nil,
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
@@ -146,6 +149,7 @@ final class DictationCoordinator {
         self.cleanupModelProvider = cleanupModelProvider
         self.keepRecordingsProvider = keepRecordingsProvider
         self.instantSkipCleanupProvider = instantSkipCleanupProvider
+        self.batchProgressEnabledProvider = batchProgressEnabledProvider
         self.liveTypeProvider = liveTypeProvider
         self.liveInserter = liveInserter
         self.liveSessionFactory = liveSessionFactory
@@ -205,6 +209,7 @@ final class DictationCoordinator {
         activeLevel = cleanupLevelProvider()
         activeStyle = stylePresetProvider(targetApp.bundleID)
         activeInstantSkipCleanup = instantSkipCleanupProvider()
+        activeBatchProgressEnabled = batchProgressEnabledProvider()
         activeLiveType = liveTypeProvider()
         do {
             state = .recording
@@ -277,7 +282,7 @@ final class DictationCoordinator {
 
     /// Drains the lock-box into `liveTranscript` on the main actor at ~25 Hz so
     /// the socket loop never blocks on UI and the pill never re-renders per delta.
-    private func startLivePump() {
+    private func startLivePump(allowLiveTyping: Bool = true) {
         livePumpTask?.cancel()
         livePumpTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -294,7 +299,8 @@ final class DictationCoordinator {
                     // user (or the system) moves focus mid-dictation, pause typing so
                     // keystrokes never land in the wrong app; resume when focus returns.
                     // The preview (liveTranscript) keeps updating regardless.
-                    if self.activeLiveType,
+                    if allowLiveTyping,
+                       self.activeLiveType,
                        self.frontmostApp().bundleID == self.targetApp.bundleID {
                         try? self.liveInserter?.type(upTo: latest)
                     }
@@ -306,6 +312,12 @@ final class DictationCoordinator {
     private func stopLivePump() {
         livePumpTask?.cancel()
         livePumpTask = nil
+    }
+
+    private func clearTranscriptionPreview() {
+        stopLivePump()
+        liveBox.clear()
+        liveTranscript = ""
     }
 
     func handsFreeToggled(at: Date = Date()) async {
@@ -349,6 +361,7 @@ final class DictationCoordinator {
             capTask?.cancel()
             isHandsFree = false
             unhookLiveTap()
+            clearTranscriptionPreview()
             liveFeedTask?.cancel()
             liveFeedTask = nil
             if let liveSession { Task { await liveSession.cancel() } }
@@ -366,11 +379,20 @@ final class DictationCoordinator {
 
     private func process() async {
         guard state == .recording else { return } // cancelled (or superseded) before this task started
+        defer { clearTranscriptionPreview() }
         var audioURL: URL?
         do {
             state = .transcribing
             let audio = try await recorder.stop()
             audioURL = audio.fileURL
+            let batchProgressSink: TranscriptionProgressSink?
+            if activeBatchProgressEnabled, liveSession == nil {
+                let box = liveBox
+                batchProgressSink = { box.set($0) }
+                startLivePump(allowLiveTyping: false)
+            } else {
+                batchProgressSink = nil
+            }
             let transcript: Transcript
             // Set ONLY on the single success path; a batch fallback below leaves it
             // false. This is the unambiguous "instant genuinely ran" signal — never
@@ -388,10 +410,16 @@ final class DictationCoordinator {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
                     // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
-                    transcript = try await engine.transcribe(audio, dictionaryTerms: activePromptTerms)
+                    transcript = try await engine.transcribe(
+                        audio,
+                        dictionaryTerms: activePromptTerms,
+                        onPartial: batchProgressSink)
                 }
             } else {
-                transcript = try await engine.transcribe(audio, dictionaryTerms: activePromptTerms)
+                transcript = try await engine.transcribe(
+                    audio,
+                    dictionaryTerms: activePromptTerms,
+                    onPartial: batchProgressSink)
             }
             try Task.checkCancellation()
 

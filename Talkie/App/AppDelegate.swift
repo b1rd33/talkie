@@ -68,9 +68,13 @@ final class AppServices {
             modelProvider: { defaults.string(forKey: "transcriptionModel") ?? "gpt-transcribe" },
             contextProvider: { dictionaryTerms in
                 TranscriptionContext.build(
-                    prompt: "",
+                    prompt: defaults.string(forKey: "transcriptionContextPrompt") ?? "",
                     dictionaryTerms: dictionaryTerms,
-                    languageCodes: defaults.string(forKey: "pinnedLanguage").map { [$0] } ?? [])
+                    languageCodes:
+                        defaults.stringArray(forKey: "expectedInputLanguages") ?? [])
+            },
+            streamProvider: {
+                defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true
             }
         )
         let cleanup = CleanupService(
@@ -169,6 +173,10 @@ final class AppServices {
             instantSkipCleanupProvider: {
                 defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
             },
+            batchProgressEnabledProvider: {
+                (defaults.string(forKey: "engineMode") ?? "cloud") == "cloud"
+                    && (defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true)
+            },
             liveTypeProvider: {
                 defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
@@ -179,14 +187,23 @@ final class AppServices {
                 }
                 let key = credential(.openAIKey) ?? ""
                 guard !key.isEmpty else { throw EngineError.missingAPIKey }
-                // Same source as the batch path's dictionaryTermsProvider (Phase 4) — spec §3/§6
-                // carries ASR-level vocabulary biasing and the pinned language into instant mode too.
                 let terms = history?.dictionaryPromptTerms() ?? []
+                let context = TranscriptionContext.build(
+                    prompt: defaults.string(forKey: "transcriptionContextPrompt") ?? "",
+                    dictionaryTerms: terms,
+                    languageCodes:
+                        defaults.stringArray(forKey: "expectedInputLanguages") ?? [])
+                let model = defaults.string(forKey: "realtimeTranscriptionModel")
+                    ?? "gpt-live-transcribe"
+                let delay = RealtimeTranscriptionDelay(
+                    rawValue:
+                        defaults.string(forKey: "realtimeTranscriptionDelay") ?? "")
+                    ?? .medium
                 let session = OpenAIRealtimeSession(
                     transport: OpenAIRealtimeTransport(apiKey: key),
-                    model: "gpt-4o-mini-transcribe",
-                    vocabulary: terms.isEmpty ? nil : terms.joined(separator: ", "),
-                    language: defaults.string(forKey: "pinnedLanguage"), // nil = auto-detect
+                    model: model,
+                    context: context,
+                    delay: delay,
                     encoder: RealtimePCMEncoder(),
                     onPartial: onPartial)
                 try await session.begin()

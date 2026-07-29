@@ -4,6 +4,12 @@ import XCTest
 final class PriceBookTests: XCTestCase {
     func testTranscriptionRates() {
         // 60s of audio at the known per-minute rates, no cleanup
+        XCTAssertEqual(PriceBook.estimate(engine: "gpt-transcribe", durationSec: 60,
+                                          cleanupModel: nil, wordCount: 0), 0.0045, accuracy: 1e-9)
+        XCTAssertEqual(PriceBook.estimate(engine: "gpt-live-transcribe", durationSec: 60,
+                                          cleanupModel: nil, wordCount: 0), 0.017, accuracy: 1e-9)
+        XCTAssertEqual(PriceBook.estimate(engine: "gpt-realtime-whisper", durationSec: 60,
+                                          cleanupModel: nil, wordCount: 0), 0.017, accuracy: 1e-9)
         XCTAssertEqual(PriceBook.estimate(engine: "gpt-4o-mini-transcribe", durationSec: 60,
                                           cleanupModel: nil, wordCount: 0), 0.003, accuracy: 1e-9)
         XCTAssertEqual(PriceBook.estimate(engine: "realtime", durationSec: 60,
