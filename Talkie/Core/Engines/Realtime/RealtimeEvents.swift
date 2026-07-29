@@ -6,17 +6,41 @@ import Foundation
 /// transcription config nested under audio.input (model/prompt/language) —
 /// the beta-era "transcription_session.update" flat shape is gone.
 enum RealtimeClientEvent {
-    case sessionUpdate(model: String, vocabulary: String?, language: String?)
+    case sessionUpdate(
+        model: String,
+        context: TranscriptionContext,
+        delay: RealtimeTranscriptionDelay
+    )
     case audioAppend(pcm16: Data)
     case audioCommit(eventID: String)
 
     func encoded() -> Data {
         let payload: [String: Any]
         switch self {
-        case .sessionUpdate(let model, let vocabulary, let language):
+        case .sessionUpdate(let model, let context, let delay):
             var transcription: [String: Any] = ["model": model]
-            if let vocabulary { transcription["prompt"] = vocabulary } // spec §3/§6: ASR-level vocabulary biasing
-            if let language { transcription["language"] = language }   // spec §3: ISO-639-1 pinned language; absent = auto-detect
+            let capabilities = OpenAITranscriptionModel(rawValue: model)
+            if capabilities?.supportsKeywords == true {
+                if let prompt = context.prompt {
+                    transcription["prompt"] = prompt
+                }
+                if !context.keywords.isEmpty {
+                    transcription["keywords"] = context.keywords
+                }
+                if !context.languages.isEmpty {
+                    transcription["languages"] = context.languages
+                }
+                if capabilities?.supportsDelay == true {
+                    transcription["delay"] = delay.rawValue
+                }
+            } else {
+                if let prompt = context.prompt {
+                    transcription["prompt"] = prompt
+                }
+                if let language = context.legacyLanguage {
+                    transcription["language"] = language
+                }
+            }
             let session: [String: Any] = [
                 "type": "transcription",
                 "audio": [
@@ -49,7 +73,11 @@ enum RealtimeClientEvent {
 /// Server→client events we care about; everything else decodes to .ignored.
 enum RealtimeServerEvent: Equatable {
     case transcriptDelta(itemID: String, delta: String)
-    case transcriptCompleted(itemID: String, transcript: String)
+    case transcriptCompleted(
+        itemID: String,
+        transcript: String,
+        detectedLanguages: [String]
+    )
     case transcriptionFailed(itemID: String, message: String)
     /// A VAD-detected (or manually committed) audio segment was accepted — a
     /// `completed` for that segment will follow. We count these to know when all
@@ -73,8 +101,11 @@ enum RealtimeServerEvent: Equatable {
             return .transcriptDelta(itemID: itemID, delta: object["delta"] as? String ?? "")
         case "conversation.item.input_audio_transcription.completed":
             guard let itemID = object["item_id"] as? String else { throw EngineError.invalidResponse }
+            let detectedLanguages = (object["languages"] as? [[String: Any]])?
+                .compactMap { $0["code"] as? String } ?? []
             return .transcriptCompleted(itemID: itemID,
-                                        transcript: object["transcript"] as? String ?? "")
+                                        transcript: object["transcript"] as? String ?? "",
+                                        detectedLanguages: detectedLanguages)
         case "conversation.item.input_audio_transcription.failed":
             guard let itemID = object["item_id"] as? String else { throw EngineError.invalidResponse }
             let errorObject = object["error"] as? [String: Any]

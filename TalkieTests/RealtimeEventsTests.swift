@@ -2,18 +2,60 @@ import XCTest
 @testable import Talkie
 
 final class RealtimeEventsTests: XCTestCase {
-    func testSessionUpdateEncodes() throws {
-        // Wire shape reconciled against OpenAI's current Realtime docs (2026-06):
-        // GA uses "session.update" with session.type "transcription" and the
-        // transcription config nested under audio.input — NOT the beta-era
-        // "transcription_session.update" the plan sketched.
-        let event = RealtimeClientEvent.sessionUpdate(model: "gpt-realtime-whisper", vocabulary: "Talkie, Archiev", language: "de")
-        let json = try XCTUnwrap(String(data: event.encoded(), encoding: .utf8))
-        XCTAssertTrue(json.contains(#""type":"session.update""#))
-        XCTAssertTrue(json.contains("gpt-realtime-whisper"))
-        XCTAssertTrue(json.contains("Talkie, Archiev"))
-        XCTAssertTrue(json.contains(#""language":"de""#)) // spec §3: pinned language reaches the ASR
-        XCTAssertTrue(json.contains(#""server_vad""#)) // VAD segments speech so deltas stream mid-hold
+    func testNewLiveSessionUpdateEncodesContextAndDelay() throws {
+        let event = RealtimeClientEvent.sessionUpdate(
+            model: "gpt-live-transcribe",
+            context: TranscriptionContext(
+                prompt: "Talkie demo",
+                keywords: ["Talkie", "AC-42"],
+                languages: ["en", "de"]),
+            delay: .low)
+
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: event.encoded()) as? [String: Any])
+        let session = try XCTUnwrap(root["session"] as? [String: Any])
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        let transcription = try XCTUnwrap(
+            input["transcription"] as? [String: Any])
+        XCTAssertEqual(transcription["model"] as? String, "gpt-live-transcribe")
+        XCTAssertEqual(transcription["prompt"] as? String, "Talkie demo")
+        XCTAssertEqual(
+            transcription["keywords"] as? [String],
+            ["Talkie", "AC-42"])
+        XCTAssertEqual(
+            transcription["languages"] as? [String],
+            ["en", "de"])
+        XCTAssertEqual(transcription["delay"] as? String, "low")
+        XCTAssertNil(transcription["language"])
+        XCTAssertEqual(
+            (input["turn_detection"] as? [String: Any])?["type"] as? String,
+            "server_vad")
+    }
+
+    func testLegacySessionUpdateKeepsPromptAndSingularLanguage() throws {
+        let event = RealtimeClientEvent.sessionUpdate(
+            model: "gpt-realtime-whisper",
+            context: TranscriptionContext(
+                prompt: "Vocabulary: Talkie, Archiev",
+                keywords: ["Talkie", "Archiev"],
+                languages: ["de", "en"]),
+            delay: .low)
+
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: event.encoded()) as? [String: Any])
+        let session = try XCTUnwrap(root["session"] as? [String: Any])
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        let transcription = try XCTUnwrap(
+            input["transcription"] as? [String: Any])
+        XCTAssertEqual(
+            transcription["prompt"] as? String,
+            "Vocabulary: Talkie, Archiev")
+        XCTAssertEqual(transcription["language"] as? String, "de")
+        XCTAssertNil(transcription["keywords"])
+        XCTAssertNil(transcription["languages"])
+        XCTAssertNil(transcription["delay"])
     }
 
     func testAudioAppendEncodesBase64() throws {
@@ -37,10 +79,13 @@ final class RealtimeEventsTests: XCTestCase {
         XCTAssertEqual(itemID, "item-1")
         XCTAssertEqual(text, "hel")
 
-        let done = try RealtimeServerEvent.decode(Data(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"item-1","transcript":"hello world"}"#.utf8))
-        guard case .transcriptCompleted(let itemID, let transcript) = done else { return XCTFail("wrong case") }
+        let done = try RealtimeServerEvent.decode(Data(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"item-1","transcript":"hello world","languages":[{"code":"en"}]}"#.utf8))
+        guard case .transcriptCompleted(
+            let itemID, let transcript, let detectedLanguages
+        ) = done else { return XCTFail("wrong case") }
         XCTAssertEqual(itemID, "item-1")
         XCTAssertEqual(transcript, "hello world")
+        XCTAssertEqual(detectedLanguages, ["en"])
     }
 
     func testErrorAndUnknownDecode() throws {

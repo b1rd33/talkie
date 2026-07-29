@@ -58,7 +58,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         await session.feed([0.1, 0.2, 0.3])
         let transcript = try await session.finish()
         XCTAssertEqual(transcript.text, "hello world")
-        XCTAssertEqual(transcript.engineID, "realtime")
+        XCTAssertEqual(transcript.engineID, "gpt-realtime-whisper")
         let sent = transport.sent
         XCTAssertTrue(sent[0].contains("session.update"))
         XCTAssertTrue(sent.contains { $0.contains("input_audio_buffer.append") })
@@ -151,8 +151,17 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
     private static func delta(_ s: String, itemID: String) -> Data {
         Data(#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"\#(itemID)","delta":"\#(s)"}"#.utf8)
     }
-    private static func completed(_ s: String, itemID: String) -> Data {
-        Data(#"{"type":"conversation.item.input_audio_transcription.completed","item_id":"\#(itemID)","transcript":"\#(s)"}"#.utf8)
+    private static func completed(
+        _ s: String,
+        itemID: String,
+        languages: [String] = []
+    ) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": itemID,
+            "transcript": s,
+            "languages": languages.map { ["code": $0] },
+        ])
     }
     private static func committed(_ itemID: String) -> Data {
         Data(#"{"type":"input_audio_buffer.committed","item_id":"\#(itemID)"}"#.utf8)
@@ -214,8 +223,8 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         let transport = StreamingFakeTransport()
         transport.commitInbox = [
             Self.committed("item-1"), Self.committed("item-2"),
-            Self.completed("second", itemID: "item-2"),
-            Self.completed("first", itemID: "item-1"),
+            Self.completed("second", itemID: "item-2", languages: ["de"]),
+            Self.completed("first", itemID: "item-1", languages: ["en"]),
         ]
         let session = OpenAIRealtimeSession(
             transport: transport, model: "m", vocabulary: nil, language: nil,
@@ -226,6 +235,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         let transcript = try await session.finish()
 
         XCTAssertEqual(transcript.text, "first second")
+        XCTAssertEqual(transcript.detectedLanguages, ["en", "de"])
     }
 
     func testDelayedCommitWithinSettlingWindowIsDrained() async throws {
