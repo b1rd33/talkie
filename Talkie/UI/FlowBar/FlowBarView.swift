@@ -12,6 +12,8 @@ struct FlowBarView: View {
     var onHidePermanently: () -> Void = {}
 
     @State private var showCheckmark = false
+    @State private var showProcessingLabel = false
+    @State private var processingLabelTask: Task<Void, Never>?
     @State private var recordingStarted = Date()
 
     private var presentation: PillPresentation {
@@ -32,7 +34,8 @@ struct FlowBarView: View {
             cleanupDegraded: coordinator.cleanupDegraded,
             reduceMotion: reduceMotion,
             increasedContrast: colorSchemeContrast == .increased,
-            isInstant: settings?.engineMode == "instant")
+            isInstant: settings?.engineMode == "instant",
+            showsProcessingLabel: showProcessingLabel)
     }
 
     var body: some View {
@@ -44,22 +47,53 @@ struct FlowBarView: View {
             onCancel: { coordinator.cancel() },
             onHideForHour: onHideForHour,
             onHidePermanently: onHidePermanently)
-        .onChange(of: coordinator.state) { _, newState in
+        .onChange(of: coordinator.state) { oldState, newState in
             if newState == .recording { recordingStarted = .now }
+            updateProcessingLabel(from: oldState, to: newState)
         }
         .onChange(of: coordinator.lastCompletedAt) { _, newValue in
             guard newValue != nil else { return }
             showCheckmark = true
             Task {
-                try? await Task.sleep(for: .milliseconds(800))
+                try? await Task.sleep(for: .seconds(PillMotionProfile.calmFlow.successDuration))
                 showCheckmark = false
             }
+        }
+        .onDisappear {
+            processingLabelTask?.cancel()
+            processingLabelTask = nil
         }
     }
 
     /// Last `max` Characters of `s` (grapheme-safe — never splits an emoji).
     static func tail(_ s: String, max: Int) -> String {
         s.count <= max ? s : String(s.suffix(max))
+    }
+
+    private static func isProcessing(_ state: DictationState) -> Bool {
+        switch state {
+        case .transcribing, .cleaning, .inserting: true
+        case .idle, .recording, .error: false
+        }
+    }
+
+    private func updateProcessingLabel(from oldState: DictationState,
+                                       to newState: DictationState) {
+        if Self.isProcessing(newState) {
+            guard !Self.isProcessing(oldState) else { return }
+            processingLabelTask?.cancel()
+            showProcessingLabel = false
+            processingLabelTask = Task {
+                try? await Task.sleep(
+                    for: .seconds(PillMotionProfile.calmFlow.processingLabelDelay))
+                guard !Task.isCancelled, Self.isProcessing(coordinator.state) else { return }
+                showProcessingLabel = true
+            }
+        } else {
+            processingLabelTask?.cancel()
+            processingLabelTask = nil
+            showProcessingLabel = false
+        }
     }
 }
 
@@ -102,10 +136,6 @@ struct PillRendererView: View {
                 activePill {
                     if style == .dynamicIsland {
                         Circle().fill(.red).frame(width: 7, height: 7)
-                    } else if presentation.isInstant {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.yellow)
                     }
                     if isOrganicWaveform {
                         OrganicWaveformView(style: style, levelSource: levelSource,
@@ -120,9 +150,12 @@ struct PillRendererView: View {
             case .transcribing, .cleaning, .inserting:
                 activePill {
                     ProgressView().controlSize(.small).tint(contentForeground)
-                    Text(presentation.statusLabel ?? "Polishing…")
-                        .font(.caption)
-                        .foregroundStyle(contentForeground.opacity(0.85))
+                    if let statusLabel = presentation.statusLabel {
+                        Text(statusLabel)
+                            .font(.caption)
+                            .foregroundStyle(contentForeground.opacity(0.85))
+                            .transition(.opacity)
+                    }
                     cancelButton
                 }
             case .error:
@@ -137,10 +170,8 @@ struct PillRendererView: View {
                      ? (handsFreeExpanded ? motion.handsFreeMaximumScale
                                           : motion.handsFreeMinimumScale)
                      : 1)
-        .animation(presentation.reduceMotion
-                   ? .easeOut(duration: motion.entryDuration)
-                   : .spring(duration: motion.entryDuration),
-                   value: presentation.state)
+        .animation(.easeOut(duration: motion.entryDuration),
+                   value: presentation.visualPhase)
         .overlay(alignment: .topTrailing) {
             if presentation.offline {
                 Text("offline")

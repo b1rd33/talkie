@@ -20,10 +20,28 @@ final class PillPresentationTests: XCTestCase {
         XCTAssertEqual(value.accessibilityLabel, "Recording, 4 seconds, offline mode")
     }
 
-    func testProcessingLabelsAreSpecific() {
-        XCTAssertEqual(PillPresentation.preview(.transcribing).statusLabel, "Transcribing…")
-        XCTAssertEqual(PillPresentation.preview(.cleaning).statusLabel, "Cleaning…")
-        XCTAssertEqual(PillPresentation.preview(.inserting).statusLabel, "Inserting…")
+    func testProcessingStatesShareOneVisualPhase() {
+        XCTAssertEqual(PillPresentation.preview(.transcribing).visualPhase, .processing)
+        XCTAssertEqual(PillPresentation.preview(.cleaning).visualPhase, .processing)
+        XCTAssertEqual(PillPresentation.preview(.inserting).visualPhase, .processing)
+    }
+
+    func testProcessingLabelIsDeferredAndUnified() {
+        for state in [PillPresentation.State.transcribing, .cleaning, .inserting] {
+            var value = PillPresentation.preview(state)
+            XCTAssertNil(value.statusLabel)
+
+            value.showsProcessingLabel = true
+            XCTAssertEqual(value.statusLabel, "Processing…")
+        }
+    }
+
+    func testNonProcessingStatesHaveDistinctVisualPhases() {
+        XCTAssertEqual(PillPresentation.preview(.idle).visualPhase, .idle)
+        XCTAssertEqual(PillPresentation.preview(.recording(handsFree: false)).visualPhase,
+                       .recording)
+        XCTAssertEqual(PillPresentation.preview(.success).visualPhase, .success)
+        XCTAssertEqual(PillPresentation.preview(.error).visualPhase, .error)
     }
 
     func testPrivacySafeAccessibilityLabelsNeverContainErrorDetails() {

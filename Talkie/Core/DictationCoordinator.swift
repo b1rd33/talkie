@@ -10,6 +10,13 @@ enum DictationState: Equatable {
     case error(String)
 }
 
+/// Fixed-category operational events. These values are safe to persist because
+/// they cannot represent transcript, audio, context, credential, or provider data.
+enum DictationDiagnosticEvent: String, Equatable, Sendable {
+    case realtimeStartFallback = "realtime_start_fallback"
+    case realtimeFinishFallback = "realtime_finish_fallback"
+}
+
 struct DictationResult: Equatable {
     let rawText: String
     let cleanedText: String
@@ -66,6 +73,7 @@ final class DictationCoordinator {
     private let batchProgressEnabledProvider: () -> Bool
     private let liveTypeProvider: () -> Bool
     private let liveInserter: LiveTextInserting?
+    private let diagnosticSink: (DictationDiagnosticEvent) -> Void
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
@@ -125,6 +133,7 @@ final class DictationCoordinator {
          batchProgressEnabledProvider: @escaping () -> Bool = { false },
          liveTypeProvider: @escaping () -> Bool = { false },
          liveInserter: LiveTextInserting? = nil,
+         diagnosticSink: @escaping (DictationDiagnosticEvent) -> Void = { _ in },
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
@@ -152,6 +161,7 @@ final class DictationCoordinator {
         self.batchProgressEnabledProvider = batchProgressEnabledProvider
         self.liveTypeProvider = liveTypeProvider
         self.liveInserter = liveInserter
+        self.diagnosticSink = diagnosticSink
         self.liveSessionFactory = liveSessionFactory
     }
 
@@ -236,6 +246,7 @@ final class DictationCoordinator {
                         for await samples in stream { await session.feed(samples) }
                     }
                 } catch {
+                    diagnosticSink(.realtimeStartFallback)
                     unhookLiveTap() // batch path still works; not an error
                 }
             }
@@ -409,6 +420,7 @@ final class DictationCoordinator {
                 } catch is CancellationError {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
+                    diagnosticSink(.realtimeFinishFallback)
                     // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
                     transcript = try await engine.transcribe(
                         audio,

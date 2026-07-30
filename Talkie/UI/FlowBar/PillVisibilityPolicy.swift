@@ -10,7 +10,7 @@ import Foundation
 enum PillVisibilityPolicy {
     /// Should the panel be on screen at all?
     /// hidden/compact styles exist only while a dictation is active (plus the
-    /// ~1s green-checkmark flash right after completion).
+    /// brief green-checkmark acknowledgment right after completion).
     static func shouldShowPanel(state: DictationState, style: PillStyle,
                                 showFlowBar: Bool, recentlyCompleted: Bool) -> Bool {
         guard showFlowBar else { return false }

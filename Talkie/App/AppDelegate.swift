@@ -2,12 +2,16 @@ import AppKit
 import AVFoundation
 import ApplicationServices
 import Foundation
+import OSLog
 import SwiftUI
 import UserNotifications
 
 @MainActor
 final class AppServices {
     static let shared = AppServices(environment: .launch())
+    private static let diagnosticsLogger = Logger(
+        subsystem: "com.archiev.talkie",
+        category: "Dictation")
 
     // Must precede SettingsStore/ProfileStore: both may persist defaults during
     // initialization, while setup migration needs the pre-initialization domain.
@@ -182,6 +186,9 @@ final class AppServices {
                 defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
             liveInserter: LiveTextInserter(),
+            diagnosticSink: { event in
+                Self.diagnosticsLogger.notice("\(event.rawValue, privacy: .public)")
+            },
             liveSessionFactory: { [history] onPartial in
                 guard defaults.string(forKey: "engineMode") == "instant" else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
@@ -365,7 +372,7 @@ final class AppServices {
 
     /// Re-arming observation loop: panel existence + mouse participation follow
     /// the dictation state and pill style (PillVisibilityPolicy). After a
-    /// completion, keeps the panel up ~1s so the checkmark flash stays visible.
+    /// completion, keeps the panel up briefly so the checkmark stays visible.
     private func trackPillActivity() {
         _ = withObservationTracking {
             (coordinator.state, coordinator.lastCompletedAt)
@@ -377,14 +384,15 @@ final class AppServices {
 
     /// Shared (non-observing) application of PillVisibilityPolicy.
     private func applyPillActivity() {
+        let completionDuration = PillMotionProfile.calmFlow.completionPanelDuration
         let recentlyCompleted = coordinator.lastCompletedAt
-            .map { Date().timeIntervalSince($0) < 1.0 } ?? false
+            .map { Date().timeIntervalSince($0) < completionDuration } ?? false
         flowBar?.applyActivity(state: coordinator.state, recentlyCompleted: recentlyCompleted)
         pillFlashTask?.cancel()
         if recentlyCompleted {
             // Re-evaluate once the checkmark window closes so the panel orders out.
             pillFlashTask = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(1100))
+                try? await Task.sleep(for: .seconds(completionDuration + 0.1))
                 guard !Task.isCancelled else { return }
                 self?.applyPillActivity()
             }

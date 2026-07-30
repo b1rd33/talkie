@@ -360,20 +360,45 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.lastResult?.rawText, "live text")
     }
 
+    func testLiveSessionStartFailureEmitsPrivacySafeFallbackDiagnostic() async {
+        var events: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(),
+            cleanup: MockCleanup(),
+            inserter: MockInserter(),
+            minimumHold: 0,
+            diagnosticSink: { events.append($0) },
+            liveSessionFactory: { _ in
+                throw EngineError.requestFailed(
+                    status: 401,
+                    message: "provider details must never enter diagnostics")
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(events, [.realtimeStartFallback])
+    }
+
     func testLiveFailureFallsBackToBatchEngine() async {
         let live = MockLiveSession()
         live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
         let recorder = MockRecorder()
         let inserter = MockInserter()
+        var events: [DictationDiagnosticEvent] = []
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(), // returns "raw text"
                                                cleanup: MockCleanup(), inserter: inserter,
                                                minimumHold: 0,
+                                               diagnosticSink: { events.append($0) },
                                                liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text") // batch fallback won
         XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(events, [.realtimeFinishFallback])
     }
 
     // MARK: hands-free double-tap (symmetric toggle, Model A)

@@ -50,6 +50,29 @@ final class PillRenderingTests: XCTestCase {
                        second.representation(using: .png, properties: [:]))
     }
 
+    func testChromelessInstantRecordingHasNoDecorativeModeBadge() throws {
+        var instant = PillPresentation.preview(.recording(handsFree: false))
+        instant.style = .bareWaveform
+        instant.isInstant = true
+        instant.reduceMotion = true
+        var standard = instant
+        standard.isInstant = false
+        let source = SimulatedAudioLevelSource(seed: 11, fixture: .quiet)
+
+        let instantImage = try render(PillRendererView(
+            presentation: instant,
+            levelSource: source,
+            recordingStartedAt: nil))
+        let standardImage = try render(PillRendererView(
+            presentation: standard,
+            levelSource: source,
+            recordingStartedAt: nil))
+
+        XCTAssertEqual(
+            instantImage.representation(using: .png, properties: [:]),
+            standardImage.representation(using: .png, properties: [:]))
+    }
+
     func testReducedMotionOrganicWaveformStillRespondsToMicrophoneLevel() async throws {
         var presentation = PillPresentation.preview(.recording(handsFree: false))
         presentation.style = .inkLine
