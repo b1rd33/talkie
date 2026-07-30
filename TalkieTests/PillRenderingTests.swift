@@ -73,6 +73,55 @@ final class PillRenderingTests: XCTestCase {
             standardImage.representation(using: .png, properties: [:]))
     }
 
+    func testMinimalRecordingHidesTimerByDefault() throws {
+        var first = PillPresentation.preview(.recording(handsFree: false))
+        first.reduceMotion = true
+        first.elapsed = 1
+        var second = first
+        second.elapsed = 91
+        let source = SimulatedAudioLevelSource(seed: 18, fixture: .conversation)
+
+        let firstImage = try render(PillRendererView(
+            presentation: first, levelSource: source, recordingStartedAt: nil))
+        let secondImage = try render(PillRendererView(
+            presentation: second, levelSource: source, recordingStartedAt: nil))
+
+        XCTAssertEqual(firstImage.representation(using: .png, properties: [:]),
+                       secondImage.representation(using: .png, properties: [:]))
+    }
+
+    func testVisibleCancelButtonIsIndependentOptInChrome() throws {
+        var minimal = PillPresentation.preview(.recording(handsFree: false))
+        minimal.reduceMotion = true
+        var withCancel = minimal
+        withCancel.showsCancelButton = true
+        let source = SimulatedAudioLevelSource(seed: 19, fixture: .conversation)
+
+        let minimalImage = try render(PillRendererView(
+            presentation: minimal, levelSource: source, recordingStartedAt: nil))
+        let cancelImage = try render(PillRendererView(
+            presentation: withCancel, levelSource: source, recordingStartedAt: nil))
+
+        XCTAssertNotEqual(minimalImage.representation(using: .png, properties: [:]),
+                          cancelImage.representation(using: .png, properties: [:]))
+    }
+
+    func testProcessingAndCompletionUseSameNeutralRing() throws {
+        var processing = PillPresentation.preview(.transcribing)
+        processing.reduceMotion = true
+        var completion = processing
+        completion.state = .success
+        let source = SimulatedAudioLevelSource(seed: 20, fixture: .quiet)
+
+        let processingImage = try render(PillRendererView(
+            presentation: processing, levelSource: source, recordingStartedAt: nil))
+        let completionImage = try render(PillRendererView(
+            presentation: completion, levelSource: source, recordingStartedAt: nil))
+
+        XCTAssertEqual(processingImage.representation(using: .png, properties: [:]),
+                       completionImage.representation(using: .png, properties: [:]))
+    }
+
     func testReducedMotionOrganicWaveformStillRespondsToMicrophoneLevel() async throws {
         var presentation = PillPresentation.preview(.recording(handsFree: false))
         presentation.style = .inkLine

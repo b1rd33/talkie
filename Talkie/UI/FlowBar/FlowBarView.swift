@@ -11,9 +11,7 @@ struct FlowBarView: View {
     var onHideForHour: () -> Void = {}
     var onHidePermanently: () -> Void = {}
 
-    @State private var showCheckmark = false
-    @State private var showProcessingLabel = false
-    @State private var processingLabelTask: Task<Void, Never>?
+    @State private var showCompletionExit = false
     @State private var recordingStarted = Date()
 
     private var presentation: PillPresentation {
@@ -25,7 +23,7 @@ struct FlowBarView: View {
         return PillPresentation(
             state: .map(coordinator.state,
                         handsFree: coordinator.isHandsFree,
-                        showSuccess: showCheckmark),
+                        showSuccess: showCompletionExit),
             style: settings?.pillStyle ?? .default,
             elapsed: max(0, Date().timeIntervalSince(recordingStarted)),
             audioLevel: recorder.latestLevel,
@@ -35,7 +33,8 @@ struct FlowBarView: View {
             reduceMotion: reduceMotion,
             increasedContrast: colorSchemeContrast == .increased,
             isInstant: settings?.engineMode == "instant",
-            showsProcessingLabel: showProcessingLabel)
+            showsTimer: settings?.showPillTimer ?? false,
+            showsCancelButton: settings?.showPillCancelButton ?? false)
     }
 
     var body: some View {
@@ -47,21 +46,16 @@ struct FlowBarView: View {
             onCancel: { coordinator.cancel() },
             onHideForHour: onHideForHour,
             onHidePermanently: onHidePermanently)
-        .onChange(of: coordinator.state) { oldState, newState in
+        .onChange(of: coordinator.state) { _, newState in
             if newState == .recording { recordingStarted = .now }
-            updateProcessingLabel(from: oldState, to: newState)
         }
         .onChange(of: coordinator.lastCompletedAt) { _, newValue in
             guard newValue != nil else { return }
-            showCheckmark = true
+            showCompletionExit = true
             Task {
                 try? await Task.sleep(for: .seconds(PillMotionProfile.calmFlow.successDuration))
-                showCheckmark = false
+                showCompletionExit = false
             }
-        }
-        .onDisappear {
-            processingLabelTask?.cancel()
-            processingLabelTask = nil
         }
     }
 
@@ -70,31 +64,6 @@ struct FlowBarView: View {
         s.count <= max ? s : String(s.suffix(max))
     }
 
-    private static func isProcessing(_ state: DictationState) -> Bool {
-        switch state {
-        case .transcribing, .cleaning, .inserting: true
-        case .idle, .recording, .error: false
-        }
-    }
-
-    private func updateProcessingLabel(from oldState: DictationState,
-                                       to newState: DictationState) {
-        if Self.isProcessing(newState) {
-            guard !Self.isProcessing(oldState) else { return }
-            processingLabelTask?.cancel()
-            showProcessingLabel = false
-            processingLabelTask = Task {
-                try? await Task.sleep(
-                    for: .seconds(PillMotionProfile.calmFlow.processingLabelDelay))
-                guard !Task.isCancelled, Self.isProcessing(coordinator.state) else { return }
-                showProcessingLabel = true
-            }
-        } else {
-            processingLabelTask?.cancel()
-            processingLabelTask = nil
-            showProcessingLabel = false
-        }
-    }
 }
 
 /// The shared native renderer used by the production non-activating panel.
@@ -108,6 +77,7 @@ struct PillRendererView: View {
     var onHidePermanently: () -> Void = {}
 
     @State private var handsFreeExpanded = false
+    @State private var processingRingExpanded = false
 
     private var style: PillStyle { presentation.style }
     private var isChromeless: Bool {
@@ -130,8 +100,6 @@ struct PillRendererView: View {
             switch presentation.state {
             case .idle:
                 idleView
-            case .success:
-                successView
             case .recording:
                 activePill {
                     if style == .dynamicIsland {
@@ -144,19 +112,15 @@ struct PillRendererView: View {
                         WaveformCanvasView(recorder: levelSource, color: contentForeground)
                             .accessibilityHidden(true)
                     }
-                    timerView
-                    cancelButton
+                    if presentation.showsTimer { timerView }
+                    if presentation.showsCancelButton { cancelButton }
                 }
-            case .transcribing, .cleaning, .inserting:
+            case .transcribing, .cleaning, .inserting, .success:
                 activePill {
-                    ProgressView().controlSize(.small).tint(contentForeground)
-                    if let statusLabel = presentation.statusLabel {
-                        Text(statusLabel)
-                            .font(.caption)
-                            .foregroundStyle(contentForeground.opacity(0.85))
-                            .transition(.opacity)
+                    processingRing
+                    if presentation.showsCancelButton && presentation.isCancellable {
+                        cancelButton
                     }
-                    cancelButton
                 }
             case .error:
                 errorView(presentation.errorMessage ?? "Dictation failed")
@@ -209,6 +173,9 @@ struct PillRendererView: View {
         .onAppear { updateHandsFreeAnimation() }
         .onChange(of: isHandsFree) { _, _ in updateHandsFreeAnimation() }
         .onChange(of: presentation.reduceMotion) { _, _ in updateHandsFreeAnimation() }
+        .onAppear { updateProcessingRingAnimation() }
+        .onChange(of: presentation.visualPhase) { _, _ in updateProcessingRingAnimation() }
+        .onChange(of: presentation.reduceMotion) { _, _ in updateProcessingRingAnimation() }
     }
 
     @ViewBuilder private var timerView: some View {
@@ -236,6 +203,37 @@ struct PillRendererView: View {
         handsFreeExpanded = false
         withAnimation(.easeInOut(duration: motion.handsFreeDuration).repeatForever(autoreverses: true)) {
             handsFreeExpanded = true
+        }
+    }
+
+    private var processingRing: some View {
+        Circle()
+            .stroke(
+                contentForeground.opacity(presentation.increasedContrast ? 0.9 : 0.62),
+                lineWidth: presentation.increasedContrast ? 2 : 1.5)
+            .frame(width: 16, height: 16)
+            .scaleEffect(presentation.reduceMotion
+                         ? 1
+                         : (processingRingExpanded
+                            ? motion.processingBreathMaximumScale
+                            : motion.processingBreathMinimumScale))
+            .accessibilityHidden(true)
+    }
+
+    private func updateProcessingRingAnimation() {
+        guard presentation.visualPhase == .processing,
+              !presentation.reduceMotion,
+              motion.processingBreathDuration > 0
+        else {
+            processingRingExpanded = false
+            return
+        }
+        processingRingExpanded = false
+        withAnimation(
+            .easeInOut(duration: motion.processingBreathDuration)
+                .repeatForever(autoreverses: true)
+        ) {
+            processingRingExpanded = true
         }
     }
 
@@ -267,22 +265,6 @@ struct PillRendererView: View {
                     Circle().fill(.white.opacity(0.18)).frame(width: 6, height: 6).padding(.trailing, 8)
                 }
                 .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
-        }
-    }
-
-    @ViewBuilder private var successView: some View {
-        if isChromeless {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 22))
-                .foregroundStyle(.green)
-                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-                .transition(.scale.combined(with: .opacity))
-        } else {
-            content(accent: .green) {
-                Image(systemName: "checkmark").font(.caption.bold())
-                    .foregroundStyle(style == .frostedGlass
-                                     ? AnyShapeStyle(.green) : AnyShapeStyle(.white))
-            }
         }
     }
 

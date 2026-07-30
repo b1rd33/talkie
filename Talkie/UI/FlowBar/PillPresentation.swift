@@ -43,7 +43,6 @@ struct PillPresentation: Equatable, Sendable {
     var reduceMotion: Bool
     var increasedContrast: Bool
     var isInstant = false
-    var showsProcessingLabel = false
     var showsTimer = false
     var showsCancelButton = false
 

@@ -23,14 +23,14 @@ final class PillVisibilityPolicyTests: XCTestCase {
             state: .idle, style: .hidden, showFlowBar: true, recentlyCompleted: false))
     }
 
-    func testHiddenShowsWhileActiveAndDuringCheckmarkFlash() {
+    func testHiddenShowsWhileActiveAndDuringCompletionRingExit() {
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
             state: .recording, style: .hidden, showFlowBar: true, recentlyCompleted: false))
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
             state: .transcribing, style: .hidden, showFlowBar: true, recentlyCompleted: false))
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
             state: .error("x"), style: .hidden, showFlowBar: true, recentlyCompleted: false))
-        // ≤1s after a completed dictation the green checkmark still flashes
+        // The hidden style remains mounted just long enough for the ring to exit.
         XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
             state: .idle, style: .hidden, showFlowBar: true, recentlyCompleted: true))
     }

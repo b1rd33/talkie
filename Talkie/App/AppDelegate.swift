@@ -372,7 +372,7 @@ final class AppServices {
 
     /// Re-arming observation loop: panel existence + mouse participation follow
     /// the dictation state and pill style (PillVisibilityPolicy). After a
-    /// completion, keeps the panel up briefly so the checkmark stays visible.
+    /// completion, keeps the panel up briefly so the neutral ring can exit.
     private func trackPillActivity() {
         _ = withObservationTracking {
             (coordinator.state, coordinator.lastCompletedAt)
@@ -390,7 +390,7 @@ final class AppServices {
         flowBar?.applyActivity(state: coordinator.state, recentlyCompleted: recentlyCompleted)
         pillFlashTask?.cancel()
         if recentlyCompleted {
-            // Re-evaluate once the checkmark window closes so the panel orders out.
+            // Re-evaluate once the completion ring exits so the panel orders out.
             pillFlashTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(completionDuration + 0.1))
                 guard !Task.isCancelled else { return }
