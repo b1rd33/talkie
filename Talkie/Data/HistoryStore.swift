@@ -1,17 +1,258 @@
+import CoreData
 import Foundation
+import SQLite3
 import SwiftData
 
 /// Owns the SwiftData container for dictation history (spec §8).
 @MainActor
 final class HistoryStore {
     let container: ModelContainer
+    let storeURL: URL
     private var context: ModelContext { container.mainContext }
 
-    init(inMemory: Bool = false) throws {
-        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+    convenience init(inMemory: Bool = false) throws {
+        if inMemory {
+            try self.init(
+                storeURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("Talkie-in-memory.store"),
+                inMemory: true)
+        } else {
+            let applicationSupport = FileManager.default.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask)[0]
+            try self.init(applicationSupportURL: applicationSupport)
+        }
+    }
+
+    /// Production stores live in Talkie's own directory. SwiftData's unnamed
+    /// default (`Application Support/default.store`) is process-global for
+    /// non-sandboxed apps and can belong to an unrelated application.
+    convenience init(applicationSupportURL: URL) throws {
+        let fileManager = FileManager.default
+        let directory = applicationSupportURL
+            .appendingPathComponent("Talkie", isDirectory: true)
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("Talkie.store")
+        let legacyURL = applicationSupportURL.appendingPathComponent("default.store")
+
+        let migration: MigrationSnapshot?
+        if !fileManager.fileExists(atPath: storeURL.path),
+           Self.isGenuineLegacyTalkieStore(at: legacyURL) {
+            migration = try Self.captureLegacyStore(at: legacyURL)
+        } else {
+            migration = nil
+        }
+
+        try self.init(storeURL: storeURL, inMemory: false)
+        if let migration {
+            try restore(migration)
+        }
+    }
+
+    /// Explicit URL initializer used by migration tests and tooling.
+    convenience init(storeURL: URL) throws {
+        try self.init(storeURL: storeURL, inMemory: false)
+    }
+
+    private init(storeURL: URL, inMemory: Bool) throws {
+        self.storeURL = storeURL
+        let config = inMemory
+            ? ModelConfiguration(isStoredInMemoryOnly: true)
+            : ModelConfiguration("Talkie", url: storeURL)
         container = try ModelContainer(for: DictationRecord.self, DictionaryEntry.self,
                                        AppStyleOverride.self, Snippet.self,
                                        TransformPreset.self, configurations: config)
+    }
+
+    /// A previous Talkie release may have used SwiftData's generic
+    /// `default.store`. Metadata alone is not sufficient: Core Data can rewrite
+    /// metadata before discovering that the entity tables belong to another app.
+    /// Require both Talkie's model hash and its physical history table.
+    private static func isGenuineLegacyTalkieStore(at url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let metadata = try? NSPersistentStoreCoordinator
+                .metadataForPersistentStore(type: .sqlite, at: url),
+              let hashes = metadata[NSStoreModelVersionHashesKey] as? [String: Any],
+              hashes["DictationRecord"] != nil else {
+            return false
+        }
+
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(
+            url.path,
+            &database,
+            SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+            nil) == SQLITE_OK,
+              let database else {
+            if database != nil { sqlite3_close(database) }
+            return false
+        }
+        defer { sqlite3_close(database) }
+
+        var statement: OpaquePointer?
+        let query = """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'ZDICTATIONRECORD'
+        LIMIT 1
+        """
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            return false
+        }
+        defer { sqlite3_finalize(statement) }
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    private struct RecordSnapshot {
+        let date: Date
+        let rawText: String
+        let cleanedText: String
+        let appBundleID: String?
+        let appName: String?
+        let durationSec: Double
+        let engine: String
+        let status: DictationStatus
+        let cleanupModel: String?
+        let language: String?
+        let detectedLanguages: [String]
+        let audioPath: String?
+    }
+
+    private struct DictionarySnapshot {
+        let term: String
+        let soundsLike: String?
+        let createdAt: Date
+    }
+
+    private struct StyleSnapshot {
+        let bundleID: String
+        let presetRaw: String
+    }
+
+    private struct SnippetSnapshot {
+        let id: UUID
+        let trigger: String
+        let normalizedTrigger: String
+        let expansion: String
+        let createdAt: Date
+        let updatedAt: Date
+    }
+
+    private struct TransformSnapshot {
+        let id: UUID
+        let name: String
+        let instruction: String
+        let shortcut: String?
+        let createdAt: Date
+        let updatedAt: Date
+    }
+
+    private struct MigrationSnapshot {
+        let records: [RecordSnapshot]
+        let dictionary: [DictionarySnapshot]
+        let styles: [StyleSnapshot]
+        let snippets: [SnippetSnapshot]
+        let transforms: [TransformSnapshot]
+    }
+
+    private static func captureLegacyStore(at url: URL) throws -> MigrationSnapshot {
+        let legacy = try HistoryStore(storeURL: url)
+        let context = legacy.container.mainContext
+        return try MigrationSnapshot(
+            records: context.fetch(FetchDescriptor<DictationRecord>()).map {
+                RecordSnapshot(
+                    date: $0.date,
+                    rawText: $0.rawText,
+                    cleanedText: $0.cleanedText,
+                    appBundleID: $0.appBundleID,
+                    appName: $0.appName,
+                    durationSec: $0.durationSec,
+                    engine: $0.engine,
+                    status: $0.status,
+                    cleanupModel: $0.cleanupModel,
+                    language: $0.language,
+                    detectedLanguages: $0.detectedLanguages,
+                    audioPath: $0.audioPath)
+            },
+            dictionary: context.fetch(FetchDescriptor<DictionaryEntry>()).map {
+                DictionarySnapshot(
+                    term: $0.term,
+                    soundsLike: $0.soundsLike,
+                    createdAt: $0.createdAt)
+            },
+            styles: context.fetch(FetchDescriptor<AppStyleOverride>()).map {
+                StyleSnapshot(bundleID: $0.bundleID, presetRaw: $0.presetRaw)
+            },
+            snippets: context.fetch(FetchDescriptor<Snippet>()).map {
+                SnippetSnapshot(
+                    id: $0.id,
+                    trigger: $0.trigger,
+                    normalizedTrigger: $0.normalizedTrigger,
+                    expansion: $0.expansion,
+                    createdAt: $0.createdAt,
+                    updatedAt: $0.updatedAt)
+            },
+            transforms: context.fetch(FetchDescriptor<TransformPreset>()).map {
+                TransformSnapshot(
+                    id: $0.id,
+                    name: $0.name,
+                    instruction: $0.instruction,
+                    shortcut: $0.shortcut,
+                    createdAt: $0.createdAt,
+                    updatedAt: $0.updatedAt)
+            })
+    }
+
+    private func restore(_ snapshot: MigrationSnapshot) throws {
+        for record in snapshot.records {
+            context.insert(DictationRecord(
+                date: record.date,
+                rawText: record.rawText,
+                cleanedText: record.cleanedText,
+                appBundleID: record.appBundleID,
+                appName: record.appName,
+                durationSec: record.durationSec,
+                engine: record.engine,
+                status: record.status,
+                cleanupModel: record.cleanupModel,
+                language: record.language,
+                detectedLanguages: record.detectedLanguages,
+                audioPath: record.audioPath))
+        }
+        for entry in snapshot.dictionary {
+            context.insert(DictionaryEntry(
+                term: entry.term,
+                soundsLike: entry.soundsLike,
+                createdAt: entry.createdAt))
+        }
+        for style in snapshot.styles {
+            let override = AppStyleOverride(
+                bundleID: style.bundleID,
+                preset: StylePreset(rawValue: style.presetRaw) ?? .neutral)
+            override.presetRaw = style.presetRaw
+            context.insert(override)
+        }
+        for snippet in snapshot.snippets {
+            context.insert(Snippet(
+                id: snippet.id,
+                trigger: snippet.trigger,
+                normalizedTrigger: snippet.normalizedTrigger,
+                expansion: snippet.expansion,
+                createdAt: snippet.createdAt,
+                updatedAt: snippet.updatedAt))
+        }
+        for transform in snapshot.transforms {
+            context.insert(TransformPreset(
+                id: transform.id,
+                name: transform.name,
+                instruction: transform.instruction,
+                shortcut: transform.shortcut,
+                createdAt: transform.createdAt,
+                updatedAt: transform.updatedAt))
+        }
+        try context.save()
     }
 
     func save(rawText: String, cleanedText: String, appBundleID: String?, appName: String?,
