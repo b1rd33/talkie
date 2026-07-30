@@ -8,6 +8,9 @@ struct PillMotionProfile: Equatable, Sendable {
     var handsFreeMinimumScale: Double
     var handsFreeMaximumScale: Double
     var processingLabelDelay: TimeInterval
+    var processingBreathDuration: TimeInterval
+    var processingBreathMinimumScale: Double
+    var processingBreathMaximumScale: Double
     var successDuration: TimeInterval
     var completionPanelDuration: TimeInterval
     var waveformFPS: Int
@@ -20,8 +23,11 @@ struct PillMotionProfile: Equatable, Sendable {
         handsFreeMinimumScale: 0.985,
         handsFreeMaximumScale: 1.015,
         processingLabelDelay: 0.65,
-        successDuration: 0.4,
-        completionPanelDuration: 0.6,
+        processingBreathDuration: 1.6,
+        processingBreathMinimumScale: 0.97,
+        processingBreathMaximumScale: 1,
+        successDuration: 0.16,
+        completionPanelDuration: 0.18,
         waveformFPS: 30,
         animatesWaveformGeometry: true)
 
@@ -32,8 +38,11 @@ struct PillMotionProfile: Equatable, Sendable {
         handsFreeMinimumScale: 1,
         handsFreeMaximumScale: 1,
         processingLabelDelay: 0.65,
-        successDuration: 0.4,
-        completionPanelDuration: 0.6,
+        processingBreathDuration: 0,
+        processingBreathMinimumScale: 1,
+        processingBreathMaximumScale: 1,
+        successDuration: 0.16,
+        completionPanelDuration: 0.18,
         waveformFPS: 8,
         animatesWaveformGeometry: false)
 

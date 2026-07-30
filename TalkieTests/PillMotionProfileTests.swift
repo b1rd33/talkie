@@ -10,9 +10,11 @@ final class PillMotionProfileTests: XCTestCase {
         XCTAssertEqual(profile.handsFreeMinimumScale, 0.985, accuracy: 0.0001)
         XCTAssertEqual(profile.handsFreeMaximumScale, 1.015, accuracy: 0.0001)
         XCTAssertEqual(profile.waveformFPS, 30)
-        XCTAssertEqual(profile.processingLabelDelay, 0.65, accuracy: 0.0001)
-        XCTAssertEqual(profile.successDuration, 0.4, accuracy: 0.0001)
-        XCTAssertEqual(profile.completionPanelDuration, 0.6, accuracy: 0.0001)
+        XCTAssertEqual(profile.processingBreathDuration, 1.6, accuracy: 0.0001)
+        XCTAssertEqual(profile.processingBreathMinimumScale, 0.97, accuracy: 0.0001)
+        XCTAssertEqual(profile.processingBreathMaximumScale, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(profile.successDuration, 0.16, accuracy: 0.0001)
+        XCTAssertEqual(profile.completionPanelDuration, 0.18, accuracy: 0.0001)
     }
 
     func testReduceMotionKeepsGeometryStable() {
@@ -21,6 +23,9 @@ final class PillMotionProfileTests: XCTestCase {
         XCTAssertEqual(profile.entryMinimumScale, 1)
         XCTAssertEqual(profile.handsFreeMinimumScale, 1)
         XCTAssertEqual(profile.handsFreeMaximumScale, 1)
+        XCTAssertEqual(profile.processingBreathDuration, 0)
+        XCTAssertEqual(profile.processingBreathMinimumScale, 1)
+        XCTAssertEqual(profile.processingBreathMaximumScale, 1)
         XCTAssertEqual(profile.waveformFPS, 8)
         XCTAssertFalse(profile.animatesWaveformGeometry)
     }

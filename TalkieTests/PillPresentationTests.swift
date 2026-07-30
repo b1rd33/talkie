@@ -26,14 +26,24 @@ final class PillPresentationTests: XCTestCase {
         XCTAssertEqual(PillPresentation.preview(.inserting).visualPhase, .processing)
     }
 
-    func testProcessingLabelIsDeferredAndUnified() {
+    func testProcessingStatesNeverExposeVisualText() {
         for state in [PillPresentation.State.transcribing, .cleaning, .inserting] {
-            var value = PillPresentation.preview(state)
-            XCTAssertNil(value.statusLabel)
-
-            value.showsProcessingLabel = true
-            XCTAssertEqual(value.statusLabel, "Processing…")
+            XCTAssertNil(PillPresentation.preview(state).statusLabel)
         }
+    }
+
+    func testTimerAndVisibleCancelAreIndependentOptInFlags() {
+        var value = PillPresentation.preview(.recording(handsFree: false))
+        XCTAssertFalse(value.showsTimer)
+        XCTAssertFalse(value.showsCancelButton)
+
+        value.showsTimer = true
+        XCTAssertTrue(value.showsTimer)
+        XCTAssertFalse(value.showsCancelButton)
+
+        value.showsCancelButton = true
+        XCTAssertTrue(value.showsTimer)
+        XCTAssertTrue(value.showsCancelButton)
     }
 
     func testNonProcessingStatesHaveDistinctVisualPhases() {

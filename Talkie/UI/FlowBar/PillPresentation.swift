@@ -44,14 +44,10 @@ struct PillPresentation: Equatable, Sendable {
     var increasedContrast: Bool
     var isInstant = false
     var showsProcessingLabel = false
+    var showsTimer = false
+    var showsCancelButton = false
 
-    var statusLabel: String? {
-        switch state {
-        case .transcribing, .cleaning, .inserting:
-            showsProcessingLabel ? "Processing…" : nil
-        default: nil
-        }
-    }
+    var statusLabel: String? { nil }
 
     var visualPhase: VisualPhase {
         switch state {
