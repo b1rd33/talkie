@@ -25,7 +25,11 @@ struct OpenAISSEParser {
                 .first(where: { $0.hasPrefix("data: ") }) else {
                 continue
             }
-            let json = Data(line.dropFirst(6).utf8)
+            let payload = line.dropFirst(6)
+            if payload == "[DONE]" {
+                continue
+            }
+            let json = Data(payload.utf8)
             guard let object = try JSONSerialization.jsonObject(with: json)
                 as? [String: Any] else {
                 throw EngineError.invalidResponse

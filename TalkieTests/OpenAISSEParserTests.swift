@@ -40,4 +40,21 @@ final class OpenAISSEParserTests: XCTestCase {
 
         XCTAssertEqual(events, [.delta("Hi")])
     }
+
+    func testIgnoresDoneSentinelAfterFinalTranscript() throws {
+        var parser = OpenAISSEParser()
+
+        let events = try parser.append(Data(
+            """
+            data: {"type":"transcript.text.done","text":"Hello","languages":[{"code":"en"}]}
+
+            data: [DONE]
+
+
+            """.utf8))
+
+        XCTAssertEqual(
+            events,
+            [.done(text: "Hello", detectedLanguages: ["en"])])
+    }
 }
