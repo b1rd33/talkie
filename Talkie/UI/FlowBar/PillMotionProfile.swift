@@ -7,17 +7,25 @@ struct PillMotionProfile: Equatable, Sendable {
     var handsFreeDuration: TimeInterval
     var handsFreeMinimumScale: Double
     var handsFreeMaximumScale: Double
+    var processingBreathDuration: TimeInterval
+    var processingBreathMinimumScale: Double
+    var processingBreathMaximumScale: Double
     var successDuration: TimeInterval
+    var completionPanelDuration: TimeInterval
     var waveformFPS: Int
     var animatesWaveformGeometry: Bool
 
     static let calmFlow = Self(
-        entryDuration: 0.35,
-        entryMinimumScale: 0.65,
+        entryDuration: 0.18,
+        entryMinimumScale: 0.92,
         handsFreeDuration: 2.4,
         handsFreeMinimumScale: 0.985,
         handsFreeMaximumScale: 1.015,
-        successDuration: 0.8,
+        processingBreathDuration: 1.6,
+        processingBreathMinimumScale: 0.97,
+        processingBreathMaximumScale: 1,
+        successDuration: 0.16,
+        completionPanelDuration: 0.18,
         waveformFPS: 30,
         animatesWaveformGeometry: true)
 
@@ -27,7 +35,11 @@ struct PillMotionProfile: Equatable, Sendable {
         handsFreeDuration: 0,
         handsFreeMinimumScale: 1,
         handsFreeMaximumScale: 1,
-        successDuration: 0.8,
+        processingBreathDuration: 0,
+        processingBreathMinimumScale: 1,
+        processingBreathMaximumScale: 1,
+        successDuration: 0.16,
+        completionPanelDuration: 0.18,
         waveformFPS: 8,
         animatesWaveformGeometry: false)
 

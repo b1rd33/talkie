@@ -10,6 +10,22 @@ enum DictationState: Equatable {
     case error(String)
 }
 
+/// Fixed-category operational events. These values are safe to persist because
+/// they cannot represent transcript, audio, context, credential, or provider data.
+enum DictationDiagnosticEvent: String, Equatable, Sendable {
+    case realtimeStartFallback = "realtime_start_fallback"
+    case realtimeFinishFallback = "realtime_finish_fallback"
+    case realtimeEmptyResult = "realtime_empty_result"
+    case realtimeFinishServerError = "realtime_finish_server_error"
+    case realtimeFinishTranscriptionError = "realtime_finish_transcription_error"
+    case realtimeFinishConnectionLost = "realtime_finish_connection_lost"
+    case realtimeFinishTimeout = "realtime_finish_timeout"
+    case realtimeFinishTransportFailure = "realtime_finish_transport_failure"
+    case realtimeFinishRequestFailure = "realtime_finish_request_failure"
+    case realtimeFinishUnknownFailure = "realtime_finish_unknown_failure"
+    case batchEmptyResult = "batch_empty_result"
+}
+
 struct DictationResult: Equatable {
     let rawText: String
     let cleanedText: String
@@ -66,6 +82,7 @@ final class DictationCoordinator {
     private let batchProgressEnabledProvider: () -> Bool
     private let liveTypeProvider: () -> Bool
     private let liveInserter: LiveTextInserting?
+    private let diagnosticSink: (DictationDiagnosticEvent) -> Void
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
@@ -125,6 +142,7 @@ final class DictationCoordinator {
          batchProgressEnabledProvider: @escaping () -> Bool = { false },
          liveTypeProvider: @escaping () -> Bool = { false },
          liveInserter: LiveTextInserting? = nil,
+         diagnosticSink: @escaping (DictationDiagnosticEvent) -> Void = { _ in },
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
@@ -152,6 +170,7 @@ final class DictationCoordinator {
         self.batchProgressEnabledProvider = batchProgressEnabledProvider
         self.liveTypeProvider = liveTypeProvider
         self.liveInserter = liveInserter
+        self.diagnosticSink = diagnosticSink
         self.liveSessionFactory = liveSessionFactory
     }
 
@@ -236,6 +255,7 @@ final class DictationCoordinator {
                         for await samples in stream { await session.feed(samples) }
                     }
                 } catch {
+                    diagnosticSink(.realtimeStartFallback)
                     unhookLiveTap() // batch path still works; not an error
                 }
             }
@@ -404,19 +424,25 @@ final class DictationCoordinator {
                 await liveFeedTask?.value // backlog fully fed before the commit
                 liveFeedTask = nil
                 do {
-                    transcript = try await liveSession.finish()
+                    let finished = try await liveSession.finish()
+                    guard !finished.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        throw EngineError.emptyTranscription
+                    }
+                    transcript = finished
                     usedRealtime = true
                 } catch is CancellationError {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
+                    diagnosticSink(realtimeFinishDiagnostic(for: error))
+                    diagnosticSink(.realtimeFinishFallback)
                     // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
-                    transcript = try await engine.transcribe(
+                    transcript = try await transcribeBatch(
                         audio,
                         dictionaryTerms: activePromptTerms,
                         onPartial: batchProgressSink)
                 }
             } else {
-                transcript = try await engine.transcribe(
+                transcript = try await transcribeBatch(
                     audio,
                     dictionaryTerms: activePromptTerms,
                     onPartial: batchProgressSink)
@@ -543,6 +569,50 @@ final class DictationCoordinator {
         }
     }
 
+    private func transcribeBatch(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
+        let transcript: Transcript
+        do {
+            transcript = try await engine.transcribe(
+                audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
+        } catch let error as EngineError where error == .emptyTranscription {
+            diagnosticSink(.batchEmptyResult)
+            throw error
+        }
+        guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            diagnosticSink(.batchEmptyResult)
+            throw EngineError.emptyTranscription
+        }
+        return transcript
+    }
+
+    private func realtimeFinishDiagnostic(for error: Error) -> DictationDiagnosticEvent {
+        guard let engineError = error as? EngineError else {
+            return .realtimeFinishUnknownFailure
+        }
+        switch engineError {
+        case .emptyTranscription:
+            return .realtimeEmptyResult
+        case .realtimeFailure(.serverError):
+            return .realtimeFinishServerError
+        case .realtimeFailure(.transcriptionError):
+            return .realtimeFinishTranscriptionError
+        case .realtimeFailure(.connectionLost):
+            return .realtimeFinishConnectionLost
+        case .realtimeFailure(.timeout):
+            return .realtimeFinishTimeout
+        case .realtimeFailure(.transportFailure):
+            return .realtimeFinishTransportFailure
+        case .requestFailed:
+            return .realtimeFinishRequestFailure
+        default:
+            return .realtimeFinishUnknownFailure
+        }
+    }
+
     /// Undo is posted only while the app that received the last insertion remains
     /// frontmost, so ⌘Z can never affect an unrelated application.
     func undoLastInsertion() -> Bool {
@@ -590,8 +660,10 @@ final class DictationCoordinator {
         do {
             state = .transcribing
             let terms = dictionaryTermsProvider()
-            let transcript = try await engine.transcribe(
-                audio, dictionaryTerms: dictionaryPromptTermsProvider())
+            let transcript = try await transcribeBatch(
+                audio,
+                dictionaryTerms: dictionaryPromptTermsProvider(),
+                onPartial: nil)
             let level = cleanupLevelProvider()
             var cleaned = transcript.text
             if level != .none {

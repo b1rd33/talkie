@@ -110,6 +110,9 @@ struct OpenAIEngine: TranscriptionEngine {
                 guard let final else {
                     throw EngineError.invalidResponse
                 }
+                guard !final.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw EngineError.emptyTranscription
+                }
                 return final
             } catch let urlError as URLError where
                 [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed,
@@ -142,9 +145,13 @@ struct OpenAIEngine: TranscriptionEngine {
         guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else {
             throw EngineError.invalidResponse
         }
-        return Transcript(
+        let transcript = Transcript(
             text: decoded.text,
             engineID: model,
             detectedLanguages: decoded.languages?.map(\.code) ?? [])
+        guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw EngineError.emptyTranscription
+        }
+        return transcript
     }
 }

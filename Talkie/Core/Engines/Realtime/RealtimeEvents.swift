@@ -48,22 +48,23 @@ enum RealtimeClientEvent {
                     transcription["language"] = language
                 }
             }
+            let turnDetection: Any = capabilities == .gptRealtimeWhisper
+                ? NSNull()
+                : [
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 250,
+                ]
             let session: [String: Any] = [
                 "type": "transcription",
                 "audio": [
                     "input": [
                         "format": ["type": "audio/pcm", "rate": 24_000],
                         "transcription": transcription,
-                        // Server VAD segments speech on pauses so the model transcribes
-                        // mid-hold (streamed deltas) instead of only after the manual
-                        // commit on fn-release. fn still bounds the take; finish() sends
-                        // a trailing commit for the last unspoken segment.
-                        "turn_detection": [
-                            "type": "server_vad",
-                            "threshold": 0.5,
-                            "prefix_padding_ms": 300,
-                            "silence_duration_ms": 250,
-                        ],
+                        // gpt-realtime-whisper requires turn detection to be null;
+                        // gpt-live-transcribe uses server VAD for streaming deltas.
+                        "turn_detection": turnDetection,
                     ],
                 ],
             ]

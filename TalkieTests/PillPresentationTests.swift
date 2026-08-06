@@ -20,10 +20,38 @@ final class PillPresentationTests: XCTestCase {
         XCTAssertEqual(value.accessibilityLabel, "Recording, 4 seconds, offline mode")
     }
 
-    func testProcessingLabelsAreSpecific() {
-        XCTAssertEqual(PillPresentation.preview(.transcribing).statusLabel, "Transcribing…")
-        XCTAssertEqual(PillPresentation.preview(.cleaning).statusLabel, "Cleaning…")
-        XCTAssertEqual(PillPresentation.preview(.inserting).statusLabel, "Inserting…")
+    func testProcessingStatesShareOneVisualPhase() {
+        XCTAssertEqual(PillPresentation.preview(.transcribing).visualPhase, .processing)
+        XCTAssertEqual(PillPresentation.preview(.cleaning).visualPhase, .processing)
+        XCTAssertEqual(PillPresentation.preview(.inserting).visualPhase, .processing)
+    }
+
+    func testProcessingStatesNeverExposeVisualText() {
+        for state in [PillPresentation.State.transcribing, .cleaning, .inserting] {
+            XCTAssertNil(PillPresentation.preview(state).statusLabel)
+        }
+    }
+
+    func testTimerAndVisibleCancelAreIndependentOptInFlags() {
+        var value = PillPresentation.preview(.recording(handsFree: false))
+        XCTAssertFalse(value.showsTimer)
+        XCTAssertFalse(value.showsCancelButton)
+
+        value.showsTimer = true
+        XCTAssertTrue(value.showsTimer)
+        XCTAssertFalse(value.showsCancelButton)
+
+        value.showsCancelButton = true
+        XCTAssertTrue(value.showsTimer)
+        XCTAssertTrue(value.showsCancelButton)
+    }
+
+    func testNonProcessingStatesHaveDistinctVisualPhases() {
+        XCTAssertEqual(PillPresentation.preview(.idle).visualPhase, .idle)
+        XCTAssertEqual(PillPresentation.preview(.recording(handsFree: false)).visualPhase,
+                       .recording)
+        XCTAssertEqual(PillPresentation.preview(.success).visualPhase, .success)
+        XCTAssertEqual(PillPresentation.preview(.error).visualPhase, .error)
     }
 
     func testPrivacySafeAccessibilityLabelsNeverContainErrorDetails() {

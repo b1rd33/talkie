@@ -51,6 +51,7 @@ actor OpenAIRealtimeSession {
     private var settlingTask: Task<Void, Never>?
     private var timeoutTask: Task<Void, Never>?
     private var completedTranscript: String?
+    private var finishError: EngineError?
     private var serverError: String?
     private var finishContinuation: CheckedContinuation<String, Error>?
 
@@ -145,7 +146,12 @@ actor OpenAIRealtimeSession {
         // only cancels the loop and closes the transport, so the order is safe.
         defer { cleanup() }
         finishing = true // fn released — drain the trailing segment, then finalize
-        if let serverError { throw EngineError.requestFailed(status: 0, message: serverError) }
+        if let finishError {
+            throw finishError
+        }
+        if serverError != nil {
+            throw EngineError.realtimeFailure(.serverError)
+        }
         if let tail = try? encoder.flush(), !tail.isEmpty {
             try? await transport.send(RealtimeClientEvent.audioAppend(pcm16: tail).encoded())
         }
@@ -154,13 +160,19 @@ actor OpenAIRealtimeSession {
         let eventID = eventIDProvider()
         finalCommitEventID = eventID
         finalCommitOutcome = .pending
-        try await transport.send(RealtimeClientEvent.audioCommit(eventID: eventID).encoded())
+        do {
+            try await transport.send(RealtimeClientEvent.audioCommit(eventID: eventID).encoded())
+        } catch {
+            throw EngineError.realtimeFailure(.transportFailure)
+        }
         startFinishTimeout()
         let text: String = try await withCheckedThrowingContinuation { continuation in
             if let completedTranscript {
                 continuation.resume(returning: completedTranscript)
-            } else if let serverError {
-                continuation.resume(throwing: EngineError.requestFailed(status: 0, message: serverError))
+            } else if let finishError {
+                continuation.resume(throwing: finishError)
+            } else if serverError != nil {
+                continuation.resume(throwing: EngineError.realtimeFailure(.serverError))
             } else {
                 finishContinuation = continuation
             }
@@ -188,7 +200,7 @@ actor OpenAIRealtimeSession {
     private func runReceiveLoop() async {
         while !Task.isCancelled {
             guard let data = try? await transport.receive() else {
-                deliver(error: serverError ?? "realtime connection lost")
+                deliver(error: serverError ?? "realtime connection lost", category: .connectionLost)
                 return
             }
             guard let event = try? RealtimeServerEvent.decode(data) else { continue }
@@ -221,7 +233,7 @@ actor OpenAIRealtimeSession {
                 scheduleSettlingIfEligible()
             case .transcriptionFailed(let itemID, let message):
                 items[itemID, default: ItemState()].failure = message
-                deliver(error: "transcription failed for \(itemID): \(message)")
+                deliver(error: "transcription failed", category: .transcriptionError)
                 return
             case .commitEmpty(let clientEventID):
                 guard finishing, clientEventID == finalCommitEventID else { continue }
@@ -229,7 +241,7 @@ actor OpenAIRealtimeSession {
                 finalCommitOutcome = .empty
                 scheduleSettlingIfEligible()
             case .error(let message, _):
-                deliver(error: message)
+                deliver(error: message, category: .serverError)
                 return
             case .ignored:
                 continue
@@ -250,7 +262,7 @@ actor OpenAIRealtimeSession {
     }
 
     private var isReadyToSettle: Bool {
-        guard finishing, completedTranscript == nil else { return false }
+        guard finishing, completedTranscript == nil, finishError == nil else { return false }
         guard finalCommitOutcome != .pending else { return false }
         return committedItemIDs.allSatisfy { items[$0]?.isTerminal == true }
     }
@@ -271,8 +283,13 @@ actor OpenAIRealtimeSession {
     private func finalizeIfStable(generation: Int) {
         guard generation == activityGeneration, isReadyToSettle else { return }
         let result = liveCumulative().trimmingCharacters(in: .whitespacesAndNewlines)
-        completedTranscript = result
-        finishContinuation?.resume(returning: result)
+        if result.isEmpty {
+            finishError = .emptyTranscription
+            finishContinuation?.resume(throwing: EngineError.emptyTranscription)
+        } else {
+            completedTranscript = result
+            finishContinuation?.resume(returning: result)
+        }
         finishContinuation = nil
         timeoutTask?.cancel()
         timeoutTask = nil
@@ -283,18 +300,19 @@ actor OpenAIRealtimeSession {
         timeoutTask = Task { [weak self, finishTimeout] in
             try? await Task.sleep(for: finishTimeout)
             guard !Task.isCancelled else { return }
-            await self?.deliver(error: "realtime finalization timed out")
+            await self?.deliver(error: "realtime finalization timed out", category: .timeout)
         }
     }
 
-    private func deliver(error message: String) {
+    private func deliver(error message: String, category: RealtimeFailureCategory) {
         guard completedTranscript == nil, serverError == nil else { return }
         serverError = message
+        finishError = .realtimeFailure(category)
         settlingTask?.cancel()
         settlingTask = nil
         timeoutTask?.cancel()
         timeoutTask = nil
-        finishContinuation?.resume(throwing: EngineError.requestFailed(status: 0, message: message))
+        finishContinuation?.resume(throwing: EngineError.realtimeFailure(category))
         finishContinuation = nil
     }
 }

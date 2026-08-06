@@ -11,7 +11,7 @@ struct FlowBarView: View {
     var onHideForHour: () -> Void = {}
     var onHidePermanently: () -> Void = {}
 
-    @State private var showCheckmark = false
+    @State private var showCompletionExit = false
     @State private var recordingStarted = Date()
 
     private var presentation: PillPresentation {
@@ -23,7 +23,7 @@ struct FlowBarView: View {
         return PillPresentation(
             state: .map(coordinator.state,
                         handsFree: coordinator.isHandsFree,
-                        showSuccess: showCheckmark),
+                        showSuccess: showCompletionExit),
             style: settings?.pillStyle ?? .default,
             elapsed: max(0, Date().timeIntervalSince(recordingStarted)),
             audioLevel: recorder.latestLevel,
@@ -32,7 +32,9 @@ struct FlowBarView: View {
             cleanupDegraded: coordinator.cleanupDegraded,
             reduceMotion: reduceMotion,
             increasedContrast: colorSchemeContrast == .increased,
-            isInstant: settings?.engineMode == "instant")
+            isInstant: settings?.engineMode == "instant",
+            showsTimer: settings?.showPillTimer ?? false,
+            showsCancelButton: settings?.showPillCancelButton ?? false)
     }
 
     var body: some View {
@@ -49,10 +51,10 @@ struct FlowBarView: View {
         }
         .onChange(of: coordinator.lastCompletedAt) { _, newValue in
             guard newValue != nil else { return }
-            showCheckmark = true
+            showCompletionExit = true
             Task {
-                try? await Task.sleep(for: .milliseconds(800))
-                showCheckmark = false
+                try? await Task.sleep(for: .seconds(PillMotionProfile.calmFlow.successDuration))
+                showCompletionExit = false
             }
         }
     }
@@ -61,6 +63,7 @@ struct FlowBarView: View {
     static func tail(_ s: String, max: Int) -> String {
         s.count <= max ? s : String(s.suffix(max))
     }
+
 }
 
 /// The shared native renderer used by the production non-activating panel.
@@ -74,6 +77,7 @@ struct PillRendererView: View {
     var onHidePermanently: () -> Void = {}
 
     @State private var handsFreeExpanded = false
+    @State private var processingRingExpanded = false
 
     private var style: PillStyle { presentation.style }
     private var isChromeless: Bool {
@@ -96,16 +100,10 @@ struct PillRendererView: View {
             switch presentation.state {
             case .idle:
                 idleView
-            case .success:
-                successView
             case .recording:
                 activePill {
                     if style == .dynamicIsland {
                         Circle().fill(.red).frame(width: 7, height: 7)
-                    } else if presentation.isInstant {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.yellow)
                     }
                     if isOrganicWaveform {
                         OrganicWaveformView(style: style, levelSource: levelSource,
@@ -114,16 +112,15 @@ struct PillRendererView: View {
                         WaveformCanvasView(recorder: levelSource, color: contentForeground)
                             .accessibilityHidden(true)
                     }
-                    timerView
-                    cancelButton
+                    if presentation.showsTimer { timerView }
+                    if presentation.showsCancelButton { cancelButton }
                 }
-            case .transcribing, .cleaning, .inserting:
+            case .transcribing, .cleaning, .inserting, .success:
                 activePill {
-                    ProgressView().controlSize(.small).tint(contentForeground)
-                    Text(presentation.statusLabel ?? "Polishing…")
-                        .font(.caption)
-                        .foregroundStyle(contentForeground.opacity(0.85))
-                    cancelButton
+                    processingRing
+                    if presentation.showsCancelButton && presentation.isCancellable {
+                        cancelButton
+                    }
                 }
             case .error:
                 errorView(presentation.errorMessage ?? "Dictation failed")
@@ -137,10 +134,8 @@ struct PillRendererView: View {
                      ? (handsFreeExpanded ? motion.handsFreeMaximumScale
                                           : motion.handsFreeMinimumScale)
                      : 1)
-        .animation(presentation.reduceMotion
-                   ? .easeOut(duration: motion.entryDuration)
-                   : .spring(duration: motion.entryDuration),
-                   value: presentation.state)
+        .animation(.easeOut(duration: motion.entryDuration),
+                   value: presentation.visualPhase)
         .overlay(alignment: .topTrailing) {
             if presentation.offline {
                 Text("offline")
@@ -178,6 +173,9 @@ struct PillRendererView: View {
         .onAppear { updateHandsFreeAnimation() }
         .onChange(of: isHandsFree) { _, _ in updateHandsFreeAnimation() }
         .onChange(of: presentation.reduceMotion) { _, _ in updateHandsFreeAnimation() }
+        .onAppear { updateProcessingRingAnimation() }
+        .onChange(of: presentation.visualPhase) { _, _ in updateProcessingRingAnimation() }
+        .onChange(of: presentation.reduceMotion) { _, _ in updateProcessingRingAnimation() }
     }
 
     @ViewBuilder private var timerView: some View {
@@ -205,6 +203,37 @@ struct PillRendererView: View {
         handsFreeExpanded = false
         withAnimation(.easeInOut(duration: motion.handsFreeDuration).repeatForever(autoreverses: true)) {
             handsFreeExpanded = true
+        }
+    }
+
+    private var processingRing: some View {
+        Circle()
+            .stroke(
+                contentForeground.opacity(presentation.increasedContrast ? 0.9 : 0.62),
+                lineWidth: presentation.increasedContrast ? 2 : 1.5)
+            .frame(width: 16, height: 16)
+            .scaleEffect(presentation.reduceMotion
+                         ? 1
+                         : (processingRingExpanded
+                            ? motion.processingBreathMaximumScale
+                            : motion.processingBreathMinimumScale))
+            .accessibilityHidden(true)
+    }
+
+    private func updateProcessingRingAnimation() {
+        guard presentation.visualPhase == .processing,
+              !presentation.reduceMotion,
+              motion.processingBreathDuration > 0
+        else {
+            processingRingExpanded = false
+            return
+        }
+        processingRingExpanded = false
+        withAnimation(
+            .easeInOut(duration: motion.processingBreathDuration)
+                .repeatForever(autoreverses: true)
+        ) {
+            processingRingExpanded = true
         }
     }
 
@@ -236,22 +265,6 @@ struct PillRendererView: View {
                     Circle().fill(.white.opacity(0.18)).frame(width: 6, height: 6).padding(.trailing, 8)
                 }
                 .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
-        }
-    }
-
-    @ViewBuilder private var successView: some View {
-        if isChromeless {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 22))
-                .foregroundStyle(.green)
-                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-                .transition(.scale.combined(with: .opacity))
-        } else {
-            content(accent: .green) {
-                Image(systemName: "checkmark").font(.caption.bold())
-                    .foregroundStyle(style == .frostedGlass
-                                     ? AnyShapeStyle(.green) : AnyShapeStyle(.white))
-            }
         }
     }
 

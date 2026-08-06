@@ -7,11 +7,21 @@ struct Transcript: Sendable, Equatable {
     var detectedLanguages: [String] = []
 }
 
+enum RealtimeFailureCategory: String, Equatable, Sendable {
+    case serverError
+    case transcriptionError
+    case connectionLost
+    case timeout
+    case transportFailure
+}
+
 enum EngineError: Error, Equatable, LocalizedError {
     case missingAPIKey
     case localModelsUnavailable
     case requestFailed(status: Int, message: String)
     case invalidResponse
+    case emptyTranscription
+    case realtimeFailure(RealtimeFailureCategory)
     case offline
 
     var errorDescription: String? {
@@ -21,6 +31,8 @@ enum EngineError: Error, Equatable, LocalizedError {
             "On-device models aren't downloaded. Download them in Settings → Engines, or explicitly switch to Cloud or Instant."
         case .requestFailed(let status, let message): "Request failed (\(status)): \(message)"
         case .invalidResponse: "The API returned an unreadable response."
+        case .emptyTranscription: "The transcription service returned no text."
+        case .realtimeFailure: "Realtime transcription failed."
         case .offline: "No internet connection."
         }
     }

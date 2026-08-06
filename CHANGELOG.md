@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-06
+
 ### Added
 
 - Native organic pill styles, privacy and provider data-flow documentation, and public community guidance.
+- Minimal waveform and processing-ring pill variants with configurable counter
+  and cancel controls.
 - A fail-closed Developer ID release pipeline with Apple notarization,
   stapling, Gatekeeper validation, deterministic ZIP/DMG checksums, and a
   credential-authenticating environment preflight.
@@ -23,6 +27,13 @@
 ### Fixed
 
 - Enforced fail-closed local-only transcription behavior and hardened accessibility, pill rendering, and host-integration safety checks.
+- Fixed streamed transcription completion parsing and persistent history-store
+  collisions.
+- Prevented empty realtime or batch transcriptions from being inserted or saved
+  as successful history entries, and added privacy-safe realtime failure
+  categories for diagnosis.
+- Preserved `gpt-live-transcribe` as the recommended instant model while using
+  the no-VAD contract required by optional `gpt-realtime-whisper` sessions.
 
 ## [1.0.0] - 2026-06-15
 

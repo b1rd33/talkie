@@ -3,6 +3,14 @@ import Foundation
 /// Privacy-safe, value-based input for the floating pill renderer.
 /// Transcript, context, clipboard, and credential data cannot be represented here.
 struct PillPresentation: Equatable, Sendable {
+    enum VisualPhase: Equatable, Sendable {
+        case idle
+        case recording
+        case processing
+        case success
+        case error
+    }
+
     enum State: Equatable, Sendable {
         case idle
         case recording(handsFree: Bool)
@@ -35,13 +43,18 @@ struct PillPresentation: Equatable, Sendable {
     var reduceMotion: Bool
     var increasedContrast: Bool
     var isInstant = false
+    var showsTimer = false
+    var showsCancelButton = false
 
-    var statusLabel: String? {
+    var statusLabel: String? { nil }
+
+    var visualPhase: VisualPhase {
         switch state {
-        case .transcribing: "Transcribing…"
-        case .cleaning: "Cleaning…"
-        case .inserting: "Inserting…"
-        default: nil
+        case .idle: .idle
+        case .recording: .recording
+        case .transcribing, .cleaning, .inserting: .processing
+        case .success: .success
+        case .error: .error
         }
     }
 

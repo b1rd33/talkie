@@ -33,6 +33,15 @@ final class SettingsStoreTests: XCTestCase {
             "gpt-4o-mini-transcribe")
     }
 
+    func testRealtimeWhisperSelectionIsPreservedAsAnAlternative() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        defaults.set("gpt-realtime-whisper", forKey: "realtimeTranscriptionModel")
+
+        let store = SettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.realtimeTranscriptionModel, "gpt-realtime-whisper")
+    }
+
     func testExpectedLanguagesMigrateOnceFromPinnedLanguage() {
         let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
         defaults.set("de", forKey: "pinnedLanguage")
@@ -60,6 +69,19 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.contextExcludedBundleIDs.isEmpty)
         XCTAssertEqual(store.pillStyle, .bareWaveform)
         XCTAssertEqual(store.pillPosition, "bottomCenter")
+        XCTAssertFalse(store.showPillTimer)
+        XCTAssertFalse(store.showPillCancelButton)
+    }
+
+    func testPillChromePreferencesRoundTripIndependently() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        let store = SettingsStore(defaults: defaults)
+        store.showPillTimer = true
+        XCTAssertTrue(SettingsStore(defaults: defaults).showPillTimer)
+        XCTAssertFalse(SettingsStore(defaults: defaults).showPillCancelButton)
+
+        store.showPillCancelButton = true
+        XCTAssertTrue(SettingsStore(defaults: defaults).showPillCancelButton)
     }
 
     func testPressEnterActionRoundTrips() {

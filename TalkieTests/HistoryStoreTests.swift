@@ -3,6 +3,46 @@ import XCTest
 
 @MainActor
 final class HistoryStoreTests: XCTestCase {
+    func testPersistentStoreUsesTalkieDirectoryAndLeavesUnrelatedDefaultStoreUntouched() throws {
+        let applicationSupport = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: applicationSupport) }
+        let unrelatedStore = applicationSupport.appendingPathComponent("default.store")
+        let unrelatedContents = Data("another app owns this database".utf8)
+        try unrelatedContents.write(to: unrelatedStore)
+
+        let store = try HistoryStore(applicationSupportURL: applicationSupport)
+        store.save(rawText: "raw", cleanedText: "Talkie data", appBundleID: nil,
+                   appName: nil, duration: 1, engine: "openai", status: .completed)
+
+        XCTAssertEqual(
+            store.storeURL,
+            applicationSupport
+                .appendingPathComponent("Talkie", isDirectory: true)
+                .appendingPathComponent("Talkie.store"))
+        XCTAssertEqual(try Data(contentsOf: unrelatedStore), unrelatedContents)
+        XCTAssertEqual(store.recent(limit: 1).first?.cleanedText, "Talkie data")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.storeURL.path))
+    }
+
+    func testMigratesOnlyAGenuineLegacyTalkieStore() throws {
+        let applicationSupport = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: applicationSupport) }
+        let legacyURL = applicationSupport.appendingPathComponent("default.store")
+
+        do {
+            let legacy = try HistoryStore(storeURL: legacyURL)
+            legacy.save(rawText: "legacy raw", cleanedText: "Legacy Talkie data",
+                        appBundleID: "com.apple.TextEdit", appName: "TextEdit",
+                        duration: 2, engine: "openai", status: .completed)
+        }
+
+        let migrated = try HistoryStore(applicationSupportURL: applicationSupport)
+
+        XCTAssertEqual(migrated.recent(limit: 1).first?.cleanedText, "Legacy Talkie data")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: migrated.storeURL.path))
+    }
+
     func testDetectedLanguagesRoundTripSeparatelyFromOutputLanguage() {
         let record = DictationRecord(
             rawText: "Bonjour",
@@ -21,6 +61,15 @@ final class HistoryStoreTests: XCTestCase {
 
     private func makeStore() throws -> HistoryStore {
         try HistoryStore(inMemory: true)
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("talkie-history-tests-\(UUID().uuidString)",
+                                    isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: url, withIntermediateDirectories: false)
+        return url
     }
 
     func testSaveAndFetchRecent() throws {

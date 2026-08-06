@@ -327,6 +327,13 @@ private struct GeneralSettingsTab: View {
                     Text("Frosted glass — translucent capsule").tag(PillStyle.frostedGlass)
                     Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
                 }
+                Toggle("Show recording timer", isOn: $settings.showPillTimer)
+                    .disabled(!settings.showFlowBar)
+                Toggle("Show cancel button", isOn: $settings.showPillCancelButton)
+                    .disabled(!settings.showFlowBar)
+                Text("Both are optional. Escape always cancels dictation even when the button is hidden.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker("Pill position", selection: $settings.pillPosition) {
                     Text("Bottom center").tag("bottomCenter")
                     Text("Bottom left").tag("bottomLeft")

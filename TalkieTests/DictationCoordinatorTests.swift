@@ -164,6 +164,28 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
     }
 
+    func testEmptyTranscriptionFailsAndIsNotSavedCompleted() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let inserter = MockInserter()
+        var events: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "  "))),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            history: history, cleanupLevelProvider: { .none },
+            diagnosticSink: { events.append($0) })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertNil(coordinator.lastResult)
+        XCTAssertEqual(history.recent(limit: 1).first?.status, .failed)
+        XCTAssertNotEqual(history.recent(limit: 1).first?.status, .completed)
+        XCTAssertEqual(events, [.batchEmptyResult])
+    }
+
     func testDetectedLanguagesAreSavedWithCompletedHistory() async throws {
         let history = try HistoryStore(inMemory: true)
         let engine = MockEngine(result: .success(Transcript(
@@ -360,20 +382,63 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.lastResult?.rawText, "live text")
     }
 
+    func testLiveSessionStartFailureEmitsPrivacySafeFallbackDiagnostic() async {
+        var events: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(),
+            cleanup: MockCleanup(),
+            inserter: MockInserter(),
+            minimumHold: 0,
+            diagnosticSink: { events.append($0) },
+            liveSessionFactory: { _ in
+                throw EngineError.requestFailed(
+                    status: 401,
+                    message: "provider details must never enter diagnostics")
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(events, [.realtimeStartFallback])
+    }
+
     func testLiveFailureFallsBackToBatchEngine() async {
         let live = MockLiveSession()
         live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
         let recorder = MockRecorder()
         let inserter = MockInserter()
+        var events: [DictationDiagnosticEvent] = []
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(), // returns "raw text"
                                                cleanup: MockCleanup(), inserter: inserter,
                                                minimumHold: 0,
+                                               diagnosticSink: { events.append($0) },
                                                liveSessionFactory: { _ in live })
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text") // batch fallback won
         XCTAssertEqual(coordinator.state, .idle)
+        XCTAssertEqual(events, [.realtimeFinishRequestFailure, .realtimeFinishFallback])
+    }
+
+    func testEmptyLiveResultFallsBackToBatchWithCategoryOnlyDiagnostics() async {
+        let live = MockLiveSession()
+        live.finishResult = .success(Transcript(text: " \n", engineID: "gpt-realtime-whisper"))
+        var events: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            diagnosticSink: { events.append($0) },
+            liveSessionFactory: { _ in live })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+        XCTAssertEqual(events, [.realtimeEmptyResult, .realtimeFinishFallback])
     }
 
     // MARK: hands-free double-tap (symmetric toggle, Model A)
@@ -948,6 +1013,32 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path)) // consumed on success
         XCTAssertTrue(inserter.inserted.isEmpty) // delivery is the caller's job (clipboard, Task 7)
         XCTAssertEqual(coordinator.state, .idle)
+    }
+
+    func testRetryRejectsEmptyTranscriptionAndKeepsFailedAudio() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let audioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("talkie-empty-retry-test-\(UUID().uuidString).m4a")
+        try Data("fake audio".utf8).write(to: audioURL)
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+        history.save(rawText: "", cleanedText: "", appBundleID: nil, appName: nil,
+                     duration: 2, engine: "openai", status: .failed, audioPath: audioURL.path)
+        let record = history.recent(limit: 1)[0]
+        var diagnostics: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "  \n"))),
+            cleanup: MockCleanup(), inserter: MockInserter(), minimumHold: 0,
+            history: history,
+            diagnosticSink: { diagnostics.append($0) })
+
+        let text = await coordinator.retry(record)
+
+        XCTAssertNil(text)
+        XCTAssertEqual(record.status, .failed)
+        XCTAssertEqual(record.audioPath, audioURL.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertEqual(diagnostics, [.batchEmptyResult])
     }
 
     func testProvidersFeedEngineAndCleanupResolvedAtPressTime() async {

@@ -169,6 +169,24 @@ final class OpenAIEngineTests: XCTestCase {
         XCTAssertFalse(body.contains("name=\"language\""))
     }
 
+    func testEmptyCompletedResponseFailsClosed() async {
+        StubURLProtocol.handler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200,
+                             httpVersion: nil, headerFields: nil)!,
+             Data(#"{"text":"   "}"#.utf8))
+        }
+
+        do {
+            _ = try await makeEngine().transcribe(
+                RecordedAudio(fileURL: audioURL, duration: 1.0), dictionaryTerms: [])
+            XCTFail("expected an empty transcription failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .emptyTranscription)
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
+    }
+
     func testStreamsCompletedFileProgressAndRequiresFinalEvent() async throws {
         var capturedBody: Data?
         StubURLProtocol.handler = { request in
@@ -226,6 +244,26 @@ final class OpenAIEngineTests: XCTestCase {
             XCTFail("expected a missing-final-event failure")
         } catch let error as EngineError {
             XCTAssertEqual(error, .invalidResponse)
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
+    }
+
+    func testEmptyStreamedCompletionFailsClosed() async {
+        StubURLProtocol.handler = { request in
+            (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil,
+                    headerFields: ["Content-Type": "text/event-stream"])!,
+                Data("data: {\"type\":\"transcript.text.done\",\"text\":\" \"}\n\n".utf8))
+        }
+
+        do {
+            _ = try await makeEngine(stream: true).transcribe(
+                RecordedAudio(fileURL: audioURL, duration: 1.0), dictionaryTerms: [])
+            XCTFail("expected an empty streamed transcription failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .emptyTranscription)
         } catch {
             XCTFail("wrong error: \(error)")
         }

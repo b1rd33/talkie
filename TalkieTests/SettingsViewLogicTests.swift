@@ -97,4 +97,15 @@ final class SettingsViewLogicTests: XCTestCase {
         XCTAssertTrue(advancedSettings.contains("will not use cloud automatically"))
         XCTAssertTrue(advancedSettings.contains("switch to Cloud or Instant explicitly"))
     }
+
+    func testAppearanceExposesIndependentOptionalPillChrome() throws {
+        let source = try repositoryFile("Talkie/UI/Hub/SettingsView.swift")
+
+        XCTAssertTrue(source.contains(
+            "Toggle(\"Show recording timer\", isOn: $settings.showPillTimer)"))
+        XCTAssertTrue(source.contains(
+            "Toggle(\"Show cancel button\", isOn: $settings.showPillCancelButton)"))
+        XCTAssertTrue(source.contains(
+            "Escape always cancels dictation even when the button is hidden."))
+    }
 }
