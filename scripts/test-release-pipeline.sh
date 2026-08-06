@@ -60,11 +60,11 @@ assert_event_sequence() {
 assert_failure_without_release() {
   local status="$1" root="$2" message="$3"
   [[ "$status" -ne 0 ]] || fail "$message: command unexpectedly succeeded"
-  [[ ! -e "$root/build/release-1.0.0" ]] \
+  [[ ! -e "$root/build/release-1.1.0" ]] \
     || fail "$message: publishable release directory survived failure"
   [[ ! -e "$root/build/ExportOptions.resolved.plist" ]] \
     || fail "$message: resolved export options survived outside private staging"
-  [[ "$(find "$root/build" -maxdepth 1 -name '.release-1.0.0.*' | wc -l | tr -d ' ')" == "0" ]] \
+  [[ "$(find "$root/build" -maxdepth 1 -name '.release-1.1.0.*' | wc -l | tr -d ' ')" == "0" ]] \
     || fail "$message: private release staging survived failure"
 }
 
@@ -159,7 +159,7 @@ make_fixture() {
     '      previous="$argument"' \
     '    done' \
     '    if [[ "${1:-}" == "archive" && -n "$archive_path" ]]; then' \
-    '      if [[ "$archive_path" == build/.release-1.0.0.*/Talkie.xcarchive ]]; then' \
+    '      if [[ "$archive_path" == build/.release-1.1.0.*/Talkie.xcarchive ]]; then' \
     '        printf "%s\n" "${archive_path%/Talkie.xcarchive}" > "$state_dir/release-stage"' \
     '      elif [[ "$archive_path" != "build/Talkie-community-preview.xcarchive" ]]; then' \
     '        die' \
@@ -246,7 +246,7 @@ make_fixture() {
     '      if [[ "$kind" == "exported" ]]; then event "exported-app-verified"; else event "$kind-verified"; fi' \
     '      exit 0' \
     '    fi' \
-    '    if [[ "$#" -eq 5 && "$1" == "-a" && "$2" == "-vv" && "$3" == "--type" && "$4" == "open" && "$target" == "$stage/output/Talkie-1.0.0.dmg" ]]; then' \
+    '    if [[ "$#" -eq 5 && "$1" == "-a" && "$2" == "-vv" && "$3" == "--type" && "$4" == "open" && "$target" == "$stage/output/Talkie-1.1.0.dmg" ]]; then' \
     '      [[ -f "$state_dir/dmg-ticket-validated" ]] || die' \
     '      if [[ "${LATE_VERIFY_FAIL:-}" == "dmg" ]]; then exit 96; fi' \
     '      touch "$state_dir/outer-dmg-verified"' \
@@ -269,12 +269,12 @@ make_fixture() {
     '      count=$((count + 1))' \
     '      case "$count" in' \
     '        1)' \
-    '          expected="$stage/work/Talkie-1.0.0-notarization-upload.zip"' \
+    '          expected="$stage/work/Talkie-1.1.0-notarization-upload.zip"' \
     '          [[ -f "$state_dir/app-upload-packaged" ]] || die' \
     '          event_name="app-upload-submitted"' \
     '          ;;' \
     '        2)' \
-    '          expected="$stage/output/Talkie-1.0.0.dmg"' \
+    '          expected="$stage/output/Talkie-1.1.0.dmg"' \
     '          [[ -f "$state_dir/dmg-created" ]] || die' \
     '          event_name="dmg-submitted"' \
     '          ;;' \
@@ -297,7 +297,7 @@ make_fixture() {
     '        [[ -f "$state_dir/app-upload-submitted" ]] || die' \
     '        touch "$target/.stub-stapled" "$state_dir/exported-app-stapled"' \
     '        event "exported-app-stapled"' \
-    '      elif [[ "$target" == "$stage/output/Talkie-1.0.0.dmg" && -f "$target" ]]; then' \
+    '      elif [[ "$target" == "$stage/output/Talkie-1.1.0.dmg" && -f "$target" ]]; then' \
     '        [[ -f "$state_dir/dmg-submitted" ]] || die' \
     '        touch "$state_dir/dmg-stapled"' \
     '        event "dmg-stapled"' \
@@ -315,7 +315,7 @@ make_fixture() {
     '        [[ -f "$target/.stub-stapled" && -f "$state_dir/entitlements-$kind-$count" ]] || die' \
     '        touch "$state_dir/ticket-$kind"' \
     '        if [[ "$kind" == "exported" ]]; then event "exported-app-ticket-validated"; fi' \
-    '      elif [[ "$target" == "$stage/output/Talkie-1.0.0.dmg" && -f "$target" ]]; then' \
+    '      elif [[ "$target" == "$stage/output/Talkie-1.1.0.dmg" && -f "$target" ]]; then' \
     '        [[ -f "$state_dir/dmg-stapled" ]] || die' \
     '        touch "$state_dir/dmg-ticket-validated"' \
     '      else' \
@@ -329,12 +329,12 @@ make_fixture() {
     '    if [[ "$#" -eq 5 && "$1" == "-c" && "$2" == "-k" && "$3" == "--keepParent" ]]; then' \
     '      source="$4"; destination="$5"; [[ -d "$source" ]] || die' \
     '      if stage="$(release_stage 2>/dev/null)"; then' \
-    '        if [[ "$source" == "$stage/export/Talkie.app" && "$destination" == "$stage/work/Talkie-1.0.0-notarization-upload.zip" ]]; then' \
+    '        if [[ "$source" == "$stage/export/Talkie.app" && "$destination" == "$stage/work/Talkie-1.1.0-notarization-upload.zip" ]]; then' \
     '          [[ ! -f "$source/.stub-stapled" && ! -f "$state_dir/app-upload-packaged" ]] || die' \
     '          content_dir="$state_dir/app-upload-content"' \
     '          marker="app-upload-packaged"' \
     '          event_name=""' \
-    '        elif [[ "$source" == "$stage/export/Talkie.app" && "$destination" == "$stage/output/Talkie-1.0.0.zip" ]]; then' \
+    '        elif [[ "$source" == "$stage/export/Talkie.app" && "$destination" == "$stage/output/Talkie-1.1.0.zip" ]]; then' \
     '          [[ -f "$state_dir/verified-exported" && -f "$source/.stub-stapled" && ! -f "$state_dir/final-zip-packaged" ]] || die' \
     '          content_dir="$state_dir/final-zip-content"' \
     '          marker="final-zip-packaged"' \
@@ -342,7 +342,7 @@ make_fixture() {
     '        else' \
     '          die' \
     '        fi' \
-    '      elif [[ "$source" == "build/export-community-preview/Talkie.app" && "$destination" == "build/community-preview-1.0.0/Talkie-1.0.0-community-preview-adhoc.zip" ]]; then' \
+    '      elif [[ "$source" == "build/export-community-preview/Talkie.app" && "$destination" == "build/community-preview-1.1.0/Talkie-1.1.0-community-preview-adhoc.zip" ]]; then' \
     '        content_dir="$state_dir/preview-zip-content"' \
     '        marker="preview-zip-packaged"' \
     '        event_name=""' \
@@ -357,11 +357,11 @@ make_fixture() {
     '    fi' \
     '    if [[ "$#" -eq 4 && "$1" == "-x" && "$2" == "-k" ]]; then' \
     '      if stage="$(release_stage 2>/dev/null)"; then' \
-    '        [[ "$3" == "$stage/output/Talkie-1.0.0.zip" && "$4" == "$stage/work/verification-zip" && -f "$state_dir/outer-dmg-verified" && -d "$state_dir/final-zip-content/Talkie.app" ]] || die' \
+    '        [[ "$3" == "$stage/output/Talkie-1.1.0.zip" && "$4" == "$stage/work/verification-zip" && -f "$state_dir/outer-dmg-verified" && -d "$state_dir/final-zip-content/Talkie.app" ]] || die' \
     '        content_dir="$state_dir/final-zip-content"' \
     '        event_name="final-zip-extracted"' \
     '      else' \
-    '        [[ "$3" == "build/community-preview-1.0.0/Talkie-1.0.0-community-preview-adhoc.zip" && "$4" == build/community-preview-verification.* && -d "$state_dir/preview-zip-content/Talkie.app" ]] || die' \
+    '        [[ "$3" == "build/community-preview-1.1.0/Talkie-1.1.0-community-preview-adhoc.zip" && "$4" == build/community-preview-verification.* && -d "$state_dir/preview-zip-content/Talkie.app" ]] || die' \
     '        content_dir="$state_dir/preview-zip-content"' \
     '        event_name=""' \
     '      fi' \
@@ -376,7 +376,7 @@ make_fixture() {
     '    if [[ "${1:-}" == "create" ]]; then' \
     '      stage="$(release_stage)" || die' \
     '      source="$stage/work/dmg-source"' \
-    '      destination="$stage/output/Talkie-1.0.0.dmg"' \
+    '      destination="$stage/output/Talkie-1.1.0.dmg"' \
     '      [[ "$#" -eq 9 && "$1" == "create" && "$2" == "-volname" && "$3" == "Talkie" && "$4" == "-srcfolder" && "$5" == "$source" && "$6" == "-format" && "$7" == "UDZO" && "$8" == "-ov" && "$9" == "$destination" ]] || die' \
     '      [[ -f "$state_dir/final-zip-packaged" && -d "$source/Talkie.app" && -f "$source/Talkie.app/.stub-stapled" ]] || die' \
     '      rm -rf "$state_dir/dmg-content"; mkdir -p "$state_dir/dmg-content"; cp -R "$source/Talkie.app" "$state_dir/dmg-content/Talkie.app"' \
@@ -385,7 +385,7 @@ make_fixture() {
     '    if [[ "${1:-}" == "attach" ]]; then' \
     '      stage="$(release_stage)" || die' \
     '      mountpoint="$stage/work/verification-dmg"' \
-    '      image="$stage/output/Talkie-1.0.0.dmg"' \
+    '      image="$stage/output/Talkie-1.1.0.dmg"' \
     '      [[ "$#" -eq 6 && "$1" == "attach" && "$2" == "-readonly" && "$3" == "-noautoopen" && "$4" == "-mountpoint" && "$5" == "$mountpoint" && "$6" == "$image" ]] || die' \
     '      [[ -f "$image" && -f "$state_dir/outer-dmg-verified" && -f "$state_dir/verified-zip-app" && -d "$state_dir/dmg-content/Talkie.app" ]] || die' \
     '      mkdir -p "$mountpoint"; cp -R "$state_dir/dmg-content/Talkie.app" "$mountpoint/Talkie.app"' \
@@ -413,7 +413,7 @@ make_fixture() {
   git -C "$root" config user.email "release@example.invalid"
   git -C "$root" add .
   git -C "$root" commit -qm "fixture release"
-  git -C "$root" tag v1.0.0
+  git -C "$root" tag v1.1.0
   printf '%s\n' "$root"
 }
 
@@ -538,7 +538,7 @@ for provenance_case in dirty untracked untagged tag-mismatch; do
   case "$provenance_case" in
     dirty) printf '\n# dirty\n' >> "$provenance_root/project.yml" ;;
     untracked) printf 'unexpected\n' > "$provenance_root/untracked.txt" ;;
-    untagged) git -C "$provenance_root" tag -d v1.0.0 >/dev/null ;;
+    untagged) git -C "$provenance_root" tag -d v1.1.0 >/dev/null ;;
     tag-mismatch)
       printf 'second\n' > "$provenance_root/provenance.txt"
       git -C "$provenance_root" add provenance.txt
@@ -582,16 +582,16 @@ assert_event_sequence "$accepted_root/build/events.log" \
   dmg-app-verified \
   dmg-detached
 
-release_dir="$accepted_root/build/release-1.0.0"
-for artifact in Talkie-1.0.0.zip Talkie-1.0.0.dmg SHA256SUMS release-metadata.txt notarization-app.json notarization-dmg.json; do
+release_dir="$accepted_root/build/release-1.1.0"
+for artifact in Talkie-1.1.0.zip Talkie-1.1.0.dmg SHA256SUMS release-metadata.txt notarization-app.json notarization-dmg.json; do
   [[ -f "$release_dir/$artifact" ]] || fail "final release missing $artifact"
 done
-[[ "$(find "$accepted_root/build" -maxdepth 1 -name '.release-1.0.0.*' | wc -l | tr -d ' ')" == "0" ]] \
+[[ "$(find "$accepted_root/build" -maxdepth 1 -name '.release-1.1.0.*' | wc -l | tr -d ' ')" == "0" ]] \
   || fail "private release staging survived success"
 [[ ! -e "$accepted_root/build/ExportOptions.resolved.plist" ]] \
   || fail "resolved export options survived outside private staging after success"
 for metadata_value in \
-  "tag=v1.0.0" \
+  "tag=v1.1.0" \
   "commit=$(git -C "$accepted_root" rev-parse HEAD)" \
   "tree=$(git -C "$accepted_root" rev-parse 'HEAD^{tree}')" \
   "team_id=$team_id" \
@@ -648,7 +648,7 @@ assert_contains "$preview_log" "ditto <-x> <-k>" \
   "community preview did not extract its packaged ZIP for verification"
 assert_contains "$preview_log" "community-preview-verification" \
   "community preview did not verify the extracted app"
-preview_dir="$preview_root/build/community-preview-1.0.0"
+preview_dir="$preview_root/build/community-preview-1.1.0"
 (cd "$preview_dir" && shasum -a 256 -c SHA256SUMS >/dev/null) \
   || fail "community-preview checksum did not verify"
 for notice in LICENSE NOTICE THIRD_PARTY_NOTICES.txt; do
