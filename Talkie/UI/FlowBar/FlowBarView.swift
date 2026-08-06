@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Production adapter. It converts observable app state into the same privacy-safe
@@ -77,7 +78,6 @@ struct PillRendererView: View {
     var onHidePermanently: () -> Void = {}
 
     @State private var handsFreeExpanded = false
-    @State private var processingRingExpanded = false
 
     private var style: PillStyle { presentation.style }
     private var isChromeless: Bool {
@@ -173,9 +173,6 @@ struct PillRendererView: View {
         .onAppear { updateHandsFreeAnimation() }
         .onChange(of: isHandsFree) { _, _ in updateHandsFreeAnimation() }
         .onChange(of: presentation.reduceMotion) { _, _ in updateHandsFreeAnimation() }
-        .onAppear { updateProcessingRingAnimation() }
-        .onChange(of: presentation.visualPhase) { _, _ in updateProcessingRingAnimation() }
-        .onChange(of: presentation.reduceMotion) { _, _ in updateProcessingRingAnimation() }
     }
 
     @ViewBuilder private var timerView: some View {
@@ -207,34 +204,10 @@ struct PillRendererView: View {
     }
 
     private var processingRing: some View {
-        Circle()
-            .stroke(
-                contentForeground.opacity(presentation.increasedContrast ? 0.9 : 0.62),
-                lineWidth: presentation.increasedContrast ? 2 : 1.5)
-            .frame(width: 16, height: 16)
-            .scaleEffect(presentation.reduceMotion
-                         ? 1
-                         : (processingRingExpanded
-                            ? motion.processingBreathMaximumScale
-                            : motion.processingBreathMinimumScale))
-            .accessibilityHidden(true)
-    }
-
-    private func updateProcessingRingAnimation() {
-        guard presentation.visualPhase == .processing,
-              !presentation.reduceMotion,
-              motion.processingBreathDuration > 0
-        else {
-            processingRingExpanded = false
-            return
-        }
-        processingRingExpanded = false
-        withAnimation(
-            .easeInOut(duration: motion.processingBreathDuration)
-                .repeatForever(autoreverses: true)
-        ) {
-            processingRingExpanded = true
-        }
+        ProcessingRingView(
+            presentation: presentation,
+            color: contentForeground,
+            motion: motion)
     }
 
     @ViewBuilder private var idleView: some View {
@@ -325,6 +298,39 @@ struct PillRendererView: View {
                 .background(accent?.opacity(0.85) ?? .black.opacity(0.78), in: Capsule())
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
         }
+    }
+}
+
+/// A common-mode main-run-loop timer is intentional. SwiftUI's animation timeline
+/// can remain at its first frame in Talkie's non-activating accessory panel, while
+/// common-mode timers continue to fire when another app owns the key window.
+private struct ProcessingRingView: View {
+    let presentation: PillPresentation
+    let color: Color
+    let motion: PillMotionProfile
+
+    @State private var rotation = 0.0
+    private let clock = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: presentation.ringTrimEnd)
+            .stroke(
+                color.opacity(presentation.increasedContrast ? 0.9 : 0.62),
+                style: StrokeStyle(
+                    lineWidth: presentation.increasedContrast ? 2 : 1.5,
+                    lineCap: .round))
+            .frame(width: 16, height: 16)
+            .rotationEffect(.degrees(rotation))
+            .accessibilityHidden(true)
+            .onReceive(clock) { date in
+                guard presentation.visualPhase == .processing else {
+                    rotation = 0
+                    return
+                }
+                rotation = motion.processingRotationDegrees(
+                    at: date.timeIntervalSinceReferenceDate)
+            }
     }
 }
 

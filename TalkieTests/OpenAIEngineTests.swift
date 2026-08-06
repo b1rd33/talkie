@@ -37,7 +37,9 @@ final class OpenAIEngineTests: XCTestCase {
         apiKey: String? = "sk-test",
         model: String = "gpt-transcribe",
         context: TranscriptionContext? = nil,
-        stream: Bool = false
+        stream: Bool = false,
+        speakerFilter: SpeakerFilterConfiguration? = nil,
+        speakerFilteringEnabled: Bool = false
     ) -> OpenAIEngine {
         OpenAIEngine(apiKeyProvider: { apiKey }, modelProvider: { model },
                      contextProvider: { terms in
@@ -45,7 +47,95 @@ final class OpenAIEngineTests: XCTestCase {
                              prompt: "", dictionaryTerms: terms, languageCodes: [])
                      },
                      streamProvider: { stream },
+                     speakerFilterProvider: { speakerFilter },
+                     speakerFilteringEnabledProvider: { speakerFilteringEnabled },
                      session: StubURLProtocol.session())
+    }
+
+    func testDiarizationSendsKnownSpeakerReferenceAndKeepsOnlyEnrolledVoice() async throws {
+        let referenceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reference-\(UUID().uuidString).m4a")
+        try Data("known-voice".utf8).write(to: referenceURL)
+        defer { try? FileManager.default.removeItem(at: referenceURL) }
+        var capturedBody: Data?
+        StubURLProtocol.handler = { request in
+            capturedBody = request.httpBody ?? request.bodyStreamData()
+            let response = #"{"text":"all speakers","segments":[{"speaker":"talkie_user","text":"Hello from me."},{"speaker":"A","text":"Television noise."},{"speaker":"talkie_user","text":"Continue dictating."}]}"#
+            return (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200,
+                    httpVersion: nil, headerFields: nil)!,
+                Data(response.utf8))
+        }
+        let filter = SpeakerFilterConfiguration(
+            speakerName: "talkie_user",
+            referenceURL: referenceURL)
+
+        let result = try await makeEngine(
+            speakerFilter: filter,
+            speakerFilteringEnabled: true
+        ).transcribe(
+            RecordedAudio(fileURL: audioURL, duration: 4),
+            dictionaryTerms: ["Talkie"])
+
+        XCTAssertEqual(result.text, "Hello from me. Continue dictating.")
+        XCTAssertEqual(result.engineID, "gpt-4o-transcribe-diarize")
+        let body = try XCTUnwrap(
+            capturedBody.flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertTrue(body.contains("\r\n\r\ngpt-4o-transcribe-diarize\r\n"))
+        XCTAssertTrue(body.contains("name=\"response_format\""))
+        XCTAssertTrue(body.contains("\r\n\r\ndiarized_json\r\n"))
+        XCTAssertTrue(body.contains("name=\"chunking_strategy\""))
+        XCTAssertTrue(body.contains("name=\"known_speaker_names[]\""))
+        XCTAssertTrue(body.contains("\r\n\r\ntalkie_user\r\n"))
+        XCTAssertTrue(body.contains("name=\"known_speaker_references[]\""))
+        XCTAssertTrue(body.contains("data:audio/mp4;base64,"))
+        XCTAssertFalse(body.contains("name=\"keywords[]\""))
+        XCTAssertFalse(body.contains("name=\"stream\""))
+    }
+
+    func testDiarizationFailsWhenEnrolledVoiceIsNotDetected() async throws {
+        let referenceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reference-\(UUID().uuidString).m4a")
+        try Data("known-voice".utf8).write(to: referenceURL)
+        defer { try? FileManager.default.removeItem(at: referenceURL) }
+        StubURLProtocol.handler = { request in
+            let response = #"{"text":"background","segments":[{"speaker":"A","text":"Television noise."}]}"#
+            return (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: 200,
+                    httpVersion: nil, headerFields: nil)!,
+                Data(response.utf8))
+        }
+
+        do {
+            _ = try await makeEngine(
+                speakerFilter: SpeakerFilterConfiguration(
+                    speakerName: "talkie_user",
+                    referenceURL: referenceURL),
+                speakerFilteringEnabled: true
+            ).transcribe(
+                RecordedAudio(fileURL: audioURL, duration: 4),
+                dictionaryTerms: [])
+            XCTFail("expected enrolled-speaker failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .enrolledSpeakerNotDetected)
+        }
+    }
+
+    func testDiarizationRequiresEnrolledReference() async {
+        do {
+            _ = try await makeEngine(
+                speakerFilteringEnabled: true
+            ).transcribe(
+                RecordedAudio(fileURL: audioURL, duration: 4),
+                dictionaryTerms: [])
+            XCTFail("expected missing-reference failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .speakerReferenceMissing)
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
     }
 
     func testSendsMultipartRequestAndParsesText() async throws {

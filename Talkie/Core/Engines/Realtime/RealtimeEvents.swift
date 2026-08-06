@@ -48,23 +48,16 @@ enum RealtimeClientEvent {
                     transcription["language"] = language
                 }
             }
-            let turnDetection: Any = capabilities == .gptRealtimeWhisper
-                ? NSNull()
-                : [
-                    "type": "server_vad",
-                    "threshold": 0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 250,
-                ]
             let session: [String: Any] = [
                 "type": "transcription",
                 "audio": [
                     "input": [
                         "format": ["type": "audio/pcm", "rate": 24_000],
                         "transcription": transcription,
-                        // gpt-realtime-whisper requires turn detection to be null;
-                        // gpt-live-transcribe uses server VAD for streaming deltas.
-                        "turn_detection": turnDetection,
+                        // Talkie is push-to-talk: fn release explicitly commits the
+                        // complete turn. Disabling VAD prevents a server-side commit
+                        // from racing that final client commit.
+                        "turn_detection": NSNull(),
                     ],
                 ],
             ]

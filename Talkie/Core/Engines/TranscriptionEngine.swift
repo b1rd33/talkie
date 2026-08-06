@@ -21,6 +21,8 @@ enum EngineError: Error, Equatable, LocalizedError {
     case requestFailed(status: Int, message: String)
     case invalidResponse
     case emptyTranscription
+    case speakerReferenceMissing
+    case enrolledSpeakerNotDetected
     case realtimeFailure(RealtimeFailureCategory)
     case offline
 
@@ -32,6 +34,10 @@ enum EngineError: Error, Equatable, LocalizedError {
         case .requestFailed(let status, let message): "Request failed (\(status)): \(message)"
         case .invalidResponse: "The API returned an unreadable response."
         case .emptyTranscription: "The transcription service returned no text."
+        case .speakerReferenceMissing:
+            "Speaker filtering needs a voice sample — record one in Settings → Engines."
+        case .enrolledSpeakerNotDetected:
+            "Your enrolled voice wasn't detected in this recording."
         case .realtimeFailure: "Realtime transcription failed."
         case .offline: "No internet connection."
         }

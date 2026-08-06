@@ -6,6 +6,8 @@ struct OpenAIEngine: TranscriptionEngine {
     var modelProvider: @Sendable () -> String
     var contextProvider: @Sendable ([String]) -> TranscriptionContext
     var streamProvider: @Sendable () -> Bool
+    var speakerFilterProvider: @Sendable () -> SpeakerFilterConfiguration?
+    var speakerFilteringEnabledProvider: @Sendable () -> Bool
     var session: URLSession
 
     init(
@@ -18,12 +20,16 @@ struct OpenAIEngine: TranscriptionEngine {
                 languageCodes: [])
         },
         streamProvider: @escaping @Sendable () -> Bool = { false },
+        speakerFilterProvider: @escaping @Sendable () -> SpeakerFilterConfiguration? = { nil },
+        speakerFilteringEnabledProvider: @escaping @Sendable () -> Bool = { false },
         session: URLSession = .shared
     ) {
         self.apiKeyProvider = apiKeyProvider
         self.modelProvider = modelProvider
         self.contextProvider = contextProvider
         self.streamProvider = streamProvider
+        self.speakerFilterProvider = speakerFilterProvider
+        self.speakerFilteringEnabledProvider = speakerFilteringEnabledProvider
         self.session = session
     }
 
@@ -33,7 +39,13 @@ struct OpenAIEngine: TranscriptionEngine {
         onPartial: TranscriptionProgressSink?
     ) async throws -> Transcript {
         guard let key = apiKeyProvider(), !key.isEmpty else { throw EngineError.missingAPIKey }
-        let model = modelProvider()
+        let selectedModel = modelProvider()
+        let speakerFilteringEnabled = speakerFilteringEnabledProvider()
+        let speakerFilter = speakerFilteringEnabled ? speakerFilterProvider() : nil
+        guard !speakerFilteringEnabled || speakerFilter != nil else {
+            throw EngineError.speakerReferenceMissing
+        }
+        let model = speakerFilter == nil ? selectedModel : "gpt-4o-transcribe-diarize"
         let context = contextProvider(dictionaryTerms)
 
         let boundary = "talkie-\(UUID().uuidString)"
@@ -48,8 +60,15 @@ struct OpenAIEngine: TranscriptionEngine {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
         field("model", model)
-        field("response_format", "json")
-        if OpenAITranscriptionModel(rawValue: model)?.supportsKeywords == true {
+        field("response_format", speakerFilter == nil ? "json" : "diarized_json")
+        if let speakerFilter {
+            field("chunking_strategy", "auto")
+            field("known_speaker_names[]", speakerFilter.speakerName)
+            let reference = try Data(contentsOf: speakerFilter.referenceURL)
+            field(
+                "known_speaker_references[]",
+                "data:audio/mp4;base64,\(reference.base64EncodedString())")
+        } else if OpenAITranscriptionModel(rawValue: model)?.supportsKeywords == true {
             if let prompt = context.prompt {
                 field("prompt", prompt)
             }
@@ -67,7 +86,7 @@ struct OpenAIEngine: TranscriptionEngine {
                 field("language", language)
             }
         }
-        let shouldStream =
+        let shouldStream = speakerFilter == nil &&
             model == OpenAITranscriptionModel.gptTranscribe.rawValue
             && streamProvider()
         if shouldStream {
@@ -139,14 +158,31 @@ struct OpenAIEngine: TranscriptionEngine {
                 let code: String
             }
 
+            struct Segment: Decodable {
+                let speaker: String?
+                let text: String
+            }
+
             let text: String
             let languages: [Language]?
+            let segments: [Segment]?
         }
         guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else {
             throw EngineError.invalidResponse
         }
+        let text: String
+        if let speakerFilter {
+            text = decoded.segments?
+                .filter { $0.speaker == speakerFilter.speakerName }
+                .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ") ?? ""
+            guard !text.isEmpty else { throw EngineError.enrolledSpeakerNotDetected }
+        } else {
+            text = decoded.text
+        }
         let transcript = Transcript(
-            text: decoded.text,
+            text: text,
             engineID: model,
             detectedLanguages: decoded.languages?.map(\.code) ?? [])
         guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
