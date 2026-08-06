@@ -22,6 +22,23 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.transcriptionContextPrompt, "")
         XCTAssertEqual(store.expectedInputLanguages, [])
         XCTAssertTrue(store.streamBatchTranscription)
+        XCTAssertFalse(store.speakerFilteringEnabled)
+    }
+
+    func testSpeakerFilteringPersistsAndSelectsSupportedPipeline() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let store = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
+        store.engineMode = "instant"
+        store.transcriptionProvider = "openrouter"
+        store.instantLiveType = true
+
+        store.speakerFilteringEnabled = true
+
+        XCTAssertEqual(store.engineMode, "cloud")
+        XCTAssertEqual(store.transcriptionProvider, "openai")
+        XCTAssertFalse(store.instantLiveType)
+        XCTAssertTrue(SettingsStore(
+            defaults: UserDefaults(suiteName: suite)!).speakerFilteringEnabled)
     }
 
     func testExistingModelSelectionIsPreserved() {

@@ -23,6 +23,7 @@ final class AppServices {
     let fnMonitor: FnKeyMonitor
     let escMonitor: EscKeyMonitor
     let recorder: AudioRecorder
+    let speakerReference: SpeakerReferenceController
     let activeApp: ActiveAppMonitor
     let contextReader: FocusedContextReader
     let shortcuts: ShortcutManager
@@ -55,6 +56,7 @@ final class AppServices {
         let recorder = AudioRecorder(preferredDeviceUID: {
             defaults.string(forKey: "preferredAudioDeviceUID")
         })
+        let speakerReference = SpeakerReferenceController()
         let activeApp = ActiveAppMonitor()
         let contextReader = FocusedContextReader()
         let shortcuts = ShortcutManager()
@@ -80,6 +82,14 @@ final class AppServices {
             },
             streamProvider: {
                 defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true
+            },
+            speakerFilterProvider: {
+                guard defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false
+                else { return nil }
+                return try? speakerReference.store.configuration()
+            },
+            speakerFilteringEnabledProvider: {
+                defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false
             }
         )
         let cleanup = CleanupService(
@@ -127,12 +137,25 @@ final class AppServices {
             apiKeyProvider: { credential(.openRouterKey) },
             modelProvider: { defaults.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe" }
         )
-        let cloudSwitch = CloudEngineSwitch(openai: engine, openrouter: orTranscription)
+        let cloudSwitch = CloudEngineSwitch(
+            openai: engine,
+            openrouter: orTranscription,
+            provider: {
+                if defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false {
+                    return "openai"
+                }
+                return defaults.string(forKey: "transcriptionProvider") ?? "openai"
+            })
         let backend = FluidAudioBackend()
         let localEngine = ParakeetEngine(backend: backend)
         let router = EngineRouter(
             cloud: cloudSwitch, local: localEngine,
-            mode: { defaults.string(forKey: "engineMode") ?? "cloud" },
+            mode: {
+                if defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false {
+                    return "cloud"
+                }
+                return defaults.string(forKey: "engineMode") ?? "cloud"
+            },
             localAvailable: { FluidAudioBackend.modelsPresent })
         let history = try? HistoryStore(inMemory: environment.historyInMemory)
         let resolver = StyleResolver(overrides: { [history] in
@@ -193,6 +216,9 @@ final class AppServices {
                 guard defaults.string(forKey: "engineMode") == "instant" else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
                 }
+                guard !(defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false) else {
+                    throw EngineError.invalidResponse // speaker labels are batch-only
+                }
                 let key = credential(.openAIKey) ?? ""
                 guard !key.isEmpty else { throw EngineError.missingAPIKey }
                 let terms = history?.dictionaryPromptTerms() ?? []
@@ -225,6 +251,7 @@ final class AppServices {
         self.fnMonitor = fnMonitor
         self.escMonitor = escMonitor
         self.recorder = recorder
+        self.speakerReference = speakerReference
         self.activeApp = activeApp
         self.contextReader = contextReader
         self.shortcuts = shortcuts

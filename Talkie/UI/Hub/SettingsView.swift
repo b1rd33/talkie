@@ -49,7 +49,8 @@ struct SettingsView: View {
             GeneralSettingsTab(settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
             EngineSettingsTab(keychain: keychain, settings: settings,
-                              downloader: AppServices.shared.modelDownloader)
+                              downloader: AppServices.shared.modelDownloader,
+                              speakerReference: AppServices.shared.speakerReference)
                 .tabItem { Label("Engines", systemImage: "waveform") }
             StyleSettingsTab(settings: settings, history: AppServices.shared.history)
                 .tabItem { Label("Style", systemImage: "textformat") }
@@ -383,6 +384,7 @@ private struct EngineSettingsTab: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
     let downloader: ModelDownloader
+    @Bindable var speakerReference: SpeakerReferenceController
     @State private var openAIKey: String = ""
     @State private var openRouterKey: String = ""
 
@@ -544,6 +546,9 @@ private struct EngineSettingsTab: View {
                     isOn: $settings.streamBatchTranscription)
                     .accessibilityIdentifier("Show batch transcription progress")
             }
+            SpeakerFilteringSettingsSection(
+                settings: settings,
+                speakerReference: speakerReference)
             Section("Cleanup") {
                 if cleanupInactive(settings) {
                     Text("Disabled — instant mode is inserting raw streamed text.")

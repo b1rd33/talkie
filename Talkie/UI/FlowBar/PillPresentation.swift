@@ -58,6 +58,12 @@ struct PillPresentation: Equatable, Sendable {
         }
     }
 
+    /// Processing is an open arc that visibly rotates. Completion briefly closes
+    /// the same neutral shape before the panel disappears.
+    var ringTrimEnd: Double {
+        visualPhase == .success ? 1 : 0.72
+    }
+
     var isActive: Bool {
         switch state {
         case .idle, .success: false

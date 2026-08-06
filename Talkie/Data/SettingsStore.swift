@@ -24,6 +24,16 @@ final class SettingsStore {
     var streamBatchTranscription: Bool {
         didSet { defaults.set(streamBatchTranscription, forKey: "streamBatchTranscription") }
     }
+    var speakerFilteringEnabled: Bool {
+        didSet {
+            defaults.set(speakerFilteringEnabled, forKey: "speakerFilteringEnabled")
+            if speakerFilteringEnabled {
+                engineMode = "cloud"
+                transcriptionProvider = "openai"
+                instantLiveType = false
+            }
+        }
+    }
     var cleanupModel: String { didSet { defaults.set(cleanupModel, forKey: "cleanupModel") } }
     /// "openrouter" | "openai" — which API the cleanup chat call goes to.
     var cleanupProvider: String { didSet { defaults.set(cleanupProvider, forKey: "cleanupProvider") } }
@@ -116,6 +126,8 @@ final class SettingsStore {
         }
         streamBatchTranscription =
             defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true
+        speakerFilteringEnabled =
+            defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false
         cleanupModel = defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
         cleanupProvider = defaults.string(forKey: "cleanupProvider") ?? "openrouter"
         transcriptionProvider = defaults.string(forKey: "transcriptionProvider") ?? "openai"
@@ -142,6 +154,11 @@ final class SettingsStore {
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
         pttShortcut = defaults.string(forKey: "pttShortcut")
         handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")
+        if speakerFilteringEnabled {
+            engineMode = "cloud"
+            transcriptionProvider = "openai"
+            instantLiveType = false
+        }
         // Persist the migrated pill style so a retired raw value (classic/dot/
         // compact) is normalized on disk and never re-read.
         defaults.set(pillStyle.rawValue, forKey: "pillStyle")

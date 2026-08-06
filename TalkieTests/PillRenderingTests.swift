@@ -106,7 +106,7 @@ final class PillRenderingTests: XCTestCase {
                           cancelImage.representation(using: .png, properties: [:]))
     }
 
-    func testProcessingAndCompletionUseSameNeutralRing() throws {
+    func testCompletionClosesTheSameNeutralProcessingRing() throws {
         var processing = PillPresentation.preview(.transcribing)
         processing.reduceMotion = true
         var completion = processing
@@ -118,8 +118,26 @@ final class PillRenderingTests: XCTestCase {
         let completionImage = try render(PillRendererView(
             presentation: completion, levelSource: source, recordingStartedAt: nil))
 
-        XCTAssertEqual(processingImage.representation(using: .png, properties: [:]),
-                       completionImage.representation(using: .png, properties: [:]))
+        XCTAssertNotEqual(processingImage.representation(using: .png, properties: [:]),
+                          completionImage.representation(using: .png, properties: [:]))
+    }
+
+    func testProcessingRingMovesWhileMounted() async throws {
+        var processing = PillPresentation.preview(.transcribing)
+        processing.reduceMotion = true // mirrors the user's production macOS setting
+        let hosting = makeHosting(PillRendererView(
+            presentation: processing,
+            levelSource: SimulatedAudioLevelSource(seed: 21, fixture: .quiet)))
+        let window = attachToNonactivatingPanel(hosting)
+        defer { window.close() }
+
+        try await Task.sleep(for: .milliseconds(100))
+        let first = try snapshot(hosting)
+        try await Task.sleep(for: .milliseconds(225))
+        let second = try snapshot(hosting)
+
+        XCTAssertNotEqual(first.representation(using: .png, properties: [:]),
+                          second.representation(using: .png, properties: [:]))
     }
 
     func testReducedMotionOrganicWaveformStillRespondsToMicrophoneLevel() async throws {
@@ -169,6 +187,21 @@ final class PillRenderingTests: XCTestCase {
         window.orderBack(nil)
         window.contentView?.layoutSubtreeIfNeeded()
         return window
+    }
+
+    private func attachToNonactivatingPanel<V>(_ hosting: NSHostingView<V>) -> NSPanel where V: View {
+        let panel = NSPanel(
+            contentRect: hosting.frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.alphaValue = 0
+        panel.hidesOnDeactivate = false
+        panel.contentView = hosting
+        panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        return panel
     }
 
     private func snapshot<V>(_ hosting: NSHostingView<V>) throws -> NSBitmapImageRep where V: View {

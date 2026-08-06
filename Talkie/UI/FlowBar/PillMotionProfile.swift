@@ -7,9 +7,7 @@ struct PillMotionProfile: Equatable, Sendable {
     var handsFreeDuration: TimeInterval
     var handsFreeMinimumScale: Double
     var handsFreeMaximumScale: Double
-    var processingBreathDuration: TimeInterval
-    var processingBreathMinimumScale: Double
-    var processingBreathMaximumScale: Double
+    var processingRotationDuration: TimeInterval
     var successDuration: TimeInterval
     var completionPanelDuration: TimeInterval
     var waveformFPS: Int
@@ -21,9 +19,7 @@ struct PillMotionProfile: Equatable, Sendable {
         handsFreeDuration: 2.4,
         handsFreeMinimumScale: 0.985,
         handsFreeMaximumScale: 1.015,
-        processingBreathDuration: 1.6,
-        processingBreathMinimumScale: 0.97,
-        processingBreathMaximumScale: 1,
+        processingRotationDuration: 0.9,
         successDuration: 0.16,
         completionPanelDuration: 0.18,
         waveformFPS: 30,
@@ -35,9 +31,9 @@ struct PillMotionProfile: Equatable, Sendable {
         handsFreeDuration: 0,
         handsFreeMinimumScale: 1,
         handsFreeMaximumScale: 1,
-        processingBreathDuration: 0,
-        processingBreathMinimumScale: 1,
-        processingBreathMaximumScale: 1,
+        // A progress indicator must still communicate ongoing work when macOS
+        // Reduce Motion is enabled. Keep it moving, but at half speed.
+        processingRotationDuration: 1.8,
         successDuration: 0.16,
         completionPanelDuration: 0.18,
         waveformFPS: 8,
@@ -45,5 +41,11 @@ struct PillMotionProfile: Equatable, Sendable {
 
     static func resolve(reduceMotion: Bool) -> Self {
         reduceMotion ? .minimalMotion : .calmFlow
+    }
+
+    func processingRotationDegrees(at time: TimeInterval) -> Double {
+        guard processingRotationDuration > 0 else { return 0 }
+        let position = time.truncatingRemainder(dividingBy: processingRotationDuration)
+        return position / processingRotationDuration * 360
     }
 }

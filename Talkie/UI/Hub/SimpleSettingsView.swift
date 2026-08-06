@@ -37,6 +37,10 @@ struct SimpleSettingsView: View {
 
             Section("API key") { keyFields }
 
+            SpeakerFilteringSettingsSection(
+                settings: settings,
+                speakerReference: AppServices.shared.speakerReference)
+
             Section("Output / cleanup language") {
                 Picker("Output language", selection: Binding(
                     get: { settings.pinnedLanguage },

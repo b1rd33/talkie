@@ -28,9 +28,7 @@ final class RealtimeEventsTests: XCTestCase {
             ["en", "de"])
         XCTAssertEqual(transcription["delay"] as? String, "low")
         XCTAssertNil(transcription["language"])
-        XCTAssertEqual(
-            (input["turn_detection"] as? [String: Any])?["type"] as? String,
-            "server_vad")
+        XCTAssertTrue(input["turn_detection"] is NSNull)
     }
 
     func testRealtimeWhisperSessionUpdateDisablesTurnDetection() throws {

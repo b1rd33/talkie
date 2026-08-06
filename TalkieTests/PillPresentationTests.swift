@@ -26,6 +26,13 @@ final class PillPresentationTests: XCTestCase {
         XCTAssertEqual(PillPresentation.preview(.inserting).visualPhase, .processing)
     }
 
+    func testProcessingUsesPartialRingAndSuccessClosesIt() {
+        XCTAssertEqual(PillPresentation.preview(.transcribing).ringTrimEnd, 0.72)
+        XCTAssertEqual(PillPresentation.preview(.cleaning).ringTrimEnd, 0.72)
+        XCTAssertEqual(PillPresentation.preview(.inserting).ringTrimEnd, 0.72)
+        XCTAssertEqual(PillPresentation.preview(.success).ringTrimEnd, 1)
+    }
+
     func testProcessingStatesNeverExposeVisualText() {
         for state in [PillPresentation.State.transcribing, .cleaning, .inserting] {
             XCTAssertNil(PillPresentation.preview(state).statusLabel)

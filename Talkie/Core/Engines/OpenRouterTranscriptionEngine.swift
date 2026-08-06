@@ -11,14 +11,16 @@ import Foundation
 struct CloudEngineSwitch: TranscriptionEngine {
     let openai: TranscriptionEngine
     let openrouter: TranscriptionEngine
+    var provider: @Sendable () -> String = {
+        UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "openai"
+    }
 
     func transcribe(
         _ audio: RecordedAudio,
         dictionaryTerms: [String],
         onPartial: TranscriptionProgressSink?
     ) async throws -> Transcript {
-        let provider = UserDefaults.standard.string(forKey: "transcriptionProvider") ?? "openai"
-        let engine = provider == "openrouter" ? openrouter : openai
+        let engine = provider() == "openrouter" ? openrouter : openai
         return try await engine.transcribe(
             audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
     }
