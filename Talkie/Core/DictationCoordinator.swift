@@ -660,8 +660,10 @@ final class DictationCoordinator {
         do {
             state = .transcribing
             let terms = dictionaryTermsProvider()
-            let transcript = try await engine.transcribe(
-                audio, dictionaryTerms: dictionaryPromptTermsProvider())
+            let transcript = try await transcribeBatch(
+                audio,
+                dictionaryTerms: dictionaryPromptTermsProvider(),
+                onPartial: nil)
             let level = cleanupLevelProvider()
             var cleaned = transcript.text
             if level != .none {

@@ -146,6 +146,9 @@ actor OpenAIRealtimeSession {
         // only cancels the loop and closes the transport, so the order is safe.
         defer { cleanup() }
         finishing = true // fn released — drain the trailing segment, then finalize
+        if let finishError {
+            throw finishError
+        }
         if serverError != nil {
             throw EngineError.realtimeFailure(.serverError)
         }
@@ -304,6 +307,7 @@ actor OpenAIRealtimeSession {
     private func deliver(error message: String, category: RealtimeFailureCategory) {
         guard completedTranscript == nil, serverError == nil else { return }
         serverError = message
+        finishError = .realtimeFailure(category)
         settlingTask?.cancel()
         settlingTask = nil
         timeoutTask?.cancel()

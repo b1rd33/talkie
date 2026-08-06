@@ -113,6 +113,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         var streamInbox: [Data] = []
         var commitInbox: [Data] = []
         var commitDelaysMS: [Int] = []
+        var disconnectAfterStreamInbox = false
         private var committed = false
         private var streamIndex = 0
         private var commitIndex = 0
@@ -130,6 +131,10 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
                 lock.lock()
                 if streamIndex < streamInbox.count {
                     let next = streamInbox[streamIndex]; streamIndex += 1; lock.unlock(); return next
+                }
+                if disconnectAfterStreamInbox, !committed {
+                    lock.unlock()
+                    throw EngineError.offline
                 }
                 if committed, commitIndex < commitInbox.count {
                     let index = commitIndex
@@ -339,6 +344,26 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
             encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
             finishTimeout: .seconds(1))
         try await session.begin()
+
+        do {
+            _ = try await session.finish()
+            XCTFail("expected connection loss")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .realtimeFailure(.connectionLost))
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
+    }
+
+    func testConnectionLossBeforeFinishPreservesFailureCategory() async throws {
+        let transport = StreamingFakeTransport()
+        transport.disconnectAfterStreamInbox = true
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "m", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            finishTimeout: .seconds(1))
+        try await session.begin()
+        try await Task.sleep(for: .milliseconds(20))
 
         do {
             _ = try await session.finish()
