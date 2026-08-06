@@ -100,8 +100,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
             _ = try await session.finish()
             XCTFail("expected throw")
         } catch let error as EngineError {
-            guard case .requestFailed(_, let message) = error else { return XCTFail("wrong case: \(error)") }
-            XCTAssertTrue(message.contains("session expired"))
+            XCTAssertEqual(error, .realtimeFailure(.serverError))
         } catch { XCTFail("wrong error: \(error)") }
     }
 
@@ -219,6 +218,26 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         XCTAssertEqual(transcript.text, "Hello world") // no throw on empty trailing commit
     }
 
+    func testEmptyRealtimeCompletionFailsClosed() async throws {
+        let transport = StreamingFakeTransport()
+        transport.commitInbox = [Self.commitEmpty(clientEventID: "finish-empty")]
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "gpt-realtime-whisper", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            eventIDProvider: { "finish-empty" }, settlingInterval: .milliseconds(10),
+            finishTimeout: .seconds(1))
+        try await session.begin()
+
+        do {
+            _ = try await session.finish()
+            XCTFail("expected an empty realtime transcription failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .emptyTranscription)
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
+    }
+
     func testOutOfOrderCompletionsPreserveCommitOrder() async throws {
         let transport = StreamingFakeTransport()
         transport.commitInbox = [
@@ -305,8 +324,10 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         do {
             _ = try await session.finish()
             XCTFail("expected transcription failure")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .realtimeFailure(.transcriptionError))
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("unintelligible"))
+            XCTFail("wrong error: \(error)")
         }
     }
 
@@ -322,8 +343,10 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         do {
             _ = try await session.finish()
             XCTFail("expected connection loss")
+        } catch let error as EngineError {
+            XCTAssertEqual(error, .realtimeFailure(.connectionLost))
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("connection lost"))
+            XCTFail("wrong error: \(error)")
         }
     }
 

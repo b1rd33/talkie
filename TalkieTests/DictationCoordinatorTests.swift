@@ -164,6 +164,28 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
     }
 
+    func testEmptyTranscriptionFailsAndIsNotSavedCompleted() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let inserter = MockInserter()
+        var events: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "  "))),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            history: history, cleanupLevelProvider: { .none },
+            diagnosticSink: { events.append($0) })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertNil(coordinator.lastResult)
+        XCTAssertEqual(history.recent(limit: 1).first?.status, .failed)
+        XCTAssertNotEqual(history.recent(limit: 1).first?.status, .completed)
+        XCTAssertEqual(events, [.batchEmptyResult])
+    }
+
     func testDetectedLanguagesAreSavedWithCompletedHistory() async throws {
         let history = try HistoryStore(inMemory: true)
         let engine = MockEngine(result: .success(Transcript(
@@ -398,7 +420,25 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.lastResult?.rawText, "raw text") // batch fallback won
         XCTAssertEqual(coordinator.state, .idle)
-        XCTAssertEqual(events, [.realtimeFinishFallback])
+        XCTAssertEqual(events, [.realtimeFinishRequestFailure, .realtimeFinishFallback])
+    }
+
+    func testEmptyLiveResultFallsBackToBatchWithCategoryOnlyDiagnostics() async {
+        let live = MockLiveSession()
+        live.finishResult = .success(Transcript(text: " \n", engineID: "gpt-realtime-whisper"))
+        var events: [DictationDiagnosticEvent] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            diagnosticSink: { events.append($0) },
+            liveSessionFactory: { _ in live })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(coordinator.lastResult?.rawText, "raw text")
+        XCTAssertEqual(events, [.realtimeEmptyResult, .realtimeFinishFallback])
     }
 
     // MARK: hands-free double-tap (symmetric toggle, Model A)

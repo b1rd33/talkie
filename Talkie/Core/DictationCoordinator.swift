@@ -15,6 +15,15 @@ enum DictationState: Equatable {
 enum DictationDiagnosticEvent: String, Equatable, Sendable {
     case realtimeStartFallback = "realtime_start_fallback"
     case realtimeFinishFallback = "realtime_finish_fallback"
+    case realtimeEmptyResult = "realtime_empty_result"
+    case realtimeFinishServerError = "realtime_finish_server_error"
+    case realtimeFinishTranscriptionError = "realtime_finish_transcription_error"
+    case realtimeFinishConnectionLost = "realtime_finish_connection_lost"
+    case realtimeFinishTimeout = "realtime_finish_timeout"
+    case realtimeFinishTransportFailure = "realtime_finish_transport_failure"
+    case realtimeFinishRequestFailure = "realtime_finish_request_failure"
+    case realtimeFinishUnknownFailure = "realtime_finish_unknown_failure"
+    case batchEmptyResult = "batch_empty_result"
 }
 
 struct DictationResult: Equatable {
@@ -415,20 +424,25 @@ final class DictationCoordinator {
                 await liveFeedTask?.value // backlog fully fed before the commit
                 liveFeedTask = nil
                 do {
-                    transcript = try await liveSession.finish()
+                    let finished = try await liveSession.finish()
+                    guard !finished.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        throw EngineError.emptyTranscription
+                    }
+                    transcript = finished
                     usedRealtime = true
                 } catch is CancellationError {
                     throw CancellationError() // Esc mid-finish must not trigger a paid batch call
                 } catch {
+                    diagnosticSink(realtimeFinishDiagnostic(for: error))
                     diagnosticSink(.realtimeFinishFallback)
                     // finish() self-cleans on every exit (Task 4) — no session.cancel() needed here
-                    transcript = try await engine.transcribe(
+                    transcript = try await transcribeBatch(
                         audio,
                         dictionaryTerms: activePromptTerms,
                         onPartial: batchProgressSink)
                 }
             } else {
-                transcript = try await engine.transcribe(
+                transcript = try await transcribeBatch(
                     audio,
                     dictionaryTerms: activePromptTerms,
                     onPartial: batchProgressSink)
@@ -552,6 +566,50 @@ final class DictationCoordinator {
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
                           appName: targetApp.name, duration: 0, engine: "openai", status: .failed,
                           audioPath: keepAudioForRetry(audioURL))
+        }
+    }
+
+    private func transcribeBatch(
+        _ audio: RecordedAudio,
+        dictionaryTerms: [String],
+        onPartial: TranscriptionProgressSink?
+    ) async throws -> Transcript {
+        let transcript: Transcript
+        do {
+            transcript = try await engine.transcribe(
+                audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
+        } catch let error as EngineError where error == .emptyTranscription {
+            diagnosticSink(.batchEmptyResult)
+            throw error
+        }
+        guard !transcript.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            diagnosticSink(.batchEmptyResult)
+            throw EngineError.emptyTranscription
+        }
+        return transcript
+    }
+
+    private func realtimeFinishDiagnostic(for error: Error) -> DictationDiagnosticEvent {
+        guard let engineError = error as? EngineError else {
+            return .realtimeFinishUnknownFailure
+        }
+        switch engineError {
+        case .emptyTranscription:
+            return .realtimeEmptyResult
+        case .realtimeFailure(.serverError):
+            return .realtimeFinishServerError
+        case .realtimeFailure(.transcriptionError):
+            return .realtimeFinishTranscriptionError
+        case .realtimeFailure(.connectionLost):
+            return .realtimeFinishConnectionLost
+        case .realtimeFailure(.timeout):
+            return .realtimeFinishTimeout
+        case .realtimeFailure(.transportFailure):
+            return .realtimeFinishTransportFailure
+        case .requestFailed:
+            return .realtimeFinishRequestFailure
+        default:
+            return .realtimeFinishUnknownFailure
         }
     }
 

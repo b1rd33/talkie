@@ -33,6 +33,21 @@ final class RealtimeEventsTests: XCTestCase {
             "server_vad")
     }
 
+    func testRealtimeWhisperSessionUpdateDisablesTurnDetection() throws {
+        let event = RealtimeClientEvent.sessionUpdate(
+            model: "gpt-realtime-whisper",
+            context: TranscriptionContext(prompt: nil, keywords: [], languages: []),
+            delay: .medium)
+
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: event.encoded()) as? [String: Any])
+        let session = try XCTUnwrap(root["session"] as? [String: Any])
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+
+        XCTAssertTrue(input["turn_detection"] is NSNull)
+    }
+
     func testLegacySessionUpdateFoldsKeywordsIntoPromptAndKeepsSingularLanguage() throws {
         let event = RealtimeClientEvent.sessionUpdate(
             model: "gpt-realtime-whisper",

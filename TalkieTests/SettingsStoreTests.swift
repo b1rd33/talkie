@@ -33,6 +33,15 @@ final class SettingsStoreTests: XCTestCase {
             "gpt-4o-mini-transcribe")
     }
 
+    func testRealtimeWhisperSelectionIsPreservedAsAnAlternative() {
+        let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
+        defaults.set("gpt-realtime-whisper", forKey: "realtimeTranscriptionModel")
+
+        let store = SettingsStore(defaults: defaults)
+
+        XCTAssertEqual(store.realtimeTranscriptionModel, "gpt-realtime-whisper")
+    }
+
     func testExpectedLanguagesMigrateOnceFromPinnedLanguage() {
         let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
         defaults.set("de", forKey: "pinnedLanguage")
