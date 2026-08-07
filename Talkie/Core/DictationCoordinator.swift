@@ -84,6 +84,7 @@ final class DictationCoordinator {
     private let liveInserter: LiveTextInserting?
     private let diagnosticSink: (DictationDiagnosticEvent) -> Void
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
+    private let realtimePreflightPolicy: RealtimePreflightPolicy
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
     private var liveFeedTask: Task<Void, Never>?
@@ -143,6 +144,7 @@ final class DictationCoordinator {
          liveTypeProvider: @escaping () -> Bool = { false },
          liveInserter: LiveTextInserting? = nil,
          diagnosticSink: @escaping (DictationDiagnosticEvent) -> Void = { _ in },
+         realtimePreflightPolicy: RealtimePreflightPolicy = .standard,
          liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
@@ -171,6 +173,7 @@ final class DictationCoordinator {
         self.liveTypeProvider = liveTypeProvider
         self.liveInserter = liveInserter
         self.diagnosticSink = diagnosticSink
+        self.realtimePreflightPolicy = realtimePreflightPolicy
         self.liveSessionFactory = liveSessionFactory
     }
 
@@ -244,19 +247,52 @@ final class DictationCoordinator {
             if let liveSessionFactory {
                 let (stream, continuation) = AsyncStream.makeStream(of: [Float].self)
                 liveChunkContinuation = continuation
-                recorder.chunkConsumer = { continuation.yield($0) } // buffers while the socket connects
-                do {
-                    let box = liveBox
-                    let session = try await liveSessionFactory { box.set($0) } // @Sendable: no actor hop
-                    liveSession = session
-                    liveTapActive = true
-                    startLivePump() // drain the box to liveTranscript at ~12.5 Hz
-                    liveFeedTask = Task { // ONE consumer — replays the backlog, preserves order
-                        for await samples in stream { await session.feed(samples) }
+                // The sink starts buffering immediately, but no provider connection is
+                // created until bounded local energy preflight sees enough voice-like
+                // signal. This is an energy heuristic, not speaker-aware VAD.
+                recorder.chunkConsumer = { continuation.yield($0) }
+                let policy = realtimePreflightPolicy
+                liveFeedTask = Task { [weak self] in
+                    var preflight = RealtimeSignalPreflight(policy: policy)
+                    var session: LiveDictationSession?
+                    do {
+                        for await samples in stream {
+                            guard !Task.isCancelled else { return }
+                            if let session {
+                                await session.feed(samples)
+                                continue
+                            }
+                            guard preflight.append(samples) else { continue }
+                            guard let self else { return }
+                            let box = self.liveBox
+                            let created = try await liveSessionFactory { box.set($0) }
+                            guard !Task.isCancelled else {
+                                await created.cancel()
+                                return
+                            }
+                            session = created
+                            self.liveSession = created
+                            self.liveTapActive = true
+                            self.startLivePump()
+                            for buffered in preflight.drainBufferedChunks() {
+                                await created.feed(buffered)
+                            }
+                        }
+                    } catch {
+                        guard let self, !Task.isCancelled else { return }
+                        self.diagnosticSink(.realtimeStartFallback)
+                        self.liveSession = nil
+                        self.recorder.chunkConsumer = nil
+                        self.liveChunkContinuation?.finish()
+                        self.liveChunkContinuation = nil
                     }
-                } catch {
-                    diagnosticSink(.realtimeStartFallback)
-                    unhookLiveTap() // batch path still works; not an error
+                }
+                // If the tap synchronously supplied a qualifying first chunk (as
+                // deterministic fakes may), let preflight establish the session before
+                // returning. Real capture remains asynchronous and never blocks here.
+                for _ in 0..<8 {
+                    if liveSession != nil || liveFeedTask?.isCancelled == true { break }
+                    await Task.yield()
                 }
             }
             capTask?.cancel()
@@ -405,6 +441,31 @@ final class DictationCoordinator {
             state = .transcribing
             let audio = try await recorder.stop()
             audioURL = audio.fileURL
+            // Real recordings carry incrementally collected health metadata. Reject
+            // unusable capture locally before realtime fallback or a paid batch call.
+            // Legacy/test-created RecordedAudio defaults to `.healthy`.
+            do {
+                try audio.validateHealth()
+            } catch {
+                // Instant mode necessarily opens its stream during capture. If the
+                // completed recording is unhealthy, close that stream without a final
+                // commit and never fall through to paid batch transcription.
+                if let liveSession {
+                    self.liveSession = nil
+                    unhookLiveTap()
+                    liveFeedTask?.cancel()
+                    liveFeedTask = nil
+                    await liveSession.cancel()
+                }
+                throw error
+            }
+            // Closing the stream makes the preflight/feed task drain every buffered
+            // chunk. Await it before deciding whether realtime actually started.
+            if liveFeedTask != nil {
+                unhookLiveTap()
+                await liveFeedTask?.value
+                liveFeedTask = nil
+            }
             let batchProgressSink: TranscriptionProgressSink?
             if activeBatchProgressEnabled, liveSession == nil {
                 let box = liveBox
@@ -420,9 +481,6 @@ final class DictationCoordinator {
             var usedRealtime = false
             if let liveSession {
                 self.liveSession = nil
-                unhookLiveTap()
-                await liveFeedTask?.value // backlog fully fed before the commit
-                liveFeedTask = nil
                 do {
                     let finished = try await liveSession.finish()
                     guard !finished.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

@@ -7,7 +7,16 @@ final class DictationCoordinatorTests: XCTestCase {
 
     final class MockRecorder: AudioRecording {
         var latestLevel: Float = 0
-        var chunkConsumer: (([Float]) -> Void)?
+        var emitVoiceLikePreflight = true
+        private var didEmitPreflight = false
+        var chunkConsumer: (([Float]) -> Void)? {
+            didSet {
+                if chunkConsumer == nil { didEmitPreflight = false; return }
+                guard !didEmitPreflight, let chunkConsumer, emitVoiceLikePreflight else { return }
+                didEmitPreflight = true
+                chunkConsumer(Array(repeating: 0.02, count: 1_600))
+            }
+        }
         var started = 0
         var stopped = 0
         var discarded = 0
@@ -16,6 +25,7 @@ final class DictationCoordinatorTests: XCTestCase {
         /// Mirrors the real engine: true once start() completes, false on stop/discard.
         var isRunning = false
         var stopURL = URL(fileURLWithPath: "/tmp/fake.m4a")
+        var stopHealthDecision: AudioHealthDecision = .healthy
         func start() async throws {
             if let startDelay { try? await Task.sleep(for: startDelay) }
             started += 1
@@ -25,7 +35,8 @@ final class DictationCoordinatorTests: XCTestCase {
         func stop() async throws -> RecordedAudio {
             stopped += 1
             isRunning = false
-            return RecordedAudio(fileURL: stopURL, duration: 2.0)
+            return RecordedAudio(fileURL: stopURL, duration: 2.0,
+                                 healthDecision: stopHealthDecision)
         }
         func discard() {
             discarded += 1
@@ -208,6 +219,24 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(history.recent(limit: 1).first?.status, .failed)
         XCTAssertNotEqual(history.recent(limit: 1).first?.status, .completed)
         XCTAssertEqual(events, [.batchEmptyResult])
+    }
+
+    func testUnhealthyRecordingIsRejectedBeforeProviderCall() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let recorder = MockRecorder()
+        recorder.stopHealthDecision = .noVoice
+        let engine = MockEngine()
+        let (coordinator, _, inserter) = makeCoordinator(
+            recorder: recorder, engine: engine, history: history)
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertTrue(engine.receivedTerms.isEmpty, "Unhealthy capture must not reach a provider")
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertNil(coordinator.lastResult)
+        XCTAssertEqual(history.recent(limit: 1).first?.status, .failed)
     }
 
     func testDetectedLanguagesAreSavedWithCompletedHistory() async throws {
@@ -424,14 +453,58 @@ final class DictationCoordinatorTests: XCTestCase {
 
     final class MockLiveSession: LiveDictationSession {
         var fed = 0
+        var finishCount = 0
         var finishResult: Result<Transcript, Error> = .success(Transcript(text: "live text", engineID: "realtime"))
         var cancelled = false
         var onPartial: PartialTranscriptSink?
         func feed(_ samples: [Float]) async { fed += 1 }
-        func finish() async throws -> Transcript { try finishResult.get() }
+        func finish() async throws -> Transcript {
+            finishCount += 1
+            return try finishResult.get()
+        }
         func cancel() async { cancelled = true }
         /// Simulate a streamed partial reaching the coordinator's sink.
         func emit(_ s: String) { onPartial?(s) }
+    }
+
+    func testUnhealthyRecordingCancelsRealtimeWithoutFinishOrBatchFallback() async throws {
+        let recorder = MockRecorder()
+        recorder.stopHealthDecision = .noSignal
+        let engine = MockEngine()
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: engine, cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            liveSessionFactory: { _ in live })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertTrue(live.cancelled)
+        XCTAssertEqual(live.finishCount, 0)
+        XCTAssertTrue(engine.receivedTerms.isEmpty)
+        XCTAssertNil(recorder.chunkConsumer)
+    }
+
+    func testSilentInstantCaptureNeverCreatesLiveSession() async throws {
+        let recorder = MockRecorder()
+        recorder.emitVoiceLikePreflight = false
+        recorder.stopHealthDecision = .noSignal
+        var factoryCalls = 0
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            liveSessionFactory: { _ in
+                factoryCalls += 1
+                return MockLiveSession()
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(factoryCalls, 0)
     }
 
     func testInstantModeUsesLiveTranscript() async {
@@ -771,7 +844,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
-        XCTAssertEqual(live.fed, 1) // the pre-connect chunk was buffered and replayed, not dropped
+        XCTAssertEqual(live.fed, 2) // gate chunk + pre-connect chunk both replayed in order
     }
 
     // MARK: live typing (Part B4)
