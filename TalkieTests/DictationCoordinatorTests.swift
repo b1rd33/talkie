@@ -117,9 +117,20 @@ final class DictationCoordinatorTests: XCTestCase {
         var typedUpTo: [String] = []
         var resetCount = 0
         var viable = true
-        func reset() { resetCount += 1 }
+        var finalization: LiveTextFinalization?
+        var revisionCount = 0
+        var hasInsertedText: Bool { !typedUpTo.isEmpty }
+        func reset(targetBundleID: String?) { resetCount += 1 }
         @discardableResult
         func type(upTo accumulated: String) throws -> Bool { typedUpTo.append(accumulated); return viable }
+        func finalize(authoritative: String) throws -> LiveTextFinalization {
+            typedUpTo.append(authoritative)
+            return finalization ?? (viable
+                ? .exact(route: .liveUnicodeEvents, verification: .unverified,
+                         revisionCount: revisionCount)
+                : .clipboardFallback(reason: "live_text_final_reconciliation_failed",
+                                     revisionCount: revisionCount))
+        }
         var eraseCount = 0
         @discardableResult
         func eraseTyped() throws -> Bool { eraseCount += 1; return viable }
@@ -803,6 +814,30 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coordinator.lastCompletedAt)
     }
 
+    func testLiveReconciliationPersistsVerifiedRouteAndRevisionCount() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let live = MockLiveSession()
+        let liveInserter = MockLiveInserter()
+        liveInserter.revisionCount = 2
+        liveInserter.finalization = .repaired(
+            route: .accessibilityRange, verification: .verified, revisionCount: 2)
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0, history: history,
+            instantSkipCleanupProvider: { true }, liveTypeProvider: { true },
+            liveInserter: liveInserter,
+            liveSessionFactory: { sink in live.onPartial = sink; return live })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        let record = try XCTUnwrap(history.recent(limit: 1).first)
+        XCTAssertEqual(record.deliveryRoute, .accessibilityRange)
+        XCTAssertEqual(record.deliveryVerification, .verified)
+        XCTAssertEqual(record.revisionCount, 2)
+    }
+
     func testLiveTypeOffUsesNormalInsert() async {
         let live = MockLiveSession()
         let inserter = MockInserter()
@@ -835,7 +870,54 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.inserted, ["raw text"]) // batch raw delivered (level forced .none)
     }
 
-    func testLiveTypeFallsBackToInsertWhenNotViable() async {
+    func testLiveTypeBatchFallbackErasesStreamedPartialBeforePastingBatchResult() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let liveInserter = MockLiveInserter()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0,
+            instantSkipCleanupProvider: { true }, liveTypeProvider: { true },
+            liveInserter: liveInserter,
+            liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("partial realtime")
+        await waitForLive(coordinator, toEqual: "partial realtime")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(liveInserter.eraseCount, 1)
+        XCTAssertEqual(inserter.inserted, ["raw text"])
+        XCTAssertTrue(inserter.copied.isEmpty)
+    }
+
+    func testLiveTypeBatchFallbackCopiesWhenStreamedPartialCannotBeSafelyErased() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let liveInserter = MockLiveInserter()
+        liveInserter.viable = false
+        let inserter = MockInserter()
+        let history = try! HistoryStore(inMemory: true)
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0, history: history,
+            instantSkipCleanupProvider: { true }, liveTypeProvider: { true },
+            liveInserter: liveInserter,
+            liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("partial realtime")
+        await waitForLive(coordinator, toEqual: "partial realtime")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.copied, ["raw text"])
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertEqual(history.recent(limit: 1).first?.fallbackReason,
+                       "live_text_batch_fallback_erase_failed")
+    }
+
+    func testLiveTypeFallsBackToClipboardWhenFinalReconciliationIsNotViable() async {
         let live = MockLiveSession()
         let liveInserter = MockLiveInserter()
         liveInserter.viable = false // e.g. Accessibility not trusted
@@ -849,7 +931,8 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
-        XCTAssertEqual(inserter.inserted, ["live text"]) // AX bail → normal insert of raw text
+        XCTAssertEqual(inserter.copied, ["live text"]) // fail closed: never add text after uncertain typing
+        XCTAssertTrue(inserter.inserted.isEmpty)
     }
 
     func testLiveTypeWithCleanupErasesTypedAndInsertsCleaned() async {

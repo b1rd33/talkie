@@ -217,9 +217,9 @@ final class DictationCoordinator {
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
         liveTranscript = ""     // clear any stale streamed preview
         liveBox.clear()
-        liveInserter?.reset()
         liveTapActive = false
         targetApp = frontmostApp()
+        liveInserter?.reset(targetBundleID: targetApp.bundleID)
         activeTerms = dictionaryTermsProvider()
         activePromptTerms = dictionaryPromptTermsProvider()
         activeSnippets = snippetExpansionsProvider()
@@ -502,24 +502,33 @@ final class DictationCoordinator {
             let deliveryOutcome: DeliveryOutcome
             if !onTarget {
                 stopLivePump()
-                deliveryOutcome = inserter.copyToClipboard(
+                let copied = inserter.copyToClipboard(
                     cleaned, targetBundleID: targetApp.bundleID)
+                deliveryOutcome = DeliveryOutcome(
+                    route: copied.route, verification: copied.verification,
+                    targetBundleID: copied.targetBundleID,
+                    fallbackReason: copied.fallbackReason,
+                    revisionCount: liveInserter?.revisionCount ?? 0)
             } else if liveTypeDelivered, let liveInserter {
                 stopLivePump() // no in-flight pump append racing the final delivery
                 if effectiveLevel == .none, cleaned == transcript.text {
-                    // Raw kept (skip-cleanup): cleaned == raw == what was typed. Flush
-                    // the final suffix the pump may have missed; fall back to a normal
-                    // insert if typing wasn't viable (AX not trusted) or realtime fell
-                    // back to batch (B-7: deliver the result, not partial realtime text).
-                    let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
-                    if viable {
+                    // Reconcile against the authoritative completed transcript. AX-owned
+                    // ranges can repair arbitrary revisions. Append-only hosts fail closed
+                    // to clipboard when a revision cannot be proven safe.
+                    switch try liveInserter.finalize(authoritative: transcript.text) {
+                    case let .exact(route, verification, revisions),
+                         let .repaired(route, verification, revisions):
                         deliveryOutcome = DeliveryOutcome(
-                            route: .liveUnicodeEvents,
-                            verification: .unverified,
-                            targetBundleID: targetApp.bundleID)
-                    } else {
-                        deliveryOutcome = try await inserter.insert(
+                            route: route, verification: verification,
+                            targetBundleID: targetApp.bundleID,
+                            revisionCount: revisions)
+                    case let .clipboardFallback(reason, revisions):
+                        let copied = inserter.copyToClipboard(
                             cleaned, targetBundleID: targetApp.bundleID)
+                        deliveryOutcome = DeliveryOutcome(
+                            route: copied.route, verification: copied.verification,
+                            targetBundleID: copied.targetBundleID,
+                            fallbackReason: reason, revisionCount: revisions)
                     }
                 } else {
                     // Cleanup ran: erase the live-typed raw and replace it with the cleaned
@@ -527,8 +536,13 @@ final class DictationCoordinator {
                     // we'd leave the raw AND add cleaned (duplicate); fall back to clipboard.
                     let erased = (try? liveInserter.eraseTyped()) ?? false
                     if erased {
-                        deliveryOutcome = try await inserter.insert(
+                        let inserted = try await inserter.insert(
                             cleaned, targetBundleID: targetApp.bundleID)
+                        deliveryOutcome = DeliveryOutcome(
+                            route: inserted.route, verification: inserted.verification,
+                            targetBundleID: inserted.targetBundleID,
+                            fallbackReason: inserted.fallbackReason,
+                            revisionCount: liveInserter.revisionCount)
                     } else {
                         let copied = inserter.copyToClipboard(
                             cleaned, targetBundleID: targetApp.bundleID)
@@ -537,8 +551,31 @@ final class DictationCoordinator {
                             verification: copied.verification,
                             targetBundleID: copied.targetBundleID,
                             fallbackReason: "live_text_erase_failed",
-                            revisionCount: copied.revisionCount)
+                            revisionCount: liveInserter.revisionCount)
                     }
+                }
+            } else if activeLiveType, let liveInserter, liveInserter.hasInsertedText {
+                // Realtime may fail after partial text was already emitted. Never paste
+                // the authoritative batch result on top of that partial: first prove the
+                // owned range can be erased, otherwise preserve the result on clipboard.
+                stopLivePump()
+                if (try? liveInserter.eraseTyped()) == true {
+                    var inserted = try await inserter.insert(
+                        cleaned, targetBundleID: targetApp.bundleID)
+                    inserted = DeliveryOutcome(
+                        route: inserted.route, verification: inserted.verification,
+                        targetBundleID: inserted.targetBundleID,
+                        fallbackReason: inserted.fallbackReason,
+                        revisionCount: liveInserter.revisionCount)
+                    deliveryOutcome = inserted
+                } else {
+                    let copied = inserter.copyToClipboard(
+                        cleaned, targetBundleID: targetApp.bundleID)
+                    deliveryOutcome = DeliveryOutcome(
+                        route: copied.route, verification: copied.verification,
+                        targetBundleID: copied.targetBundleID,
+                        fallbackReason: "live_text_batch_fallback_erase_failed",
+                        revisionCount: liveInserter.revisionCount)
                 }
             } else {
                 deliveryOutcome = try await inserter.insert(
