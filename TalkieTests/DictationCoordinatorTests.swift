@@ -507,6 +507,36 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(factoryCalls, 0)
     }
 
+    func testSilentInstantCaptureNeverCreatesConfiguredLiveSession() async throws {
+        let recorder = MockRecorder()
+        recorder.emitVoiceLikePreflight = false
+        recorder.stopHealthDecision = .noSignal
+        var factoryCalls = 0
+        let configuration = makeSessionConfiguration(
+            engineMode: .instant,
+            transcriptionProvider: .openAI,
+            transcriptionModel: "gpt-live-transcribe",
+            cleanupProvider: .openAI,
+            cleanupModel: "gpt-5.4-nano",
+            dictionaryTerms: [],
+            pressEnterEnabled: false,
+            pinnedLanguage: nil)
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            sessionConfigurationProvider: { _ in configuration },
+            configuredLiveSessionFactory: { _, _ in
+                factoryCalls += 1
+                return MockLiveSession()
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(factoryCalls, 0)
+    }
+
     func testInstantModeUsesLiveTranscript() async {
         let live = MockLiveSession()
         let recorder = MockRecorder()
