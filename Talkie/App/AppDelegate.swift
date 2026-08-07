@@ -3,6 +3,7 @@ import AVFoundation
 import ApplicationServices
 import Foundation
 import OSLog
+import ServiceManagement
 import SwiftUI
 import UserNotifications
 
@@ -372,6 +373,7 @@ final class AppServices {
     }
 
     func startUI() {
+        reconcileLaunchAtLoginRegistration()
         // One-time: capture the user's current flat settings as a "My Settings"
         // profile (verbatim) and select it. No apply — settings are unchanged; this
         // just populates the profile picker so the selection matches live settings.
@@ -409,6 +411,24 @@ final class AppServices {
         trackPillActivity()
         showOnboardingIfNeeded()
         checkPermissionHealthOnce()
+    }
+
+    /// Keep macOS' background-item registration aligned with the persisted toggle.
+    /// This also removes stale registrations left behind by older build locations.
+    private func reconcileLaunchAtLoginRegistration() {
+        let service = SMAppService.mainApp
+        do {
+            if settings.launchAtLogin {
+                if service.status == .notRegistered {
+                    try service.register()
+                }
+            } else if service.status == .enabled || service.status == .requiresApproval {
+                try service.unregister()
+            }
+        } catch {
+            Self.diagnosticsLogger.error(
+                "Launch-at-login reconciliation failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
 #if DEBUG
