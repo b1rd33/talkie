@@ -93,10 +93,14 @@ final class DictationCoordinatorTests: XCTestCase {
         var copied: [String] = []
         var pressEnterCount = 0
         var undoCount = 0
+        var insertRoute: DeliveryRoute = .clipboardPaste
+        var insertVerification: DeliveryVerification = .unverified
+        var insertFallbackReason: String?
         func insert(_ text: String, targetBundleID: String?) async throws -> DeliveryOutcome {
             inserted.append(text)
-            return DeliveryOutcome(route: .clipboardPaste, verification: .unverified,
-                                   targetBundleID: targetBundleID)
+            return DeliveryOutcome(route: insertRoute, verification: insertVerification,
+                                   targetBundleID: targetBundleID,
+                                   fallbackReason: insertFallbackReason)
         }
         func copyToClipboard(_ text: String, targetBundleID: String?) -> DeliveryOutcome {
             copied.append(text)
@@ -312,6 +316,48 @@ final class DictationCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(inserter.copied, ["Send it"])
         XCTAssertEqual(inserter.pressEnterCount, 0)
+    }
+
+    func testAccessibilityFallbackDoesNotPressEnterOrArmUndo() async {
+        let inserter = MockInserter()
+        inserter.insertRoute = .clipboardOnly
+        inserter.insertFallbackReason = "accessibility_unavailable"
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "Send it press enter"))),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            frontmostApp: { ("com.target.app", "Target") },
+            pressEnterEnabledProvider: { true }, cleanupLevelProvider: { .none })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Send it"])
+        XCTAssertEqual(inserter.pressEnterCount, 0)
+        XCTAssertFalse(coordinator.undoLastInsertion())
+        XCTAssertEqual(inserter.undoCount, 0)
+    }
+
+    func testPastePostFailureDoesNotPressEnterOrArmUndo() async {
+        let inserter = MockInserter()
+        inserter.insertRoute = .clipboardOnly
+        inserter.insertFallbackReason = "paste_keystroke_failed"
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "Send it press enter"))),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            frontmostApp: { ("com.target.app", "Target") },
+            pressEnterEnabledProvider: { true }, cleanupLevelProvider: { .none })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Send it"])
+        XCTAssertEqual(inserter.pressEnterCount, 0)
+        XCTAssertFalse(coordinator.undoLastInsertion())
+        XCTAssertEqual(inserter.undoCount, 0)
     }
 
     func testReleaseDuringEngineStartupStopsTheEngine() async throws {

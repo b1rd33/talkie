@@ -27,6 +27,19 @@ struct DeliveryOutcome: Equatable, Sendable {
     let fallbackReason: String?
     let revisionCount: Int
 
+    /// True only when Talkie actually attempted to modify the press-time target.
+    /// Clipboard-only recovery and refused/failed routes must never arm follow-up
+    /// Return or Undo actions.
+    var attemptedTargetInsertion: Bool {
+        guard verification != .failed else { return false }
+        switch route {
+        case .accessibilityRange, .liveUnicodeEvents, .clipboardPaste:
+            return true
+        case .clipboardOnly, .refused:
+            return false
+        }
+    }
+
     init(
         route: DeliveryRoute,
         verification: DeliveryVerification,

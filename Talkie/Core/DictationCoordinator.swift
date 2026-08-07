@@ -499,7 +499,6 @@ final class DictationCoordinator {
             // clipboard and notify instead of pasting/typing into the wrong app.
             let onTarget = await pressTimeTargetIsFrontmost()
             let liveTypeDelivered = activeLiveType && usedRealtime
-            var deliveredOnTarget = false
             let deliveryOutcome: DeliveryOutcome
             if !onTarget {
                 stopLivePump()
@@ -522,7 +521,6 @@ final class DictationCoordinator {
                         deliveryOutcome = try await inserter.insert(
                             cleaned, targetBundleID: targetApp.bundleID)
                     }
-                    deliveredOnTarget = true
                 } else {
                     // Cleanup ran: erase the live-typed raw and replace it with the cleaned
                     // text. Only insert cleaned when the erase actually succeeded — otherwise
@@ -531,7 +529,6 @@ final class DictationCoordinator {
                     if erased {
                         deliveryOutcome = try await inserter.insert(
                             cleaned, targetBundleID: targetApp.bundleID)
-                        deliveredOnTarget = true
                     } else {
                         let copied = inserter.copyToClipboard(
                             cleaned, targetBundleID: targetApp.bundleID)
@@ -546,8 +543,8 @@ final class DictationCoordinator {
             } else {
                 deliveryOutcome = try await inserter.insert(
                     cleaned, targetBundleID: targetApp.bundleID)
-                deliveredOnTarget = true
             }
+            let deliveredOnTarget = deliveryOutcome.attemptedTargetInsertion
             if deliveredOnTarget, voiceActions.pressEnter {
                 _ = inserter.pressEnter()
             }
