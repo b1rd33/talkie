@@ -93,8 +93,17 @@ final class DictationCoordinatorTests: XCTestCase {
         var copied: [String] = []
         var pressEnterCount = 0
         var undoCount = 0
-        func insert(_ text: String) async throws { inserted.append(text) }
-        func copyToClipboard(_ text: String) { copied.append(text) }
+        func insert(_ text: String, targetBundleID: String?) async throws -> DeliveryOutcome {
+            inserted.append(text)
+            return DeliveryOutcome(route: .clipboardPaste, verification: .unverified,
+                                   targetBundleID: targetBundleID)
+        }
+        func copyToClipboard(_ text: String, targetBundleID: String?) -> DeliveryOutcome {
+            copied.append(text)
+            return DeliveryOutcome(route: .clipboardOnly, verification: .unverified,
+                                   targetBundleID: targetBundleID,
+                                   fallbackReason: "target_not_frontmost")
+        }
         func pressEnter() -> Bool { pressEnterCount += 1; return true }
         func undo() -> Bool { undoCount += 1; return true }
     }
@@ -203,6 +212,8 @@ final class DictationCoordinatorTests: XCTestCase {
         let record = try XCTUnwrap(history.recent(limit: 1).first)
         XCTAssertEqual(record.language, nil)
         XCTAssertEqual(record.detectedLanguages, ["de", "en"])
+        XCTAssertEqual(record.deliveryRoute, .clipboardPaste)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
     }
 
     func testBatchProgressPreviewsInPillButOnlyFinalTextIsInserted() async {
@@ -867,8 +878,10 @@ final class DictationCoordinatorTests: XCTestCase {
         // new frontmost app; it lands on the clipboard with a notification instead.
         var frontmost: (bundleID: String?, name: String?) = ("com.target.app", "Target")
         let inserter = MockInserter()
+        let history = try! HistoryStore(inMemory: true)
         let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               history: history,
                                                frontmostApp: { frontmost },
                                                focusReturnPollCount: 1,
                                                focusPollSleep: { _ in })
@@ -879,6 +892,11 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.copied, ["Clean text."]) // clipboard fallback
         XCTAssertTrue(inserter.inserted.isEmpty)         // never pasted into Finder
         XCTAssertEqual(coordinator.state, .idle)
+        let record = history.recent(limit: 1)[0]
+        XCTAssertEqual(record.deliveryRoute, .clipboardOnly)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
+        XCTAssertEqual(record.deliveryTargetBundleID, "com.target.app")
+        XCTAssertEqual(record.fallbackReason, "target_not_frontmost")
     }
 
     func testFinalDeliveryWaitsBrieflyForPressTimeTargetToReturn() async {

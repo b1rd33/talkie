@@ -23,8 +23,24 @@ final class DictationRecord {
     var audioPath: String?
     var statusRaw: String
     var wordCount: Int
+    /// Additive delivery metadata. Optional/defaulted storage keeps existing
+    /// SwiftData stores readable without inventing facts for historical rows.
+    var deliveryRouteRaw: String? = nil
+    var deliveryVerificationRaw: String? = nil
+    var deliveryTargetBundleID: String? = nil
+    var fallbackReason: String? = nil
+    var revisionCount: Int = 0
+    var audioHealthSummary: String? = nil
 
     var status: DictationStatus { DictationStatus(rawValue: statusRaw) ?? .completed }
+    var deliveryRoute: DeliveryRoute? {
+        get { deliveryRouteRaw.flatMap(DeliveryRoute.init(rawValue:)) }
+        set { deliveryRouteRaw = newValue?.rawValue }
+    }
+    var deliveryVerification: DeliveryVerification? {
+        get { deliveryVerificationRaw.flatMap(DeliveryVerification.init(rawValue:)) }
+        set { deliveryVerificationRaw = newValue?.rawValue }
+    }
     var detectedLanguages: [String] {
         get {
             guard let data = detectedLanguagesJSON?.data(using: .utf8) else {
@@ -43,7 +59,9 @@ final class DictationRecord {
          engine: String, status: DictationStatus,
          cleanupModel: String? = nil, language: String? = nil,
          detectedLanguages: [String] = [],
-         audioPath: String? = nil) {
+         audioPath: String? = nil,
+         deliveryOutcome: DeliveryOutcome? = nil,
+         audioHealthSummary: String? = nil) {
         self.date = date
         self.rawText = rawText
         self.cleanedText = cleanedText
@@ -58,5 +76,11 @@ final class DictationRecord {
         self.audioPath = audioPath
         self.statusRaw = status.rawValue
         self.wordCount = cleanedText.split { $0.isWhitespace }.count
+        self.deliveryRouteRaw = deliveryOutcome?.route.rawValue
+        self.deliveryVerificationRaw = deliveryOutcome?.verification.rawValue
+        self.deliveryTargetBundleID = deliveryOutcome?.targetBundleID
+        self.fallbackReason = deliveryOutcome?.fallbackReason
+        self.revisionCount = deliveryOutcome?.revisionCount ?? 0
+        self.audioHealthSummary = audioHealthSummary
     }
 }

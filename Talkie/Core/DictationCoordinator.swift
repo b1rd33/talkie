@@ -500,9 +500,11 @@ final class DictationCoordinator {
             let onTarget = await pressTimeTargetIsFrontmost()
             let liveTypeDelivered = activeLiveType && usedRealtime
             var deliveredOnTarget = false
+            let deliveryOutcome: DeliveryOutcome
             if !onTarget {
                 stopLivePump()
-                inserter.copyToClipboard(cleaned)
+                deliveryOutcome = inserter.copyToClipboard(
+                    cleaned, targetBundleID: targetApp.bundleID)
             } else if liveTypeDelivered, let liveInserter {
                 stopLivePump() // no in-flight pump append racing the final delivery
                 if effectiveLevel == .none, cleaned == transcript.text {
@@ -511,7 +513,15 @@ final class DictationCoordinator {
                     // insert if typing wasn't viable (AX not trusted) or realtime fell
                     // back to batch (B-7: deliver the result, not partial realtime text).
                     let viable = (try? liveInserter.type(upTo: transcript.text)) ?? false
-                    if !viable { try await inserter.insert(cleaned) }
+                    if viable {
+                        deliveryOutcome = DeliveryOutcome(
+                            route: .liveUnicodeEvents,
+                            verification: .unverified,
+                            targetBundleID: targetApp.bundleID)
+                    } else {
+                        deliveryOutcome = try await inserter.insert(
+                            cleaned, targetBundleID: targetApp.bundleID)
+                    }
                     deliveredOnTarget = true
                 } else {
                     // Cleanup ran: erase the live-typed raw and replace it with the cleaned
@@ -519,13 +529,23 @@ final class DictationCoordinator {
                     // we'd leave the raw AND add cleaned (duplicate); fall back to clipboard.
                     let erased = (try? liveInserter.eraseTyped()) ?? false
                     if erased {
-                        try await inserter.insert(cleaned)
+                        deliveryOutcome = try await inserter.insert(
+                            cleaned, targetBundleID: targetApp.bundleID)
                         deliveredOnTarget = true
+                    } else {
+                        let copied = inserter.copyToClipboard(
+                            cleaned, targetBundleID: targetApp.bundleID)
+                        deliveryOutcome = DeliveryOutcome(
+                            route: copied.route,
+                            verification: copied.verification,
+                            targetBundleID: copied.targetBundleID,
+                            fallbackReason: "live_text_erase_failed",
+                            revisionCount: copied.revisionCount)
                     }
-                    else { inserter.copyToClipboard(cleaned) }
                 }
             } else {
-                try await inserter.insert(cleaned)
+                deliveryOutcome = try await inserter.insert(
+                    cleaned, targetBundleID: targetApp.bundleID)
                 deliveredOnTarget = true
             }
             if deliveredOnTarget, voiceActions.pressEnter {
@@ -552,7 +572,8 @@ final class DictationCoordinator {
                           cleanupModel: effectiveLevel == .none ? nil : cleanupModelProvider(),
                           language: pinnedLanguageProvider(),
                           detectedLanguages: transcript.detectedLanguages,
-                          audioPath: keptPath)
+                          audioPath: keptPath,
+                          deliveryOutcome: deliveryOutcome)
         } catch is CancellationError {
             recorder.discard()
             state = .idle
@@ -563,9 +584,19 @@ final class DictationCoordinator {
             recorder.discard()
             fail(error)
             // spec §10 row 1 / §8: failed dictations keep their audio for retry.
+            let deliveryOutcome: DeliveryOutcome? = if error is InsertionError {
+                DeliveryOutcome(
+                    route: .refused,
+                    verification: .failed,
+                    targetBundleID: targetApp.bundleID,
+                    fallbackReason: "secure_input_active")
+            } else {
+                nil
+            }
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
                           appName: targetApp.name, duration: 0, engine: "openai", status: .failed,
-                          audioPath: keepAudioForRetry(audioURL))
+                          audioPath: keepAudioForRetry(audioURL),
+                          deliveryOutcome: deliveryOutcome)
         }
     }
 
