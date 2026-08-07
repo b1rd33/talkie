@@ -1283,6 +1283,135 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(cleanup.calls[0].language, "German")
     }
 
+    func testTypedSessionSnapshotDoesNotChangeAfterPress() async {
+        let recorder = MockRecorder()
+        let inserter = MockInserter()
+        let cleanup = MockCleanup()
+        var selected = makeSessionConfiguration(
+            engineMode: .cloud,
+            transcriptionProvider: .openAI,
+            transcriptionModel: "pressed-transcription-model",
+            cleanupProvider: .openAI,
+            cleanupModel: "pressed-cleanup-model",
+            dictionaryTerms: ["PressedTerm"],
+            pressEnterEnabled: true,
+            pinnedLanguage: "German")
+        var engineConfigurations: [DictationSessionConfiguration] = []
+        var cleanupConfigurations: [DictationSessionConfiguration] = []
+
+        let coordinator = DictationCoordinator(
+            recorder: recorder,
+            engine: MockEngine(),
+            cleanup: MockCleanup(),
+            inserter: inserter,
+            minimumHold: 0,
+            sessionConfigurationProvider: { _ in selected },
+            transcriptionEngineProvider: { configuration in
+                engineConfigurations.append(configuration)
+                return MockEngine(result: .success(Transcript(text: "raw text press enter")))
+            },
+            cleanupServiceProvider: { configuration in
+                cleanupConfigurations.append(configuration)
+                return cleanup
+            })
+
+        await coordinator.dictationKeyPressed()
+        selected = makeSessionConfiguration(
+            engineMode: .local,
+            transcriptionProvider: .openRouter,
+            transcriptionModel: "changed-transcription-model",
+            cleanupProvider: .openRouter,
+            cleanupModel: "changed-cleanup-model",
+            dictionaryTerms: ["ChangedTerm"],
+            pressEnterEnabled: false,
+            pinnedLanguage: "French")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(engineConfigurations.count, 1)
+        XCTAssertEqual(engineConfigurations[0].transcription.openAIModel,
+                       "pressed-transcription-model")
+        XCTAssertEqual(engineConfigurations[0].transcription.provider, .openAI)
+        XCTAssertEqual(cleanupConfigurations.map(\.cleanup.model), ["pressed-cleanup-model"])
+        XCTAssertEqual(cleanup.calls.first?.terms, ["PressedTerm"])
+        XCTAssertEqual(cleanup.calls.first?.language, "German")
+        XCTAssertEqual(inserter.pressEnterCount, 1)
+    }
+
+    func testSettingsResolverReturnsImmutableValueSnapshot() {
+        let suite = "DictationSessionConfigurationTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.engineMode = "cloud"
+        settings.transcriptionProvider = "openai"
+        settings.transcriptionModel = "pressed-model"
+        settings.cleanupProvider = "openai"
+        settings.cleanupModel = "pressed-cleaner"
+        settings.cleanupLevel = "medium"
+        settings.pinnedLanguage = "de"
+        let resolver = DictationSessionConfigurationResolver(settings: settings)
+
+        let snapshot = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+        settings.engineMode = "local"
+        settings.transcriptionProvider = "openrouter"
+        settings.transcriptionModel = "changed-model"
+        settings.cleanupProvider = "openrouter"
+        settings.cleanupModel = "changed-cleaner"
+        settings.cleanupLevel = "none"
+        settings.pinnedLanguage = "fr"
+
+        XCTAssertEqual(snapshot.engineMode, .cloud)
+        XCTAssertEqual(snapshot.transcription.provider, .openAI)
+        XCTAssertEqual(snapshot.transcription.openAIModel, "pressed-model")
+        XCTAssertEqual(snapshot.cleanup.provider, .openAI)
+        XCTAssertEqual(snapshot.cleanup.model, "pressed-cleaner")
+        XCTAssertEqual(snapshot.cleanup.level, .medium)
+        XCTAssertEqual(snapshot.pinnedLanguage, "German")
+    }
+
+    private func makeSessionConfiguration(
+        engineMode: EngineMode,
+        transcriptionProvider: TranscriptionProvider,
+        transcriptionModel: String,
+        cleanupProvider: CleanupProvider,
+        cleanupModel: String,
+        dictionaryTerms: [String],
+        pressEnterEnabled: Bool,
+        pinnedLanguage: String?
+    ) -> DictationSessionConfiguration {
+        DictationSessionConfiguration(
+            profileID: nil,
+            engineMode: engineMode,
+            transcription: TranscriptionConfiguration(
+                provider: transcriptionProvider,
+                openAIModel: transcriptionModel,
+                openRouterModel: transcriptionModel,
+                realtimeModel: "gpt-live-transcribe",
+                realtimeDelay: .medium,
+                contextPrompt: "",
+                expectedLanguageCodes: [],
+                streamBatch: false,
+                speakerFilteringRequested: false,
+                speakerFilter: nil),
+            cleanup: CleanupConfiguration(
+                level: .medium,
+                provider: cleanupProvider,
+                model: cleanupModel,
+                customInstructions: ""),
+            dictionaryTerms: dictionaryTerms,
+            dictionaryPromptTerms: dictionaryTerms,
+            snippets: [],
+            pressEnterEnabled: pressEnterEnabled,
+            focusedContext: nil,
+            style: .technical,
+            pinnedLanguage: pinnedLanguage,
+            keepRecording: false,
+            instantSkipCleanup: false,
+            batchProgressEnabled: false,
+            liveTypingEnabled: false)
+    }
+
     func testLevelNoneSkipsCleanupAndInsertsRaw() async {
         let cleanup = MockCleanup()
         let inserter = MockInserter()

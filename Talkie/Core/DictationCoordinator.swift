@@ -81,10 +81,14 @@ final class DictationCoordinator {
     private let instantSkipCleanupProvider: () -> Bool
     private let batchProgressEnabledProvider: () -> Bool
     private let liveTypeProvider: () -> Bool
+    private let sessionConfigurationProvider: (((bundleID: String?, name: String?)) -> DictationSessionConfiguration)?
+    private let transcriptionEngineProvider: ((DictationSessionConfiguration) -> any TranscriptionEngine)?
+    private let cleanupServiceProvider: ((DictationSessionConfiguration) -> any CleanupServicing)?
     private let liveInserter: LiveTextInserting?
     private let diagnosticSink: (DictationDiagnosticEvent) -> Void
     private let liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private let realtimePreflightPolicy: RealtimePreflightPolicy
+    private let configuredLiveSessionFactory: (@MainActor (_ configuration: DictationSessionConfiguration, _ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)?
     private var liveSession: LiveDictationSession?
     private var liveChunkContinuation: AsyncStream<[Float]>.Continuation?
     private var liveFeedTask: Task<Void, Never>?
@@ -106,6 +110,10 @@ final class DictationCoordinator {
     private var activeBatchProgressEnabled = false
     /// Press-time snapshot of instantLiveType; whether a live session was created.
     private var activeLiveType = false
+    private var activeConfiguration: DictationSessionConfiguration?
+    private var activeEngine: (any TranscriptionEngine)?
+    private var activeCleanup: (any CleanupServicing)?
+    private var activeCleanupModel: String?
     private var liveTapActive = false
     /// Bumped after every successful insert — the pill's checkmark flash observes it.
     private(set) var lastCompletedAt: Date?
@@ -142,10 +150,14 @@ final class DictationCoordinator {
          instantSkipCleanupProvider: @escaping () -> Bool = { false },
          batchProgressEnabledProvider: @escaping () -> Bool = { false },
          liveTypeProvider: @escaping () -> Bool = { false },
+         sessionConfigurationProvider: ((((bundleID: String?, name: String?)) -> DictationSessionConfiguration))? = nil,
+         transcriptionEngineProvider: ((DictationSessionConfiguration) -> any TranscriptionEngine)? = nil,
+         cleanupServiceProvider: ((DictationSessionConfiguration) -> any CleanupServicing)? = nil,
          liveInserter: LiveTextInserting? = nil,
          diagnosticSink: @escaping (DictationDiagnosticEvent) -> Void = { _ in },
          realtimePreflightPolicy: RealtimePreflightPolicy = .standard,
-         liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
+         liveSessionFactory: (@MainActor (_ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil,
+         configuredLiveSessionFactory: (@MainActor (_ configuration: DictationSessionConfiguration, _ onPartial: @escaping PartialTranscriptSink) async throws -> LiveDictationSession)? = nil) {
         self.recorder = recorder
         self.engine = engine
         self.cleanup = cleanup
@@ -171,10 +183,14 @@ final class DictationCoordinator {
         self.instantSkipCleanupProvider = instantSkipCleanupProvider
         self.batchProgressEnabledProvider = batchProgressEnabledProvider
         self.liveTypeProvider = liveTypeProvider
+        self.sessionConfigurationProvider = sessionConfigurationProvider
+        self.transcriptionEngineProvider = transcriptionEngineProvider
+        self.cleanupServiceProvider = cleanupServiceProvider
         self.liveInserter = liveInserter
         self.diagnosticSink = diagnosticSink
         self.realtimePreflightPolicy = realtimePreflightPolicy
         self.liveSessionFactory = liveSessionFactory
+        self.configuredLiveSessionFactory = configuredLiveSessionFactory
     }
 
     /// FIFO buffer of pending hotkey gestures + the single task draining them.
@@ -223,16 +239,23 @@ final class DictationCoordinator {
         liveTapActive = false
         targetApp = frontmostApp()
         liveInserter?.reset(targetBundleID: targetApp.bundleID)
-        activeTerms = dictionaryTermsProvider()
-        activePromptTerms = dictionaryPromptTermsProvider()
-        activeSnippets = snippetExpansionsProvider()
-        activePressEnterEnabled = pressEnterEnabledProvider()
-        activeContext = focusedContextProvider()
-        activeLevel = cleanupLevelProvider()
-        activeStyle = stylePresetProvider(targetApp.bundleID)
-        activeInstantSkipCleanup = instantSkipCleanupProvider()
-        activeBatchProgressEnabled = batchProgressEnabledProvider()
-        activeLiveType = liveTypeProvider()
+        let usesTypedConfiguration = sessionConfigurationProvider != nil
+        let configuration = sessionConfigurationProvider?(targetApp) ?? legacyConfiguration()
+        activeConfiguration = configuration
+        activeCleanupModel = usesTypedConfiguration || !configuration.cleanup.model.isEmpty
+            ? configuration.cleanup.model : nil
+        activeEngine = transcriptionEngineProvider?(configuration)
+        activeCleanup = cleanupServiceProvider?(configuration)
+        activeTerms = configuration.dictionaryTerms
+        activePromptTerms = configuration.dictionaryPromptTerms
+        activeSnippets = configuration.snippets
+        activePressEnterEnabled = configuration.pressEnterEnabled
+        activeContext = configuration.focusedContext
+        activeLevel = configuration.cleanup.level
+        activeStyle = configuration.style
+        activeInstantSkipCleanup = configuration.instantSkipCleanup
+        activeBatchProgressEnabled = configuration.batchProgressEnabled
+        activeLiveType = configuration.liveTypingEnabled
         do {
             state = .recording
             recordingStartedAt = pressedAt
@@ -244,7 +267,7 @@ final class DictationCoordinator {
                 recorder.discard()
                 return
             }
-            if let liveSessionFactory {
+            if configuredLiveSessionFactory != nil || liveSessionFactory != nil {
                 let (stream, continuation) = AsyncStream.makeStream(of: [Float].self)
                 liveChunkContinuation = continuation
                 // The sink starts buffering immediately, but no provider connection is
@@ -265,7 +288,14 @@ final class DictationCoordinator {
                             guard preflight.append(samples) else { continue }
                             guard let self else { return }
                             let box = self.liveBox
-                            let created = try await liveSessionFactory { box.set($0) }
+                            let created: LiveDictationSession
+                            if let configuredLiveSessionFactory {
+                                created = try await configuredLiveSessionFactory(configuration) { box.set($0) }
+                            } else if let liveSessionFactory {
+                                created = try await liveSessionFactory { box.set($0) }
+                            } else {
+                                return
+                            }
                             guard !Task.isCancelled else {
                                 await created.cancel()
                                 return
@@ -525,10 +555,11 @@ final class DictationCoordinator {
             } else {
                 state = .cleaning
                 do {
-                    let processed = try await cleanup.clean(
+                    let cleanupService = activeCleanup ?? cleanup
+                    let processed = try await cleanupService.clean(
                         protectedSnippets.text, dictionaryTerms: activeTerms,
                         level: effectiveLevel, style: activeStyle,
-                        pinnedLanguage: pinnedLanguageProvider(),
+                        pinnedLanguage: activeConfiguration?.pinnedLanguage,
                         context: activeContext?.cleanupContext)
                     let formatted = SmartInsertionProcessor.format(
                         processed, precedingText: activeContext?.precedingText)
@@ -653,7 +684,7 @@ final class DictationCoordinator {
                 Task { try? await Task.sleep(for: .seconds(4)); self.offlineBadgeVisible = false }
             }
             var keptPath: String?
-            if keepRecordingsProvider() {
+            if activeConfiguration?.keepRecording ?? keepRecordingsProvider() {
                 keptPath = keepAudioForRetry(audio.fileURL, into: "Recordings") // spec §8: opt-in keep
             } else {
                 try? FileManager.default.removeItem(at: audio.fileURL) // spec §8: discard audio on success
@@ -661,8 +692,8 @@ final class DictationCoordinator {
             history?.save(rawText: transcript.text, cleanedText: cleaned,
                           appBundleID: targetApp.bundleID, appName: targetApp.name,
                           duration: audio.duration, engine: transcript.engineID, status: .completed,
-                          cleanupModel: effectiveLevel == .none ? nil : cleanupModelProvider(),
-                          language: pinnedLanguageProvider(),
+                          cleanupModel: effectiveLevel == .none ? nil : activeCleanupModel,
+                          language: activeConfiguration?.pinnedLanguage,
                           detectedLanguages: transcript.detectedLanguages,
                           audioPath: keptPath,
                           deliveryOutcome: deliveryOutcome)
@@ -699,7 +730,8 @@ final class DictationCoordinator {
     ) async throws -> Transcript {
         let transcript: Transcript
         do {
-            transcript = try await engine.transcribe(
+            let transcriptionEngine = activeEngine ?? engine
+            transcript = try await transcriptionEngine.transcribe(
                 audio, dictionaryTerms: dictionaryTerms, onPartial: onPartial)
         } catch let error as EngineError where error == .emptyTranscription {
             diagnosticSink(.batchEmptyResult)
@@ -710,6 +742,42 @@ final class DictationCoordinator {
             throw EngineError.emptyTranscription
         }
         return transcript
+    }
+
+    /// Compatibility snapshot for tests and injected coordinators that still use
+    /// the original fine-grained providers. Production supplies the typed resolver.
+    private func legacyConfiguration() -> DictationSessionConfiguration {
+        let level = cleanupLevelProvider()
+        return DictationSessionConfiguration(
+            profileID: nil,
+            engineMode: liveSessionFactory == nil ? .cloud : .instant,
+            transcription: TranscriptionConfiguration(
+                provider: .openAI,
+                openAIModel: "openai",
+                openRouterModel: "openrouter",
+                realtimeModel: "realtime",
+                realtimeDelay: .medium,
+                contextPrompt: "",
+                expectedLanguageCodes: [],
+                streamBatch: batchProgressEnabledProvider(),
+                speakerFilteringRequested: false,
+                speakerFilter: nil),
+            cleanup: CleanupConfiguration(
+                level: level,
+                provider: .openRouter,
+                model: cleanupModelProvider() ?? "",
+                customInstructions: ""),
+            dictionaryTerms: dictionaryTermsProvider(),
+            dictionaryPromptTerms: dictionaryPromptTermsProvider(),
+            snippets: snippetExpansionsProvider(),
+            pressEnterEnabled: pressEnterEnabledProvider(),
+            focusedContext: focusedContextProvider(),
+            style: stylePresetProvider(targetApp.bundleID),
+            pinnedLanguage: pinnedLanguageProvider(),
+            keepRecording: keepRecordingsProvider(),
+            instantSkipCleanup: instantSkipCleanupProvider(),
+            batchProgressEnabled: batchProgressEnabledProvider(),
+            liveTypingEnabled: liveTypeProvider())
     }
 
     private func realtimeFinishDiagnostic(for error: Error) -> DictationDiagnosticEvent {
