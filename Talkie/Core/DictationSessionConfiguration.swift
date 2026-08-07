@@ -103,7 +103,7 @@ struct DictationSessionConfigurationResolver {
     var dictionaryTerms: () -> [String] = { [] }
     var dictionaryPromptTerms: () -> [String] = { [] }
     var snippets: () -> [SnippetExpansion] = { [] }
-    var focusedContext: () -> FocusedContext? = { nil }
+    var focusedContext: (String?) -> FocusedContext? = { _ in nil }
     var style: (String?) -> StylePreset = { _ in .neutral }
     var speakerFilter: () -> SpeakerFilterConfiguration? = { nil }
 
@@ -141,7 +141,7 @@ struct DictationSessionConfigurationResolver {
             dictionaryPromptTerms: dictionaryPromptTerms(),
             snippets: snippets(),
             pressEnterEnabled: settings.enablePressEnterAction,
-            focusedContext: focusedContext(),
+            focusedContext: focusedContext(targetBundleID),
             style: style(targetBundleID),
             pinnedLanguage: settings.pinnedLanguage.flatMap {
                 Locale(identifier: "en").localizedString(forIdentifier: $0)

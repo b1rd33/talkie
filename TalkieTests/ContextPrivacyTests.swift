@@ -8,6 +8,18 @@ final class ContextPrivacyTests: XCTestCase {
         XCTAssertTrue(ContextPolicy.mayRead(enabled: true, bundleID: "com.apple.TextEdit", exclusions: []))
     }
 
+    func testContextReadRejectsFocusThatMovedAfterTargetCapture() {
+        XCTAssertTrue(ContextPolicy.stillTargets(
+            capturedBundleID: "com.apple.TextEdit",
+            currentBundleID: "com.apple.TextEdit"))
+        XCTAssertFalse(ContextPolicy.stillTargets(
+            capturedBundleID: "com.apple.TextEdit",
+            currentBundleID: "com.apple.Terminal"))
+        XCTAssertFalse(ContextPolicy.stillTargets(
+            capturedBundleID: nil,
+            currentBundleID: nil))
+    }
+
     func testBoundedContextKeepsOnlyNearbyText() {
         let value = String(repeating: "a", count: 700) + "CURSOR" + String(repeating: "b", count: 700)
         let context = FocusedContext.bounded(value: value, cursorUTF16Offset: 706, selection: nil,

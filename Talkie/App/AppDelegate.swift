@@ -167,8 +167,13 @@ final class AppServices {
             dictionaryTerms: { [history] in history?.dictionaryTermStrings() ?? [] },
             dictionaryPromptTerms: { [history] in history?.dictionaryPromptTerms() ?? [] },
             snippets: { [history] in history?.snippetExpansions() ?? [] },
-            focusedContext: {
-                let target = activeApp.frontmost.bundleID
+            focusedContext: { target in
+                // AX reads are inherently "current focus" reads. Refuse the read
+                // if focus moved after the coordinator captured the press-time app,
+                // otherwise context from another app could enter this session.
+                guard ContextPolicy.stillTargets(
+                    capturedBundleID: target,
+                    currentBundleID: activeApp.frontmost.bundleID) else { return nil }
                 guard ContextPolicy.mayRead(
                     enabled: settings.contextAwarenessEnabled,
                     bundleID: target,

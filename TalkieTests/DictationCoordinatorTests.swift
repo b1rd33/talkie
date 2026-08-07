@@ -1370,6 +1370,61 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.pinnedLanguage, "German")
     }
 
+    func testResolverDoesNotAttachContextAfterFocusMoves() {
+        let suite = "DictationSessionFocusTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        var currentBundleID: String? = "com.apple.Terminal"
+        var contextReadCount = 0
+        let resolver = DictationSessionConfigurationResolver(
+            settings: settings,
+            focusedContext: { capturedBundleID in
+                guard ContextPolicy.stillTargets(
+                    capturedBundleID: capturedBundleID,
+                    currentBundleID: currentBundleID) else { return nil }
+                contextReadCount += 1
+                return FocusedContext(
+                    precedingText: "private text",
+                    followingText: "",
+                    selectedText: nil)
+            })
+
+        let mismatched = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+        XCTAssertNil(mismatched.focusedContext)
+        XCTAssertEqual(contextReadCount, 0)
+
+        currentBundleID = "com.apple.TextEdit"
+        let matched = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+        XCTAssertEqual(matched.focusedContext?.precedingText, "private text")
+        XCTAssertEqual(contextReadCount, 1)
+    }
+
+    func testInvalidProviderStringsDoNotWeakenLocalOnlySnapshot() {
+        let suite = "DictationSessionInvalidProviderTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.engineMode = "local"
+        settings.cleanupLevel = "none"
+        settings.transcriptionProvider = "invalid-provider"
+        settings.cleanupProvider = "invalid-provider"
+        let profileID = UUID()
+        let resolver = DictationSessionConfigurationResolver(
+            settings: settings,
+            profileID: { profileID })
+
+        let snapshot = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+
+        XCTAssertEqual(snapshot.profileID, profileID)
+        XCTAssertEqual(snapshot.engineMode, .local)
+        XCTAssertEqual(snapshot.transcription.provider, .openAI)
+        XCTAssertEqual(snapshot.cleanup.provider, .openRouter)
+        XCTAssertEqual(snapshot.privacyClass, .localOnly)
+        XCTAssertFalse(snapshot.permitsCloudTranscription)
+        XCTAssertFalse(snapshot.permitsCloudCleanup)
+    }
+
     private func makeSessionConfiguration(
         engineMode: EngineMode,
         transcriptionProvider: TranscriptionProvider,
