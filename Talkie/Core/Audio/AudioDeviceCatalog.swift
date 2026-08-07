@@ -120,10 +120,13 @@ struct SystemAudioDeviceCatalog: AudioDeviceCataloging {
         var address = AudioObjectPropertyAddress(mSelector: selector,
                                                  mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
-        var value: CFString = "" as CFString
-        var size = UInt32(MemoryLayout<CFString>.size)
+        // CoreAudio writes a CFStringRef into the supplied pointer. Model the
+        // reference as Unmanaged so Swift does not expose an object-containing
+        // variable as an arbitrary mutable raw buffer.
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else { return nil }
-        return value as String
+        return value?.takeUnretainedValue() as String?
     }
 
     private func inputChannelCount(_ device: AudioDeviceID) -> Int {
