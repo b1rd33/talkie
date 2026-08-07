@@ -7,7 +7,16 @@ final class DictationCoordinatorTests: XCTestCase {
 
     final class MockRecorder: AudioRecording {
         var latestLevel: Float = 0
-        var chunkConsumer: (([Float]) -> Void)?
+        var emitVoiceLikePreflight = true
+        private var didEmitPreflight = false
+        var chunkConsumer: (([Float]) -> Void)? {
+            didSet {
+                if chunkConsumer == nil { didEmitPreflight = false; return }
+                guard !didEmitPreflight, let chunkConsumer, emitVoiceLikePreflight else { return }
+                didEmitPreflight = true
+                chunkConsumer(Array(repeating: 0.02, count: 1_600))
+            }
+        }
         var started = 0
         var stopped = 0
         var discarded = 0
@@ -16,6 +25,7 @@ final class DictationCoordinatorTests: XCTestCase {
         /// Mirrors the real engine: true once start() completes, false on stop/discard.
         var isRunning = false
         var stopURL = URL(fileURLWithPath: "/tmp/fake.m4a")
+        var stopHealthDecision: AudioHealthDecision = .healthy
         func start() async throws {
             if let startDelay { try? await Task.sleep(for: startDelay) }
             started += 1
@@ -25,7 +35,8 @@ final class DictationCoordinatorTests: XCTestCase {
         func stop() async throws -> RecordedAudio {
             stopped += 1
             isRunning = false
-            return RecordedAudio(fileURL: stopURL, duration: 2.0)
+            return RecordedAudio(fileURL: stopURL, duration: 2.0,
+                                 healthDecision: stopHealthDecision)
         }
         func discard() {
             discarded += 1
@@ -93,8 +104,21 @@ final class DictationCoordinatorTests: XCTestCase {
         var copied: [String] = []
         var pressEnterCount = 0
         var undoCount = 0
-        func insert(_ text: String) async throws { inserted.append(text) }
-        func copyToClipboard(_ text: String) { copied.append(text) }
+        var insertRoute: DeliveryRoute = .clipboardPaste
+        var insertVerification: DeliveryVerification = .unverified
+        var insertFallbackReason: String?
+        func insert(_ text: String, targetBundleID: String?) async throws -> DeliveryOutcome {
+            inserted.append(text)
+            return DeliveryOutcome(route: insertRoute, verification: insertVerification,
+                                   targetBundleID: targetBundleID,
+                                   fallbackReason: insertFallbackReason)
+        }
+        func copyToClipboard(_ text: String, targetBundleID: String?) -> DeliveryOutcome {
+            copied.append(text)
+            return DeliveryOutcome(route: .clipboardOnly, verification: .unverified,
+                                   targetBundleID: targetBundleID,
+                                   fallbackReason: "target_not_frontmost")
+        }
         func pressEnter() -> Bool { pressEnterCount += 1; return true }
         func undo() -> Bool { undoCount += 1; return true }
     }
@@ -104,9 +128,20 @@ final class DictationCoordinatorTests: XCTestCase {
         var typedUpTo: [String] = []
         var resetCount = 0
         var viable = true
-        func reset() { resetCount += 1 }
+        var finalization: LiveTextFinalization?
+        var revisionCount = 0
+        var hasInsertedText: Bool { !typedUpTo.isEmpty }
+        func reset(targetBundleID: String?) { resetCount += 1 }
         @discardableResult
         func type(upTo accumulated: String) throws -> Bool { typedUpTo.append(accumulated); return viable }
+        func finalize(authoritative: String) throws -> LiveTextFinalization {
+            typedUpTo.append(authoritative)
+            return finalization ?? (viable
+                ? .exact(route: .liveUnicodeEvents, verification: .unverified,
+                         revisionCount: revisionCount)
+                : .clipboardFallback(reason: "live_text_final_reconciliation_failed",
+                                     revisionCount: revisionCount))
+        }
         var eraseCount = 0
         @discardableResult
         func eraseTyped() throws -> Bool { eraseCount += 1; return viable }
@@ -186,6 +221,24 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(events, [.batchEmptyResult])
     }
 
+    func testUnhealthyRecordingIsRejectedBeforeProviderCall() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let recorder = MockRecorder()
+        recorder.stopHealthDecision = .noVoice
+        let engine = MockEngine()
+        let (coordinator, _, inserter) = makeCoordinator(
+            recorder: recorder, engine: engine, history: history)
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertTrue(engine.receivedTerms.isEmpty, "Unhealthy capture must not reach a provider")
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertNil(coordinator.lastResult)
+        XCTAssertEqual(history.recent(limit: 1).first?.status, .failed)
+    }
+
     func testDetectedLanguagesAreSavedWithCompletedHistory() async throws {
         let history = try HistoryStore(inMemory: true)
         let engine = MockEngine(result: .success(Transcript(
@@ -203,6 +256,8 @@ final class DictationCoordinatorTests: XCTestCase {
         let record = try XCTUnwrap(history.recent(limit: 1).first)
         XCTAssertEqual(record.language, nil)
         XCTAssertEqual(record.detectedLanguages, ["de", "en"])
+        XCTAssertEqual(record.deliveryRoute, .clipboardPaste)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
     }
 
     func testBatchProgressPreviewsInPillButOnlyFinalTextIsInserted() async {
@@ -303,6 +358,48 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.pressEnterCount, 0)
     }
 
+    func testAccessibilityFallbackDoesNotPressEnterOrArmUndo() async {
+        let inserter = MockInserter()
+        inserter.insertRoute = .clipboardOnly
+        inserter.insertFallbackReason = "accessibility_unavailable"
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "Send it press enter"))),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            frontmostApp: { ("com.target.app", "Target") },
+            pressEnterEnabledProvider: { true }, cleanupLevelProvider: { .none })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Send it"])
+        XCTAssertEqual(inserter.pressEnterCount, 0)
+        XCTAssertFalse(coordinator.undoLastInsertion())
+        XCTAssertEqual(inserter.undoCount, 0)
+    }
+
+    func testPastePostFailureDoesNotPressEnterOrArmUndo() async {
+        let inserter = MockInserter()
+        inserter.insertRoute = .clipboardOnly
+        inserter.insertFallbackReason = "paste_keystroke_failed"
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(),
+            engine: MockEngine(result: .success(Transcript(text: "Send it press enter"))),
+            cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+            frontmostApp: { ("com.target.app", "Target") },
+            pressEnterEnabledProvider: { true }, cleanupLevelProvider: { .none })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.inserted, ["Send it"])
+        XCTAssertEqual(inserter.pressEnterCount, 0)
+        XCTAssertFalse(coordinator.undoLastInsertion())
+        XCTAssertEqual(inserter.undoCount, 0)
+    }
+
     func testReleaseDuringEngineStartupStopsTheEngine() async throws {
         // Mic-pinned-on race (live bug 2026-06-11): release lands while
         // recorder.start() is still awaiting — its discard() no-ops because the
@@ -356,14 +453,88 @@ final class DictationCoordinatorTests: XCTestCase {
 
     final class MockLiveSession: LiveDictationSession {
         var fed = 0
+        var finishCount = 0
         var finishResult: Result<Transcript, Error> = .success(Transcript(text: "live text", engineID: "realtime"))
         var cancelled = false
         var onPartial: PartialTranscriptSink?
         func feed(_ samples: [Float]) async { fed += 1 }
-        func finish() async throws -> Transcript { try finishResult.get() }
+        func finish() async throws -> Transcript {
+            finishCount += 1
+            return try finishResult.get()
+        }
         func cancel() async { cancelled = true }
         /// Simulate a streamed partial reaching the coordinator's sink.
         func emit(_ s: String) { onPartial?(s) }
+    }
+
+    func testUnhealthyRecordingCancelsRealtimeWithoutFinishOrBatchFallback() async throws {
+        let recorder = MockRecorder()
+        recorder.stopHealthDecision = .noSignal
+        let engine = MockEngine()
+        let live = MockLiveSession()
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: engine, cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            liveSessionFactory: { _ in live })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertTrue(live.cancelled)
+        XCTAssertEqual(live.finishCount, 0)
+        XCTAssertTrue(engine.receivedTerms.isEmpty)
+        XCTAssertNil(recorder.chunkConsumer)
+    }
+
+    func testSilentInstantCaptureNeverCreatesLiveSession() async throws {
+        let recorder = MockRecorder()
+        recorder.emitVoiceLikePreflight = false
+        recorder.stopHealthDecision = .noSignal
+        var factoryCalls = 0
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            liveSessionFactory: { _ in
+                factoryCalls += 1
+                return MockLiveSession()
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(factoryCalls, 0)
+    }
+
+    func testSilentInstantCaptureNeverCreatesConfiguredLiveSession() async throws {
+        let recorder = MockRecorder()
+        recorder.emitVoiceLikePreflight = false
+        recorder.stopHealthDecision = .noSignal
+        var factoryCalls = 0
+        let configuration = makeSessionConfiguration(
+            engineMode: .instant,
+            transcriptionProvider: .openAI,
+            transcriptionModel: "gpt-live-transcribe",
+            cleanupProvider: .openAI,
+            cleanupModel: "gpt-5.4-nano",
+            dictionaryTerms: [],
+            pressEnterEnabled: false,
+            pinnedLanguage: nil)
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0,
+            sessionConfigurationProvider: { _ in configuration },
+            configuredLiveSessionFactory: { _, _ in
+                factoryCalls += 1
+                return MockLiveSession()
+            })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(factoryCalls, 0)
     }
 
     func testInstantModeUsesLiveTranscript() async {
@@ -703,7 +874,7 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
-        XCTAssertEqual(live.fed, 1) // the pre-connect chunk was buffered and replayed, not dropped
+        XCTAssertEqual(live.fed, 2) // gate chunk + pre-connect chunk both replayed in order
     }
 
     // MARK: live typing (Part B4)
@@ -746,6 +917,30 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coordinator.lastCompletedAt)
     }
 
+    func testLiveReconciliationPersistsVerifiedRouteAndRevisionCount() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let live = MockLiveSession()
+        let liveInserter = MockLiveInserter()
+        liveInserter.revisionCount = 2
+        liveInserter.finalization = .repaired(
+            route: .accessibilityRange, verification: .verified, revisionCount: 2)
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0, history: history,
+            instantSkipCleanupProvider: { true }, liveTypeProvider: { true },
+            liveInserter: liveInserter,
+            liveSessionFactory: { sink in live.onPartial = sink; return live })
+
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        let record = try XCTUnwrap(history.recent(limit: 1).first)
+        XCTAssertEqual(record.deliveryRoute, .accessibilityRange)
+        XCTAssertEqual(record.deliveryVerification, .verified)
+        XCTAssertEqual(record.revisionCount, 2)
+    }
+
     func testLiveTypeOffUsesNormalInsert() async {
         let live = MockLiveSession()
         let inserter = MockInserter()
@@ -778,7 +973,54 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.inserted, ["raw text"]) // batch raw delivered (level forced .none)
     }
 
-    func testLiveTypeFallsBackToInsertWhenNotViable() async {
+    func testLiveTypeBatchFallbackErasesStreamedPartialBeforePastingBatchResult() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let liveInserter = MockLiveInserter()
+        let inserter = MockInserter()
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0,
+            instantSkipCleanupProvider: { true }, liveTypeProvider: { true },
+            liveInserter: liveInserter,
+            liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("partial realtime")
+        await waitForLive(coordinator, toEqual: "partial realtime")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(liveInserter.eraseCount, 1)
+        XCTAssertEqual(inserter.inserted, ["raw text"])
+        XCTAssertTrue(inserter.copied.isEmpty)
+    }
+
+    func testLiveTypeBatchFallbackCopiesWhenStreamedPartialCannotBeSafelyErased() async {
+        let live = MockLiveSession()
+        live.finishResult = .failure(EngineError.requestFailed(status: 0, message: "socket died"))
+        let liveInserter = MockLiveInserter()
+        liveInserter.viable = false
+        let inserter = MockInserter()
+        let history = try! HistoryStore(inMemory: true)
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: inserter, minimumHold: 0, history: history,
+            instantSkipCleanupProvider: { true }, liveTypeProvider: { true },
+            liveInserter: liveInserter,
+            liveSessionFactory: { sink in live.onPartial = sink; return live })
+        await coordinator.dictationKeyPressed()
+        live.emit("partial realtime")
+        await waitForLive(coordinator, toEqual: "partial realtime")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(inserter.copied, ["raw text"])
+        XCTAssertTrue(inserter.inserted.isEmpty)
+        XCTAssertEqual(history.recent(limit: 1).first?.fallbackReason,
+                       "live_text_batch_fallback_erase_failed")
+    }
+
+    func testLiveTypeFallsBackToClipboardWhenFinalReconciliationIsNotViable() async {
         let live = MockLiveSession()
         let liveInserter = MockLiveInserter()
         liveInserter.viable = false // e.g. Accessibility not trusted
@@ -792,7 +1034,8 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyPressed()
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
-        XCTAssertEqual(inserter.inserted, ["live text"]) // AX bail → normal insert of raw text
+        XCTAssertEqual(inserter.copied, ["live text"]) // fail closed: never add text after uncertain typing
+        XCTAssertTrue(inserter.inserted.isEmpty)
     }
 
     func testLiveTypeWithCleanupErasesTypedAndInsertsCleaned() async {
@@ -867,8 +1110,10 @@ final class DictationCoordinatorTests: XCTestCase {
         // new frontmost app; it lands on the clipboard with a notification instead.
         var frontmost: (bundleID: String?, name: String?) = ("com.target.app", "Target")
         let inserter = MockInserter()
+        let history = try! HistoryStore(inMemory: true)
         let coordinator = DictationCoordinator(recorder: MockRecorder(), engine: MockEngine(),
                                                cleanup: MockCleanup(), inserter: inserter, minimumHold: 0,
+                                               history: history,
                                                frontmostApp: { frontmost },
                                                focusReturnPollCount: 1,
                                                focusPollSleep: { _ in })
@@ -879,6 +1124,11 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(inserter.copied, ["Clean text."]) // clipboard fallback
         XCTAssertTrue(inserter.inserted.isEmpty)         // never pasted into Finder
         XCTAssertEqual(coordinator.state, .idle)
+        let record = history.recent(limit: 1)[0]
+        XCTAssertEqual(record.deliveryRoute, .clipboardOnly)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
+        XCTAssertEqual(record.deliveryTargetBundleID, "com.target.app")
+        XCTAssertEqual(record.fallbackReason, "target_not_frontmost")
     }
 
     func testFinalDeliveryWaitsBrieflyForPressTimeTargetToReturn() async {
@@ -1061,6 +1311,190 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(cleanup.calls[0].level, .medium)
         XCTAssertEqual(cleanup.calls[0].style, .technical)
         XCTAssertEqual(cleanup.calls[0].language, "German")
+    }
+
+    func testTypedSessionSnapshotDoesNotChangeAfterPress() async {
+        let recorder = MockRecorder()
+        let inserter = MockInserter()
+        let cleanup = MockCleanup()
+        var selected = makeSessionConfiguration(
+            engineMode: .cloud,
+            transcriptionProvider: .openAI,
+            transcriptionModel: "pressed-transcription-model",
+            cleanupProvider: .openAI,
+            cleanupModel: "pressed-cleanup-model",
+            dictionaryTerms: ["PressedTerm"],
+            pressEnterEnabled: true,
+            pinnedLanguage: "German")
+        var engineConfigurations: [DictationSessionConfiguration] = []
+        var cleanupConfigurations: [DictationSessionConfiguration] = []
+
+        let coordinator = DictationCoordinator(
+            recorder: recorder,
+            engine: MockEngine(),
+            cleanup: MockCleanup(),
+            inserter: inserter,
+            minimumHold: 0,
+            sessionConfigurationProvider: { _ in selected },
+            transcriptionEngineProvider: { configuration in
+                engineConfigurations.append(configuration)
+                return MockEngine(result: .success(Transcript(text: "raw text press enter")))
+            },
+            cleanupServiceProvider: { configuration in
+                cleanupConfigurations.append(configuration)
+                return cleanup
+            })
+
+        await coordinator.dictationKeyPressed()
+        selected = makeSessionConfiguration(
+            engineMode: .local,
+            transcriptionProvider: .openRouter,
+            transcriptionModel: "changed-transcription-model",
+            cleanupProvider: .openRouter,
+            cleanupModel: "changed-cleanup-model",
+            dictionaryTerms: ["ChangedTerm"],
+            pressEnterEnabled: false,
+            pinnedLanguage: "French")
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+
+        XCTAssertEqual(engineConfigurations.count, 1)
+        XCTAssertEqual(engineConfigurations[0].transcription.openAIModel,
+                       "pressed-transcription-model")
+        XCTAssertEqual(engineConfigurations[0].transcription.provider, .openAI)
+        XCTAssertEqual(cleanupConfigurations.map(\.cleanup.model), ["pressed-cleanup-model"])
+        XCTAssertEqual(cleanup.calls.first?.terms, ["PressedTerm"])
+        XCTAssertEqual(cleanup.calls.first?.language, "German")
+        XCTAssertEqual(inserter.pressEnterCount, 1)
+    }
+
+    func testSettingsResolverReturnsImmutableValueSnapshot() {
+        let suite = "DictationSessionConfigurationTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.engineMode = "cloud"
+        settings.transcriptionProvider = "openai"
+        settings.transcriptionModel = "pressed-model"
+        settings.cleanupProvider = "openai"
+        settings.cleanupModel = "pressed-cleaner"
+        settings.cleanupLevel = "medium"
+        settings.pinnedLanguage = "de"
+        let resolver = DictationSessionConfigurationResolver(settings: settings)
+
+        let snapshot = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+        settings.engineMode = "local"
+        settings.transcriptionProvider = "openrouter"
+        settings.transcriptionModel = "changed-model"
+        settings.cleanupProvider = "openrouter"
+        settings.cleanupModel = "changed-cleaner"
+        settings.cleanupLevel = "none"
+        settings.pinnedLanguage = "fr"
+
+        XCTAssertEqual(snapshot.engineMode, .cloud)
+        XCTAssertEqual(snapshot.transcription.provider, .openAI)
+        XCTAssertEqual(snapshot.transcription.openAIModel, "pressed-model")
+        XCTAssertEqual(snapshot.cleanup.provider, .openAI)
+        XCTAssertEqual(snapshot.cleanup.model, "pressed-cleaner")
+        XCTAssertEqual(snapshot.cleanup.level, .medium)
+        XCTAssertEqual(snapshot.pinnedLanguage, "German")
+    }
+
+    func testResolverDoesNotAttachContextAfterFocusMoves() {
+        let suite = "DictationSessionFocusTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        var currentBundleID: String? = "com.apple.Terminal"
+        var contextReadCount = 0
+        let resolver = DictationSessionConfigurationResolver(
+            settings: settings,
+            focusedContext: { capturedBundleID in
+                guard ContextPolicy.stillTargets(
+                    capturedBundleID: capturedBundleID,
+                    currentBundleID: currentBundleID) else { return nil }
+                contextReadCount += 1
+                return FocusedContext(
+                    precedingText: "private text",
+                    followingText: "",
+                    selectedText: nil)
+            })
+
+        let mismatched = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+        XCTAssertNil(mismatched.focusedContext)
+        XCTAssertEqual(contextReadCount, 0)
+
+        currentBundleID = "com.apple.TextEdit"
+        let matched = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+        XCTAssertEqual(matched.focusedContext?.precedingText, "private text")
+        XCTAssertEqual(contextReadCount, 1)
+    }
+
+    func testInvalidProviderStringsDoNotWeakenLocalOnlySnapshot() {
+        let suite = "DictationSessionInvalidProviderTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.engineMode = "local"
+        settings.cleanupLevel = "none"
+        settings.transcriptionProvider = "invalid-provider"
+        settings.cleanupProvider = "invalid-provider"
+        let profileID = UUID()
+        let resolver = DictationSessionConfigurationResolver(
+            settings: settings,
+            profileID: { profileID })
+
+        let snapshot = resolver.resolve(targetBundleID: "com.apple.TextEdit")
+
+        XCTAssertEqual(snapshot.profileID, profileID)
+        XCTAssertEqual(snapshot.engineMode, .local)
+        XCTAssertEqual(snapshot.transcription.provider, .openAI)
+        XCTAssertEqual(snapshot.cleanup.provider, .openRouter)
+        XCTAssertEqual(snapshot.privacyClass, .localOnly)
+        XCTAssertFalse(snapshot.permitsCloudTranscription)
+        XCTAssertFalse(snapshot.permitsCloudCleanup)
+    }
+
+    private func makeSessionConfiguration(
+        engineMode: EngineMode,
+        transcriptionProvider: TranscriptionProvider,
+        transcriptionModel: String,
+        cleanupProvider: CleanupProvider,
+        cleanupModel: String,
+        dictionaryTerms: [String],
+        pressEnterEnabled: Bool,
+        pinnedLanguage: String?
+    ) -> DictationSessionConfiguration {
+        DictationSessionConfiguration(
+            profileID: nil,
+            engineMode: engineMode,
+            transcription: TranscriptionConfiguration(
+                provider: transcriptionProvider,
+                openAIModel: transcriptionModel,
+                openRouterModel: transcriptionModel,
+                realtimeModel: "gpt-live-transcribe",
+                realtimeDelay: .medium,
+                contextPrompt: "",
+                expectedLanguageCodes: [],
+                streamBatch: false,
+                speakerFilteringRequested: false,
+                speakerFilter: nil),
+            cleanup: CleanupConfiguration(
+                level: .medium,
+                provider: cleanupProvider,
+                model: cleanupModel,
+                customInstructions: ""),
+            dictionaryTerms: dictionaryTerms,
+            dictionaryPromptTerms: dictionaryTerms,
+            snippets: [],
+            pressEnterEnabled: pressEnterEnabled,
+            focusedContext: nil,
+            style: .technical,
+            pinnedLanguage: pinnedLanguage,
+            keepRecording: false,
+            instantSkipCleanup: false,
+            batchProgressEnabled: false,
+            liveTypingEnabled: false)
     }
 
     func testLevelNoneSkipsCleanupAndInsertsRaw() async {

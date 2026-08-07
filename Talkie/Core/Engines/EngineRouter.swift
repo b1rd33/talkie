@@ -11,6 +11,33 @@ struct EngineRouter: TranscriptionEngine {
     var mode: @Sendable () -> String          // "cloud" | "local"
     var localAvailable: @Sendable () -> Bool  // models downloaded?
 
+    init(
+        cloud: TranscriptionEngine,
+        local: TranscriptionEngine,
+        mode: @escaping @Sendable () -> String,
+        localAvailable: @escaping @Sendable () -> Bool
+    ) {
+        self.cloud = cloud
+        self.local = local
+        self.mode = mode
+        self.localAvailable = localAvailable
+    }
+
+    init(
+        cloud: TranscriptionEngine,
+        local: TranscriptionEngine,
+        configuration: DictationSessionConfiguration,
+        localAvailable: @escaping @Sendable () -> Bool
+    ) {
+        self.cloud = cloud
+        self.local = local
+        let resolvedMode = configuration.permitsCloudTranscription
+            ? configuration.engineMode.rawValue
+            : EngineMode.local.rawValue
+        self.mode = { resolvedMode }
+        self.localAvailable = localAvailable
+    }
+
     func transcribe(
         _ audio: RecordedAudio,
         dictionaryTerms: [String],

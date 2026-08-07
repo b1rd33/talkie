@@ -33,12 +33,25 @@ final class HistoryStoreTests: XCTestCase {
             let legacy = try HistoryStore(storeURL: legacyURL)
             legacy.save(rawText: "legacy raw", cleanedText: "Legacy Talkie data",
                         appBundleID: "com.apple.TextEdit", appName: "TextEdit",
-                        duration: 2, engine: "openai", status: .completed)
+                        duration: 2, engine: "openai", status: .completed,
+                        deliveryOutcome: DeliveryOutcome(
+                            route: .clipboardPaste,
+                            verification: .unverified,
+                            targetBundleID: "com.apple.TextEdit",
+                            fallbackReason: nil,
+                            revisionCount: 2),
+                        audioHealthSummary: "healthy")
         }
 
         let migrated = try HistoryStore(applicationSupportURL: applicationSupport)
 
-        XCTAssertEqual(migrated.recent(limit: 1).first?.cleanedText, "Legacy Talkie data")
+        let record = try XCTUnwrap(migrated.recent(limit: 1).first)
+        XCTAssertEqual(record.cleanedText, "Legacy Talkie data")
+        XCTAssertEqual(record.deliveryRoute, .clipboardPaste)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
+        XCTAssertEqual(record.deliveryTargetBundleID, "com.apple.TextEdit")
+        XCTAssertEqual(record.revisionCount, 2)
+        XCTAssertEqual(record.audioHealthSummary, "healthy")
         XCTAssertTrue(FileManager.default.fileExists(atPath: legacyURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: migrated.storeURL.path))
     }
@@ -81,6 +94,41 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(recent[0].cleanedText, "clean")
         XCTAssertEqual(recent[0].status, .completed)
         XCTAssertEqual(recent[0].wordCount, 1)
+    }
+
+    func testHistoricalRecordDeliveryFieldsHaveSafeDefaults() {
+        let record = DictationRecord(
+            rawText: "raw", cleanedText: "clean", appBundleID: nil, appName: nil,
+            durationSec: 1, engine: "openai", status: .completed)
+
+        XCTAssertNil(record.deliveryRoute)
+        XCTAssertNil(record.deliveryVerification)
+        XCTAssertNil(record.deliveryTargetBundleID)
+        XCTAssertNil(record.fallbackReason)
+        XCTAssertEqual(record.revisionCount, 0)
+        XCTAssertNil(record.audioHealthSummary)
+    }
+
+    func testSavePersistsDeliveryOutcomeWithoutTranscriptDuplication() throws {
+        let store = try makeStore()
+        store.save(
+            rawText: "raw", cleanedText: "clean", appBundleID: "com.apple.TextEdit",
+            appName: "TextEdit", duration: 1, engine: "openai", status: .completed,
+            deliveryOutcome: DeliveryOutcome(
+                route: .clipboardOnly,
+                verification: .unverified,
+                targetBundleID: "com.apple.TextEdit",
+                fallbackReason: "target_not_frontmost",
+                revisionCount: 3),
+            audioHealthSummary: "healthy")
+
+        let record = try XCTUnwrap(store.recent(limit: 1).first)
+        XCTAssertEqual(record.deliveryRoute, .clipboardOnly)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
+        XCTAssertEqual(record.deliveryTargetBundleID, "com.apple.TextEdit")
+        XCTAssertEqual(record.fallbackReason, "target_not_frontmost")
+        XCTAssertEqual(record.revisionCount, 3)
+        XCTAssertEqual(record.audioHealthSummary, "healthy")
     }
 
     func testRecentIsNewestFirstAndLimited() throws {
@@ -208,5 +256,32 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(record.cleanedText, "Clean text.")
         XCTAssertEqual(record.wordCount, 2)
         XCTAssertNil(record.audioPath)
+        XCTAssertNil(record.deliveryRoute)
+        XCTAssertNil(record.deliveryVerification)
+    }
+
+    func testMarkRetriedCanPersistCallerDeliveryOutcome() throws {
+        let store = try makeStore()
+        store.save(rawText: "", cleanedText: "", appBundleID: nil, appName: nil,
+                   duration: 5, engine: "openai", status: .failed,
+                   audioPath: "/tmp/keep.m4a",
+                   deliveryOutcome: DeliveryOutcome(
+                    route: .refused, verification: .failed,
+                    fallbackReason: "original_failure", revisionCount: 4))
+        let record = store.recent(limit: 1)[0]
+
+        store.markRetried(
+            record, rawText: "raw", cleanedText: "Clean text.",
+            deliveryOutcome: DeliveryOutcome(
+                route: .clipboardOnly,
+                verification: .unverified,
+                fallbackReason: "history_retry"),
+            audioHealthSummary: "healthy")
+
+        XCTAssertEqual(record.deliveryRoute, .clipboardOnly)
+        XCTAssertEqual(record.deliveryVerification, .unverified)
+        XCTAssertEqual(record.fallbackReason, "history_retry")
+        XCTAssertEqual(record.revisionCount, 0)
+        XCTAssertEqual(record.audioHealthSummary, "healthy")
     }
 }

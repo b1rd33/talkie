@@ -3,6 +3,7 @@ import AVFoundation
 import ApplicationServices
 import Foundation
 import OSLog
+import ServiceManagement
 import SwiftUI
 import UserNotifications
 
@@ -161,6 +162,78 @@ final class AppServices {
         let resolver = StyleResolver(overrides: { [history] in
             history?.styleOverridesByBundleID() ?? [:]
         })
+        let sessionResolver = DictationSessionConfigurationResolver(
+            settings: settings,
+            profileID: { profiles.selectedProfileID },
+            dictionaryTerms: { [history] in history?.dictionaryTermStrings() ?? [] },
+            dictionaryPromptTerms: { [history] in history?.dictionaryPromptTerms() ?? [] },
+            snippets: { [history] in history?.snippetExpansions() ?? [] },
+            focusedContext: { target in
+                // AX reads are inherently "current focus" reads. Refuse the read
+                // if focus moved after the coordinator captured the press-time app,
+                // otherwise context from another app could enter this session.
+                guard ContextPolicy.stillTargets(
+                    capturedBundleID: target,
+                    currentBundleID: activeApp.frontmost.bundleID) else { return nil }
+                guard ContextPolicy.mayRead(
+                    enabled: settings.contextAwarenessEnabled,
+                    bundleID: target,
+                    exclusions: settings.contextExcludedBundleIDs) else { return nil }
+                return contextReader.read()
+            },
+            style: { bundleID in resolver.resolve(bundleID: bundleID) },
+            speakerFilter: { try? speakerReference.store.configuration() })
+
+        let configuredTranscriptionEngine: (DictationSessionConfiguration) -> any TranscriptionEngine = { configuration in
+            let transcription = configuration.transcription
+            let openAI = OpenAIEngine(
+                apiKeyProvider: { credential(.openAIKey) },
+                modelProvider: { transcription.openAIModel },
+                contextProvider: { dictionaryTerms in
+                    TranscriptionContext.build(
+                        prompt: transcription.contextPrompt,
+                        dictionaryTerms: dictionaryTerms,
+                        languageCodes: transcription.expectedLanguageCodes)
+                },
+                streamProvider: { transcription.streamBatch },
+                speakerFilterProvider: { transcription.speakerFilter },
+                speakerFilteringEnabledProvider: {
+                    transcription.speakerFilteringRequested
+                })
+            let openRouter = OpenRouterTranscriptionEngine(
+                apiKeyProvider: { credential(.openRouterKey) },
+                modelProvider: { transcription.openRouterModel })
+            let cloud = CloudEngineSwitch(
+                openai: openAI,
+                openrouter: openRouter,
+                provider: { transcription.provider.rawValue })
+            // `.localOnly` is deliberately resolved to local regardless of any
+            // later settings mutation; EngineRouter never cloud-falls-back in local mode.
+            return EngineRouter(
+                cloud: cloud,
+                local: localEngine,
+                configuration: configuration,
+                localAvailable: { FluidAudioBackend.modelsPresent })
+        }
+
+        let configuredCleanupService: (DictationSessionConfiguration) -> any CleanupServicing = { configuration in
+            let cleanup = configuration.cleanup
+            return CleanupService(
+                apiKeyProvider: {
+                    credential(cleanup.provider == .openAI ? .openAIKey : .openRouterKey)
+                },
+                modelProvider: { cleanup.model },
+                endpointProvider: {
+                    URL(string: cleanup.provider == .openAI
+                        ? "https://api.openai.com/v1/chat/completions"
+                        : "https://openrouter.ai/api/v1/chat/completions")!
+                },
+                extraPayloadProvider: {
+                    cleanup.provider == .openAI && cleanup.model.hasPrefix("gpt-5")
+                        ? ["reasoning_effort": "none"] : [:]
+                },
+                customInstructionsProvider: { cleanup.customInstructions })
+        }
         let coordinator = DictationCoordinator(
             recorder: recorder, engine: router, cleanup: cleanup,
             inserter: TextInserter(notifier: notifier),
@@ -208,36 +281,33 @@ final class AppServices {
             liveTypeProvider: {
                 defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
+            sessionConfigurationProvider: { target in
+                sessionResolver.resolve(targetBundleID: target.bundleID)
+            },
+            transcriptionEngineProvider: configuredTranscriptionEngine,
+            cleanupServiceProvider: configuredCleanupService,
             liveInserter: LiveTextInserter(),
             diagnosticSink: { event in
                 Self.diagnosticsLogger.notice("\(event.rawValue, privacy: .public)")
             },
-            liveSessionFactory: { [history] onPartial in
-                guard defaults.string(forKey: "engineMode") == "instant" else {
+            configuredLiveSessionFactory: { configuration, onPartial in
+                guard configuration.engineMode == .instant else {
                     throw EngineError.invalidResponse // coordinator treats factory throw as "no live session"
                 }
-                guard !(defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false) else {
+                guard !configuration.transcription.speakerFilteringRequested else {
                     throw EngineError.invalidResponse // speaker labels are batch-only
                 }
                 let key = credential(.openAIKey) ?? ""
                 guard !key.isEmpty else { throw EngineError.missingAPIKey }
-                let terms = history?.dictionaryPromptTerms() ?? []
                 let context = TranscriptionContext.build(
-                    prompt: defaults.string(forKey: "transcriptionContextPrompt") ?? "",
-                    dictionaryTerms: terms,
-                    languageCodes:
-                        defaults.stringArray(forKey: "expectedInputLanguages") ?? [])
-                let model = defaults.string(forKey: "realtimeTranscriptionModel")
-                    ?? "gpt-live-transcribe"
-                let delay = RealtimeTranscriptionDelay(
-                    rawValue:
-                        defaults.string(forKey: "realtimeTranscriptionDelay") ?? "")
-                    ?? .medium
+                    prompt: configuration.transcription.contextPrompt,
+                    dictionaryTerms: configuration.dictionaryPromptTerms,
+                    languageCodes: configuration.transcription.expectedLanguageCodes)
                 let session = OpenAIRealtimeSession(
                     transport: OpenAIRealtimeTransport(apiKey: key),
-                    model: model,
+                    model: configuration.transcription.realtimeModel,
                     context: context,
-                    delay: delay,
+                    delay: configuration.transcription.realtimeDelay,
                     encoder: RealtimePCMEncoder(),
                     onPartial: onPartial)
                 try await session.begin()
@@ -303,6 +373,7 @@ final class AppServices {
     }
 
     func startUI() {
+        reconcileLaunchAtLoginRegistration()
         // One-time: capture the user's current flat settings as a "My Settings"
         // profile (verbatim) and select it. No apply — settings are unchanged; this
         // just populates the profile picker so the selection matches live settings.
@@ -340,6 +411,24 @@ final class AppServices {
         trackPillActivity()
         showOnboardingIfNeeded()
         checkPermissionHealthOnce()
+    }
+
+    /// Keep macOS' background-item registration aligned with the persisted toggle.
+    /// This also removes stale registrations left behind by older build locations.
+    private func reconcileLaunchAtLoginRegistration() {
+        let service = SMAppService.mainApp
+        do {
+            if settings.launchAtLogin {
+                if service.status == .notRegistered {
+                    try service.register()
+                }
+            } else if service.status == .enabled || service.status == .requiresApproval {
+                try service.unregister()
+            }
+        } catch {
+            Self.diagnosticsLogger.error(
+                "Launch-at-login reconciliation failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
 #if DEBUG

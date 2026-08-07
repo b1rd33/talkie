@@ -118,6 +118,8 @@ final class HistoryStore {
         let language: String?
         let detectedLanguages: [String]
         let audioPath: String?
+        let deliveryOutcome: DeliveryOutcome?
+        let audioHealthSummary: String?
     }
 
     private struct DictionarySnapshot {
@@ -174,7 +176,9 @@ final class HistoryStore {
                     cleanupModel: $0.cleanupModel,
                     language: $0.language,
                     detectedLanguages: $0.detectedLanguages,
-                    audioPath: $0.audioPath)
+                    audioPath: $0.audioPath,
+                    deliveryOutcome: Self.deliveryOutcome(from: $0),
+                    audioHealthSummary: $0.audioHealthSummary)
             },
             dictionary: context.fetch(FetchDescriptor<DictionaryEntry>()).map {
                 DictionarySnapshot(
@@ -219,7 +223,9 @@ final class HistoryStore {
                 cleanupModel: record.cleanupModel,
                 language: record.language,
                 detectedLanguages: record.detectedLanguages,
-                audioPath: record.audioPath))
+                audioPath: record.audioPath,
+                deliveryOutcome: record.deliveryOutcome,
+                audioHealthSummary: record.audioHealthSummary))
         }
         for entry in snapshot.dictionary {
             context.insert(DictionaryEntry(
@@ -258,13 +264,17 @@ final class HistoryStore {
     func save(rawText: String, cleanedText: String, appBundleID: String?, appName: String?,
               duration: TimeInterval, engine: String, status: DictationStatus,
               cleanupModel: String? = nil, language: String? = nil,
-              detectedLanguages: [String] = [], audioPath: String? = nil) {
+              detectedLanguages: [String] = [], audioPath: String? = nil,
+              deliveryOutcome: DeliveryOutcome? = nil,
+              audioHealthSummary: String? = nil) {
         let record = DictationRecord(rawText: rawText, cleanedText: cleanedText,
                                      appBundleID: appBundleID, appName: appName,
                                      durationSec: duration, engine: engine, status: status,
                                      cleanupModel: cleanupModel, language: language,
                                      detectedLanguages: detectedLanguages,
-                                     audioPath: audioPath)
+                                     audioPath: audioPath,
+                                     deliveryOutcome: deliveryOutcome,
+                                     audioHealthSummary: audioHealthSummary)
         context.insert(record)
         try? context.save()
     }
@@ -425,13 +435,32 @@ final class HistoryStore {
 
     /// A retried dictation succeeded: fill the texts in, flip to completed,
     /// and drop the kept-audio reference.
-    func markRetried(_ record: DictationRecord, rawText: String, cleanedText: String) {
+    func markRetried(_ record: DictationRecord, rawText: String, cleanedText: String,
+                     deliveryOutcome: DeliveryOutcome? = nil,
+                     audioHealthSummary: String? = nil) {
         record.rawText = rawText
         record.cleanedText = cleanedText
         record.statusRaw = DictationStatus.completed.rawValue
         record.wordCount = cleanedText.split { $0.isWhitespace }.count
         record.audioPath = nil
+        record.deliveryRoute = deliveryOutcome?.route
+        record.deliveryVerification = deliveryOutcome?.verification
+        record.deliveryTargetBundleID = deliveryOutcome?.targetBundleID
+        record.fallbackReason = deliveryOutcome?.fallbackReason
+        record.revisionCount = deliveryOutcome?.revisionCount ?? 0
+        record.audioHealthSummary = audioHealthSummary
         try? context.save()
+    }
+
+    private static func deliveryOutcome(from record: DictationRecord) -> DeliveryOutcome? {
+        guard let route = record.deliveryRoute,
+              let verification = record.deliveryVerification else { return nil }
+        return DeliveryOutcome(
+            route: route,
+            verification: verification,
+            targetBundleID: record.deliveryTargetBundleID,
+            fallbackReason: record.fallbackReason,
+            revisionCount: record.revisionCount)
     }
 
     // MARK: - Stats (spec §7 Home)

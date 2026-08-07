@@ -30,6 +30,14 @@ enum ContextPolicy {
     static func mayRead(enabled: Bool, bundleID: String?, exclusions: [String]) -> Bool {
         enabled && bundleID.map { !exclusions.contains($0) } != false
     }
+
+    static func stillTargets(
+        capturedBundleID: String?,
+        currentBundleID: String?
+    ) -> Bool {
+        guard let capturedBundleID else { return false }
+        return currentBundleID == capturedBundleID
+    }
 }
 
 @MainActor
