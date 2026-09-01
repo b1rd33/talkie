@@ -9,6 +9,6 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/soffes/HotKey", exact: "0.2.1"),
-        .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.15.5"),
+        .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.15.6"),
     ]
 )
