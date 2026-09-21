@@ -124,7 +124,7 @@ final class PillRenderingTests: XCTestCase {
 
     func testProcessingRingMovesWhileMounted() async throws {
         var processing = PillPresentation.preview(.transcribing)
-        processing.reduceMotion = true // mirrors the user's production macOS setting
+        processing.reduceMotion = false
         let hosting = makeHosting(PillRendererView(
             presentation: processing,
             levelSource: SimulatedAudioLevelSource(seed: 21, fixture: .quiet)))
@@ -138,6 +138,22 @@ final class PillRenderingTests: XCTestCase {
 
         XCTAssertNotEqual(first.representation(using: .png, properties: [:]),
                           second.representation(using: .png, properties: [:]))
+    }
+
+    func testReducedMotionProcessingRingStaysStillWhileMounted() async throws {
+        var processing = PillPresentation.preview(.transcribing)
+        processing.reduceMotion = true
+        let hosting = makeHosting(PillRendererView(
+            presentation: processing,
+            levelSource: SimulatedAudioLevelSource(seed: 21, fixture: .quiet)))
+        let window = attachToNonactivatingPanel(hosting)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        let first = try snapshot(hosting)
+        try await Task.sleep(for: .milliseconds(225))
+        let second = try snapshot(hosting)
+        XCTAssertEqual(first.representation(using: .png, properties: [:]),
+                       second.representation(using: .png, properties: [:]))
     }
 
     func testReducedMotionOrganicWaveformStillRespondsToMicrophoneLevel() async throws {

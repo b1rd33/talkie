@@ -57,6 +57,7 @@ final class SpeakerReferenceStore: @unchecked Sendable {
     }
 
     func save(_ audio: RecordedAudio) throws {
+        try audio.validateHealth()
         guard audio.duration >= 2 else { throw SpeakerReferenceError.tooShort }
         guard audio.duration <= 10 else { throw SpeakerReferenceError.tooLong }
         let directory = referenceURL.deletingLastPathComponent()
@@ -102,9 +103,10 @@ final class SpeakerReferenceController {
     func start() async {
         guard !isRecording else { return }
         statusMessage = nil
+        isRecording = true
         do {
             try await recorder.start()
-            isRecording = true
+            guard isRecording else { recorder.discard(); return }
             automaticStopTask?.cancel()
             automaticStopTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(8))
@@ -112,6 +114,7 @@ final class SpeakerReferenceController {
                 await self?.stop()
             }
         } catch {
+            isRecording = false
             statusMessage = error.localizedDescription
         }
     }

@@ -21,7 +21,7 @@ final class PillMotionProfileTests: XCTestCase {
         XCTAssertEqual(profile.entryMinimumScale, 1)
         XCTAssertEqual(profile.handsFreeMinimumScale, 1)
         XCTAssertEqual(profile.handsFreeMaximumScale, 1)
-        XCTAssertEqual(profile.processingRotationDuration, 1.8)
+        XCTAssertEqual(profile.processingRotationDuration, 0)
         XCTAssertEqual(profile.waveformFPS, 8)
         XCTAssertFalse(profile.animatesWaveformGeometry)
     }
@@ -37,16 +37,13 @@ final class PillMotionProfileTests: XCTestCase {
         XCTAssertEqual(profile.processingRotationDegrees(at: 0.225), 90, accuracy: 0.0001)
         XCTAssertEqual(profile.processingRotationDegrees(at: 0.45), 180, accuracy: 0.0001)
         XCTAssertEqual(profile.processingRotationDegrees(at: 0.9), 0, accuracy: 0.0001)
-        XCTAssertEqual(PillMotionProfile.minimalMotion.processingRotationDegrees(at: 0.45), 90,
+        XCTAssertEqual(PillMotionProfile.minimalMotion.processingRotationDegrees(at: 0.45), 0,
                        accuracy: 0.0001)
     }
 
-    func testReduceMotionSlowsButDoesNotFreezeFunctionalProgress() {
-        let normal = PillMotionProfile.resolve(reduceMotion: false)
+    func testReduceMotionStopsRepeatingProgressMotion() {
         let reduced = PillMotionProfile.resolve(reduceMotion: true)
-
-        XCTAssertGreaterThan(reduced.processingRotationDuration,
-                             normal.processingRotationDuration)
-        XCTAssertGreaterThan(reduced.processingRotationDegrees(at: 0.45), 0)
+        XCTAssertEqual(reduced.processingRotationDuration, 0)
+        XCTAssertEqual(reduced.processingRotationDegrees(at: 100), 0)
     }
 }

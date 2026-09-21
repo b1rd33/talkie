@@ -38,6 +38,8 @@ actor OpenAIRealtimeSession {
     /// Item IDs preserve server commit order even when transcription completions
     /// arrive out of order. Duplicate commit/completion events are idempotent.
     private var committedItemIDs: [String] = []
+    private var observedItemIDs: [String] = []
+    private var cancelled = false
     private var items: [String: ItemState] = [:]
     /// finish() was called — fn released; we're draining the trailing segment.
     private var finishing = false
@@ -57,8 +59,10 @@ actor OpenAIRealtimeSession {
 
     /// Cumulative live text for the partial sink: finalized segments + the
     /// in-progress segment's deltas, spaced without doubling.
-    private func liveCumulative() -> String {
-        committedItemIDs.reduce(into: "") { result, id in
+    private func liveCumulative(includeUncommitted: Bool = true) -> String {
+        let ids = committedItemIDs + (includeUncommitted
+            ? observedItemIDs.filter { !committedItemIDs.contains($0) } : [])
+        return ids.reduce(into: "") { result, id in
             let text = items[id]?.displayText ?? ""
             guard !text.isEmpty else { return }
             if result.isEmpty || result.hasSuffix(" ") || text.hasPrefix(" ") {
@@ -133,12 +137,22 @@ actor OpenAIRealtimeSession {
     }
 
     func feed(_ samples: [Float]) async {
-        guard serverError == nil, completedTranscript == nil else { return }
+        guard !cancelled, serverError == nil, completedTranscript == nil else { return }
         guard let pcm = try? encoder.encode(samples), !pcm.isEmpty else { return }
         try? await transport.send(RealtimeClientEvent.audioAppend(pcm16: pcm).encoded())
     }
 
     func finish() async throws -> Transcript {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await finishTurn()
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+    }
+
+    private func finishTurn() async throws -> Transcript {
+        guard !cancelled else { throw CancellationError() }
         // EVERY exit — early server-error throw, a failed send, or a continuation
         // resumed with an error — must close the socket and stop the receive loop,
         // or the batch-fallback path orphans a live WebSocket (Task 7's "no orphaned
@@ -165,6 +179,8 @@ actor OpenAIRealtimeSession {
         } catch {
             throw EngineError.realtimeFailure(.transportFailure)
         }
+        try Task.checkCancellation()
+        guard !cancelled else { throw CancellationError() }
         startFinishTimeout()
         let text: String = try await withCheckedThrowingContinuation { continuation in
             if let completedTranscript {
@@ -184,6 +200,9 @@ actor OpenAIRealtimeSession {
     }
 
     func cancel() {
+        cancelled = true
+        finishContinuation?.resume(throwing: CancellationError())
+        finishContinuation = nil
         cleanup()
     }
 
@@ -207,6 +226,7 @@ actor OpenAIRealtimeSession {
             switch event {
             case .transcriptDelta(let itemID, let delta):
                 guard items[itemID]?.isTerminal != true else { continue }
+                if !observedItemIDs.contains(itemID) { observedItemIDs.append(itemID) }
                 items[itemID, default: ItemState()].deltas += delta
                 noteActivity()
                 onPartial?(liveCumulative()) // cumulative; synchronous, no MainActor hop
@@ -221,6 +241,7 @@ actor OpenAIRealtimeSession {
                 let itemID, let transcript, let detectedLanguages
             ):
                 guard items[itemID]?.isTerminal != true else { continue }
+                if !observedItemIDs.contains(itemID) { observedItemIDs.append(itemID) }
                 var item = items[itemID, default: ItemState()]
                 let completed = transcript.isEmpty
                     ? item.deltas.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -282,7 +303,7 @@ actor OpenAIRealtimeSession {
 
     private func finalizeIfStable(generation: Int) {
         guard generation == activityGeneration, isReadyToSettle else { return }
-        let result = liveCumulative().trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = liveCumulative(includeUncommitted: false).trimmingCharacters(in: .whitespacesAndNewlines)
         if result.isEmpty {
             finishError = .emptyTranscription
             finishContinuation?.resume(throwing: EngineError.emptyTranscription)

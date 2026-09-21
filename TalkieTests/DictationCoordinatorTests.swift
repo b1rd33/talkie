@@ -119,7 +119,7 @@ final class DictationCoordinatorTests: XCTestCase {
                                    targetBundleID: targetBundleID,
                                    fallbackReason: "target_not_frontmost")
         }
-        func pressEnter() -> Bool { pressEnterCount += 1; return true }
+        func pressEnter(after delivery: DeliveryOutcome) -> Bool { pressEnterCount += 1; return true }
         func undo() -> Bool { undoCount += 1; return true }
     }
 
@@ -1645,5 +1645,37 @@ final class DictationCoordinatorTests: XCTestCase {
         await coordinator.dictationKeyPressed()  // spec §3: one dictation in flight
         await coordinator.waitForIdle()
         XCTAssertEqual(recorder.started, 1)
+    }
+}
+
+extension DictationCoordinatorTests {
+    func testRetryResolvesCurrentConfigurationAfterPreviousDictation() async throws {
+        let history = try HistoryStore(inMemory: true)
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: source) }
+        try Data("fixture".utf8).write(to: source)
+        var model = "old"
+        var resolved: [String] = []
+        let coordinator = DictationCoordinator(
+            recorder: MockRecorder(), engine: MockEngine(), cleanup: MockCleanup(),
+            inserter: MockInserter(), minimumHold: 0, history: history,
+            sessionConfigurationProvider: { _ in
+                self.makeSessionConfiguration(engineMode: .cloud, transcriptionProvider: .openAI,
+                    transcriptionModel: model, cleanupProvider: .openAI, cleanupModel: model,
+                    dictionaryTerms: [], pressEnterEnabled: false, pinnedLanguage: nil)
+            },
+            transcriptionEngineProvider: { config in
+                resolved.append(config.transcription.openAIModel)
+                return MockEngine()
+            })
+        await coordinator.dictationKeyPressed()
+        await coordinator.dictationKeyReleased()
+        await coordinator.waitForIdle()
+        model = "new"
+        history.save(rawText: "", cleanedText: "", appBundleID: nil, appName: nil,
+                     duration: 2, engine: "fixture", status: .failed, audioPath: source.path)
+        let result = await coordinator.retry(history.recent(limit: 1)[0])
+        XCTAssertNotNil(result)
+        XCTAssertEqual(resolved, ["old", "new"])
     }
 }

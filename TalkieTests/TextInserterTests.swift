@@ -27,7 +27,8 @@ final class TextInserterTests: XCTestCase {
                                     secureInputCheck: { secureInput },
                                     axTrustedCheck: { axTrusted },
                                     notifier: notifier,
-                                    restoreDelay: .milliseconds(1))
+                                    restoreDelay: .milliseconds(1),
+                                    captureFocus: { _ in { true } })
         return (inserter, notifier, { pastes })
     }
 
@@ -38,7 +39,8 @@ final class TextInserterTests: XCTestCase {
                                     secureInputCheck: { false },
                                     axTrustedCheck: { true },
                                     pasteboardGuard: guard_,
-                                    restoreDelay: .milliseconds(1))
+                                    restoreDelay: .milliseconds(1),
+                                    captureFocus: { _ in { true } })
         let outcome = try await inserter.insert(
             "Hello from Talkie", targetBundleID: "com.apple.TextEdit")
         XCTAssertEqual(pastes, 1)
@@ -90,7 +92,8 @@ final class TextInserterTests: XCTestCase {
             secureInputCheck: { false },
             axTrustedCheck: { true },
             pasteboardGuard: guard_,
-            restoreDelay: .milliseconds(1))
+            restoreDelay: .milliseconds(1),
+                                    captureFocus: { _ in { true } })
 
         let outcome = try await inserter.insert(
             "Keep me", targetBundleID: "com.apple.TextEdit")
@@ -112,5 +115,55 @@ final class TextInserterTests: XCTestCase {
         XCTAssertEqual(outcome.verification, .unverified)
         XCTAssertEqual(outcome.targetBundleID, "com.apple.TextEdit")
         XCTAssertEqual(outcome.fallbackReason, "target_not_frontmost")
+    }
+}
+
+extension TextInserterTests {
+    func testFocusSwitchDuringPasteDelayLeavesClipboardWithoutKeystroke() async throws {
+        let pasteboard = MockPasteboardGuard()
+        var focused = true
+        var pastes = 0
+        let inserter = TextInserter(
+            pasteKeystroke: { pastes += 1; return true },
+            secureInputCheck: { false }, axTrustedCheck: { true },
+            pasteboardGuard: pasteboard,
+            captureFocus: { _ in { focused } },
+            sleep: { _ in focused = false })
+        let outcome = try await inserter.insert("fixture", targetBundleID: "test.editor")
+        XCTAssertEqual(pastes, 0)
+        XCTAssertEqual(outcome.fallbackReason, "target_focus_changed")
+        XCTAssertEqual(pasteboard.writes, ["fixture"])
+        XCTAssertEqual(pasteboard.restoreCount, 0)
+    }
+
+    func testFocusSwitchDuringRestoreDelaySuppressesReturn() async throws {
+        var focused = true
+        var sleeps = 0
+        var returns = 0
+        let inserter = TextInserter(
+            pasteKeystroke: { true }, enterKeystroke: { returns += 1; return true },
+            secureInputCheck: { false }, axTrustedCheck: { true },
+            pasteboardGuard: MockPasteboardGuard(),
+            captureFocus: { _ in { focused } },
+            sleep: { _ in sleeps += 1; if sleeps == 2 { focused = false } })
+        let delivery = try await inserter.insert("fixture", targetBundleID: "test.editor")
+        XCTAssertFalse(inserter.pressEnter(after: delivery))
+        XCTAssertEqual(returns, 0)
+    }
+
+    func testCancellationDuringSettleRestoresClipboardAndDoesNotPaste() async {
+        let pasteboard = MockPasteboardGuard()
+        var pastes = 0
+        let inserter = TextInserter(
+            pasteKeystroke: { pastes += 1; return true },
+            secureInputCheck: { false }, axTrustedCheck: { true },
+            pasteboardGuard: pasteboard, captureFocus: { _ in { true } },
+            sleep: { _ in throw CancellationError() })
+        do {
+            _ = try await inserter.insert("fixture", targetBundleID: "test.editor")
+            XCTFail("Expected cancellation")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(pastes, 0)
+        XCTAssertEqual(pasteboard.restoreCount, 1)
     }
 }

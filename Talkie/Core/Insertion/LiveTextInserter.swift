@@ -124,6 +124,8 @@ final class LiveTextInserter: LiveTextInserting {
     private let secureInputCheck: () -> Bool
     private let axTrustedCheck: () -> Bool
     private let postUnicode: (String) -> Bool
+    private let captureFocus: (String?) -> (() -> Bool)?
+    private var targetIsFocused: (() -> Bool)?
     private let ownedRange: LiveTextOwnedRangeReplacing
     private var usesOwnedRange = false
     private var ownershipLost = false
@@ -135,11 +137,13 @@ final class LiveTextInserter: LiveTextInserting {
     init(secureInputCheck: @escaping () -> Bool = { IsSecureEventInputEnabled() },
          axTrustedCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
          postUnicode: ((String) -> Bool)? = nil,
-         ownedRange: LiveTextOwnedRangeReplacing? = nil) {
+         ownedRange: LiveTextOwnedRangeReplacing? = nil,
+         captureFocus: ((String?) -> (() -> Bool)?)? = nil) {
         self.secureInputCheck = secureInputCheck
         self.axTrustedCheck = axTrustedCheck
         self.postUnicode = postUnicode ?? Self.postUnicodeString
         self.ownedRange = ownedRange ?? AXLiveTextOwnedRange()
+        self.captureFocus = captureFocus ?? { FocusedInputTarget.capture(bundleID: $0) }
     }
 
     func reset(targetBundleID: String?) {
@@ -148,6 +152,7 @@ final class LiveTextInserter: LiveTextInserting {
         revisionCount = 0
         ownershipLost = false
         reconciliationRequired = false
+        targetIsFocused = captureFocus(targetBundleID)
         usesOwnedRange = ownedRange.begin(targetBundleID: targetBundleID)
     }
 
@@ -168,6 +173,10 @@ final class LiveTextInserter: LiveTextInserting {
             return true
         }
 
+        guard targetIsFocused?() == true else {
+            ownershipLost = true
+            return false
+        }
         guard let add = Self.suffix(committed: committed, accumulated: accumulated) else {
             reconciliationRequired = true
             return true // viable for capture, but final delivery must fail closed

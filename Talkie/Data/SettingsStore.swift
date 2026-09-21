@@ -42,7 +42,12 @@ final class SettingsStore {
     var openrouterTranscriptionModel: String { didSet { defaults.set(openrouterTranscriptionModel, forKey: "openrouterTranscriptionModel") } }
     var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
-    var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
+    var engineMode: String {
+        didSet {
+            defaults.set(engineMode, forKey: "engineMode")
+            if engineMode != "cloud", speakerFilteringEnabled { speakerFilteringEnabled = false }
+        }
+    }
     var showDockIcon: Bool { didSet { defaults.set(showDockIcon, forKey: "showDockIcon") } }
     /// The Flow Bar pill's visual style (see PillStyle). Persisted as its raw value.
     var pillStyle: PillStyle { didSet { defaults.set(pillStyle.rawValue, forKey: "pillStyle") } }
@@ -154,7 +159,10 @@ final class SettingsStore {
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
         pttShortcut = defaults.string(forKey: "pttShortcut")
         handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")
-        if speakerFilteringEnabled {
+        if engineMode == "local" {
+            speakerFilteringEnabled = false
+            defaults.set(false, forKey: "speakerFilteringEnabled")
+        } else if speakerFilteringEnabled {
             engineMode = "cloud"
             transcriptionProvider = "openai"
             instantLiveType = false

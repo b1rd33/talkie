@@ -32,6 +32,7 @@ struct WaveformCanvasView: View {
     var barWidth: CGFloat = 2.5
     var gap: CGFloat = 2.5
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var buffer: WaveformBuffer
     /// Bumped each timer tick; read in `body` so the `Canvas` re-renders on every tick.
     @State private var tick = 0
@@ -40,7 +41,7 @@ struct WaveformCanvasView: View {
     /// Canvas froze at its first frame and the waveform never animated. A common-mode
     /// main-runloop timer fires regardless of key-window status; it lives only as long
     /// as this view (shown only during `.recording`), so there's no idle cost.
-    private let clock = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+
 
     init(recorder: any AudioLevelReading, color: Color = .primary, barCount: Int = 28) {
         self.levelSource = recorder
@@ -64,7 +65,8 @@ struct WaveformCanvasView: View {
             }
         }
         .frame(width: CGFloat(barCount) * (barWidth + gap), height: 24)
-        .onReceive(clock) { _ in
+        .onReceive(Timer.publish(every: reduceMotion ? 0.125 : 1.0 / 30.0,
+                                 on: .main, in: .common).autoconnect()) { _ in
             buffer.advance(to: Date(), level: levelSource.latestLevel)
             tick &+= 1
         }

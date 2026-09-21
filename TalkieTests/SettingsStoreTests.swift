@@ -185,3 +185,21 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(SettingsStore(defaults: defaults).transcriptionModel, "whisper-1")
     }
 }
+
+extension SettingsStoreTests {
+    @MainActor
+    func testPrivateProfileDisablesCloudSpeakerFilteringAndSurvivesRelaunch() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.speakerFilteringEnabled = true
+        DictationProfile.privateOffline.apply(to: settings)
+        XCTAssertFalse(settings.speakerFilteringEnabled)
+        let reloaded = SettingsStore(defaults: defaults)
+        let configuration = DictationSessionConfigurationResolver(settings: reloaded).resolve(targetBundleID: nil)
+        XCTAssertEqual(configuration.privacyClass, .localOnly)
+        XCTAssertFalse(configuration.permitsCloudTranscription)
+        XCTAssertFalse(configuration.permitsCloudCleanup)
+    }
+}

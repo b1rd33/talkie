@@ -46,3 +46,37 @@ final class SpeakerReferenceStoreTests: XCTestCase {
         }
     }
 }
+
+extension SpeakerReferenceStoreTests {
+    func testUnhealthyRecordingCannotReplaceExistingReference() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("fixture.m4a")
+        try Data("fixture".utf8).write(to: source)
+        let store = SpeakerReferenceStore(baseDirectory: root)
+        try store.save(RecordedAudio(fileURL: source, duration: 3))
+        for decision in [AudioHealthDecision.noSignal, .noVoice, .deviceLost, .tooShort] {
+            XCTAssertThrowsError(try store.save(RecordedAudio(
+                fileURL: source, duration: 3, healthDecision: decision)))
+            XCTAssertEqual(try Data(contentsOf: store.referenceURL), Data("fixture".utf8))
+        }
+    }
+}
+
+extension SpeakerReferenceStoreTests {
+    @MainActor
+    func testRemovingReferenceDuringRecorderStartupStopsLateCapture() async {
+        let recorder = DictationCoordinatorTests.MockRecorder()
+        recorder.startDelay = .milliseconds(50)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let controller = SpeakerReferenceController(
+            recorder: recorder, store: SpeakerReferenceStore(baseDirectory: root))
+        let start = Task { await controller.start() }
+        await Task.yield()
+        controller.remove()
+        await start.value
+        XCTAssertFalse(controller.isRecording)
+        XCTAssertFalse(recorder.isRunning)
+    }
+}

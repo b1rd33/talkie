@@ -335,6 +335,7 @@ final class DictationCoordinator {
                 self.beginProcessing()
             }
         } catch {
+            clearActiveSession()
             fail(error)
         }
     }
@@ -352,6 +353,7 @@ final class DictationCoordinator {
             liveFeedTask = nil
             if let liveSession { await liveSession.cancel() }
             liveSession = nil
+            clearActiveSession()
             state = .idle
             return
         }
@@ -373,7 +375,7 @@ final class DictationCoordinator {
         livePumpTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(40))
-                guard let self else { return }
+                guard let self, !Task.isCancelled else { return }
                 let latest = self.liveBox.get()
                 if latest != self.liveTranscript {
                     self.liveTranscript = latest
@@ -455,6 +457,7 @@ final class DictationCoordinator {
             recorder.discard()
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
                           appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled)
+            clearActiveSession()
             state = .idle
         case .transcribing, .cleaning:
             processingTask?.cancel()
@@ -465,7 +468,14 @@ final class DictationCoordinator {
 
     private func process() async {
         guard state == .recording else { return } // cancelled (or superseded) before this task started
-        defer { clearTranscriptionPreview() }
+        defer {
+            unhookLiveTap()
+            liveFeedTask?.cancel()
+            liveFeedTask = nil
+            if let liveSession { Task { await liveSession.cancel() } }
+            liveSession = nil
+            clearActiveSession()
+        }
         var audioURL: URL?
         do {
             state = .transcribing
@@ -489,6 +499,7 @@ final class DictationCoordinator {
                 }
                 throw error
             }
+            try Task.checkCancellation()
             // Closing the stream makes the preflight/feed task drain every buffered
             // chunk. Await it before deciding whether realtime actually started.
             if liveFeedTask != nil {
@@ -496,6 +507,7 @@ final class DictationCoordinator {
                 await liveFeedTask?.value
                 liveFeedTask = nil
             }
+            try Task.checkCancellation()
             let batchProgressSink: TranscriptionProgressSink?
             if activeBatchProgressEnabled, liveSession == nil {
                 let box = liveBox
@@ -672,7 +684,7 @@ final class DictationCoordinator {
             }
             let deliveredOnTarget = deliveryOutcome.attemptedTargetInsertion
             if deliveredOnTarget, voiceActions.pressEnter {
-                _ = inserter.pressEnter()
+                _ = inserter.pressEnter(after: deliveryOutcome)
             }
             lastDeliveryTargetBundleID = deliveredOnTarget ? targetApp.bundleID : nil
             lastResult = DictationResult(rawText: transcript.text, cleanedText: cleaned,
@@ -742,6 +754,19 @@ final class DictationCoordinator {
             throw EngineError.emptyTranscription
         }
         return transcript
+    }
+
+    private func clearActiveSession() {
+        clearTranscriptionPreview()
+        activeConfiguration = nil
+        activeEngine = nil
+        activeCleanup = nil
+        activeContext = nil
+        activeTerms = []
+        activePromptTerms = []
+        activeSnippets = []
+        activeCleanupModel = nil
+        recordingStartedAt = nil
     }
 
     /// Compatibility snapshot for tests and injected coordinators that still use
@@ -848,22 +873,32 @@ final class DictationCoordinator {
         guard state == .idle, let path = record.audioPath,
               FileManager.default.fileExists(atPath: path) else { return nil }
         let audio = RecordedAudio(fileURL: URL(fileURLWithPath: path), duration: record.durationSec)
+        // History retry is a new operation with current provider/privacy settings.
+        // It must never reuse the preceding dictation's engine or focused context.
+        clearActiveSession()
+        let configuration = sessionConfigurationProvider?((record.appBundleID, record.appName))
+            ?? legacyConfiguration()
+        activeEngine = transcriptionEngineProvider?(configuration)
+        let retryCleanup = cleanupServiceProvider?(configuration) ?? cleanup
+        defer { clearActiveSession() }
         do {
             state = .transcribing
-            let terms = dictionaryTermsProvider()
+            let terms = configuration.dictionaryTerms
             let transcript = try await transcribeBatch(
                 audio,
-                dictionaryTerms: dictionaryPromptTermsProvider(),
+                dictionaryTerms: configuration.dictionaryPromptTerms,
                 onPartial: nil)
-            let level = cleanupLevelProvider()
+            try Task.checkCancellation()
+            let level = configuration.cleanup.level
             var cleaned = transcript.text
             if level != .none {
                 state = .cleaning
-                cleaned = (try? await cleanup.clean(
+                cleaned = (try? await retryCleanup.clean(
                     transcript.text, dictionaryTerms: terms, level: level,
                     style: stylePresetProvider(record.appBundleID),
-                    pinnedLanguage: pinnedLanguageProvider())) ?? transcript.text
+                    pinnedLanguage: configuration.pinnedLanguage)) ?? transcript.text
             }
+            try Task.checkCancellation()
             history?.markRetried(record, rawText: transcript.text, cleanedText: cleaned)
             try? FileManager.default.removeItem(at: audio.fileURL)
             state = .idle

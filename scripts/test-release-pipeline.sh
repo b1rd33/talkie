@@ -73,7 +73,9 @@ make_fixture() {
   local root="$fixture_root/$name"
   mkdir -p "$root/scripts" "$root/stubs" "$root/Talkie"
   cp "$repository_root/.gitignore" "$root/.gitignore"
-  cp "$repository_root/project.yml" "$root/project.yml"
+  # Keep this fixture version independent of the app's next release version.
+  sed 's/MARKETING_VERSION: .*/MARKETING_VERSION: "1.1.0"/' \
+    "$repository_root/project.yml" > "$root/project.yml"
   cp "$repository_root/LICENSE" "$root/LICENSE"
   cp "$repository_root/NOTICE" "$root/NOTICE"
   cp "$repository_root/THIRD_PARTY_NOTICES.txt" "$root/THIRD_PARTY_NOTICES.txt"

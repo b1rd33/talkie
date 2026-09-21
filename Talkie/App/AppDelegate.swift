@@ -57,7 +57,9 @@ final class AppServices {
         let recorder = AudioRecorder(preferredDeviceUID: {
             defaults.string(forKey: "preferredAudioDeviceUID")
         })
-        let speakerReference = SpeakerReferenceController()
+        let speakerReference = SpeakerReferenceController(recorder: AudioRecorder(preferredDeviceUID: {
+            defaults.string(forKey: "preferredAudioDeviceUID")
+        }))
         let activeApp = ActiveAppMonitor()
         let contextReader = FocusedContextReader()
         let shortcuts = ShortcutManager()

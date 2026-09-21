@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### 1.2.0 release candidate
+
+- Surface live transcription deltas before the audio turn is committed; cancel
+  finalization promptly and release session configuration and focused context.
+- Revalidate the focused app and field after clipboard delays and before live
+  typing; suppress follow-up Return when delivery is unsafe.
+- Resolve current provider and privacy settings for History retries, and show
+  when a completed dictation was copied for manual pasting.
+- Keep Private / Offline local after speaker filtering was enabled.
+- Validate voice-reference audio and honor the selected microphone, including
+  cancellation during recorder startup.
+- Smooth organic waveform level decay, preserve the neutral processing ring,
+  and stop repeating ring rotation under Reduce Motion.
+- Include the pending speaker-filtering and reliability integration from PRs
+  #16 and #17; those changes are not yet part of a published stable release.
+
+This candidate is not a signed, notarized release. See
+`docs/release-candidate-1.2.0.md` for checks and remaining gates.
+
 ## [1.1.0] - 2026-08-06
 
 ### Added

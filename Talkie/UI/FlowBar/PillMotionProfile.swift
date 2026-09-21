@@ -31,9 +31,7 @@ struct PillMotionProfile: Equatable, Sendable {
         handsFreeDuration: 0,
         handsFreeMinimumScale: 1,
         handsFreeMaximumScale: 1,
-        // A progress indicator must still communicate ongoing work when macOS
-        // Reduce Motion is enabled. Keep it moving, but at half speed.
-        processingRotationDuration: 1.8,
+        processingRotationDuration: 0,
         successDuration: 0.16,
         completionPanelDuration: 0.18,
         waveformFPS: 8,

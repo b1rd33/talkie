@@ -12,15 +12,19 @@ final class HostInsertionTests: XCTestCase {
         }
         let fixture = "Talkie host test \(UUID().uuidString)"
         let session = UUID().uuidString
-        let report = FileManager.default.temporaryDirectory.appendingPathComponent("talkie-host-\(session).jsonl")
+        let sessionDirectory = URL(fileURLWithPath: "/private/tmp/talkie-ui-\(session)")
+        let report = sessionDirectory.appendingPathComponent("report.jsonl")
 
         let host = XCUIApplication(bundleIdentifier: bundleID)
+        guard host.state == .notRunning else {
+            throw XCTSkip("Close \(name) before running isolated host fixtures; existing windows are preserved.")
+        }
         host.launch(); XCTAssertTrue(host.wait(for: .runningForeground, timeout: 5), name)
         host.typeKey("n", modifierFlags: .command)
 
         let talkie = XCUIApplication()
         talkie.launchArguments = ["--e2e", "--e2e-session", session,
-            "--e2e-scenario", "host-\(name)", "--e2e-report", report.path,
+            "--e2e-scenario", "host-\(name)",
             "--e2e-fixture-text", fixture]
         talkie.launch()
         defer {
@@ -29,11 +33,10 @@ final class HostInsertionTests: XCTestCase {
             host.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
             talkie.terminate()
             host.terminate()
-            try? FileManager.default.removeItem(at: report)
-            try? FileManager.default.removeItem(at: report.appendingPathExtension("commands"))
+            try? FileManager.default.removeItem(at: sessionDirectory)
         }
         host.activate()
-        append("press", report: report); append("release", report: report)
+        try append("press", report: report); try append("release", report: report)
 
         let predicate = NSPredicate { _, _ in
             (try? String(contentsOf: report, encoding: .utf8))?.contains("\"passed\":true") == true
@@ -45,10 +48,12 @@ final class HostInsertionTests: XCTestCase {
                       "\(name) did not receive the fixture through Talkie's real insertion stack")
     }
 
-    private func append(_ command: String, report: URL) {
-        let url = report.appendingPathExtension("commands")
+    private func append(_ command: String, report: URL) throws {
+        let url = report.deletingLastPathComponent().appendingPathComponent("commands")
         for _ in 0..<100 where !FileManager.default.fileExists(atPath: url.path) { Thread.sleep(forTimeInterval: 0.02) }
-        let handle = try! FileHandle(forWritingTo: url); try! handle.seekToEnd()
-        handle.write(Data("\(command)\n".utf8)); try? handle.close()
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("\(command)\n".utf8))
     }
 }

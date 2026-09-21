@@ -72,7 +72,7 @@ struct OrganicWaveformView: View {
     private var canvas: some View {
         Canvas { context, size in
             let level = presentation.isActive
-                ? max(CGFloat(buffer.level), CGFloat(presentation.audioLevel))
+                ? CGFloat(buffer.level)
                 : 0
             let phase = motion.animatesWaveformGeometry ? CGFloat(buffer.frame) * rate : 0
             switch style {

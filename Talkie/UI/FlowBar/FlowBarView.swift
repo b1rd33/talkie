@@ -310,9 +310,17 @@ private struct ProcessingRingView: View {
     let motion: PillMotionProfile
 
     @State private var rotation = 0.0
-    private let clock = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
-
     var body: some View {
+        if presentation.visualPhase == .processing && motion.processingRotationDuration > 0 {
+            ring.onReceive(Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()) { date in
+                rotation = motion.processingRotationDegrees(at: date.timeIntervalSinceReferenceDate)
+            }
+        } else {
+            ring
+        }
+    }
+
+    private var ring: some View {
         Circle()
             .trim(from: 0, to: presentation.ringTrimEnd)
             .stroke(
@@ -321,16 +329,9 @@ private struct ProcessingRingView: View {
                     lineWidth: presentation.increasedContrast ? 2 : 1.5,
                     lineCap: .round))
             .frame(width: 16, height: 16)
-            .rotationEffect(.degrees(rotation))
+            .rotationEffect(.degrees(motion.processingRotationDuration > 0 ? rotation : 0))
             .accessibilityHidden(true)
-            .onReceive(clock) { date in
-                guard presentation.visualPhase == .processing else {
-                    rotation = 0
-                    return
-                }
-                rotation = motion.processingRotationDegrees(
-                    at: date.timeIntervalSinceReferenceDate)
-            }
+
     }
 }
 

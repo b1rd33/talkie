@@ -40,7 +40,9 @@ final class LiveTextInserterTests: XCTestCase {
     func testTypesAppendedSuffixOnlyAcrossCalls() throws {
         var typed: [String] = []
         let inserter = LiveTextInserter(secureInputCheck: { false }, axTrustedCheck: { true },
-                                        postUnicode: { typed.append($0); return true })
+                                        postUnicode: { typed.append($0); return true },
+                                        captureFocus: { _ in { true } })
+        inserter.reset()
         XCTAssertTrue(try inserter.type(upTo: "hello"))
         XCTAssertTrue(try inserter.type(upTo: "hello world"))
         XCTAssertEqual(typed, ["hello", " world"]) // only the new suffix each time
@@ -76,7 +78,8 @@ final class LiveTextInserterTests: XCTestCase {
         let range = MockOwnedRange()
         var typed: [String] = []
         let inserter = LiveTextInserter(secureInputCheck: { false }, axTrustedCheck: { true },
-                                        postUnicode: { typed.append($0); return true }, ownedRange: range)
+                                        postUnicode: { typed.append($0); return true }, ownedRange: range,
+                                        captureFocus: { _ in { true } })
         inserter.reset(targetBundleID: "com.example.editor")
         _ = try inserter.type(upTo: "owned")
         range.value = "user changed it" // field contents changed or another field was focused
@@ -91,7 +94,8 @@ final class LiveTextInserterTests: XCTestCase {
         range.canBegin = false
         var typed: [String] = []
         let inserter = LiveTextInserter(secureInputCheck: { false }, axTrustedCheck: { true },
-                                        postUnicode: { typed.append($0); return true }, ownedRange: range)
+                                        postUnicode: { typed.append($0); return true }, ownedRange: range,
+                                        captureFocus: { _ in { true } })
         inserter.reset(targetBundleID: "com.example.terminal")
         _ = try inserter.type(upTo: "I went")
         _ = try inserter.type(upTo: "I want")
@@ -131,7 +135,8 @@ final class LiveTextInserterTests: XCTestCase {
     func testSecureInputBailsWithoutTyping() {
         var typed: [String] = []
         let inserter = LiveTextInserter(secureInputCheck: { true }, axTrustedCheck: { true },
-                                        postUnicode: { typed.append($0); return true })
+                                        postUnicode: { typed.append($0); return true },
+                                        captureFocus: { _ in { true } })
         XCTAssertThrowsError(try inserter.type(upTo: "secret")) { error in
             XCTAssertEqual(error as? InsertionError, .secureInputActive)
         }
@@ -141,8 +146,29 @@ final class LiveTextInserterTests: XCTestCase {
     func testNoAXTrustBailsSafely() throws {
         var typed: [String] = []
         let inserter = LiveTextInserter(secureInputCheck: { false }, axTrustedCheck: { false },
-                                        postUnicode: { typed.append($0); return true })
+                                        postUnicode: { typed.append($0); return true },
+                                        captureFocus: { _ in { true } })
         XCTAssertFalse(try inserter.type(upTo: "hello")) // not viable → caller falls back
         XCTAssertTrue(typed.isEmpty)                     // nothing typed, no throw
+    }
+}
+
+extension LiveTextInserterTests {
+    func testAppendOnlyTypingStopsWhenFieldChangesWithinSameApp() throws {
+        let range = MockOwnedRange()
+        range.canBegin = false
+        var sameField = true
+        var typed: [String] = []
+        let inserter = LiveTextInserter(
+            secureInputCheck: { false }, axTrustedCheck: { true },
+            postUnicode: { typed.append($0); return true }, ownedRange: range,
+            captureFocus: { _ in { sameField } })
+        inserter.reset(targetBundleID: "test.editor")
+        XCTAssertTrue(try inserter.type(upTo: "first"))
+        sameField = false
+        XCTAssertFalse(try inserter.type(upTo: "first second"))
+        sameField = true
+        XCTAssertFalse(try inserter.type(upTo: "first second"))
+        XCTAssertEqual(typed, ["first"])
     }
 }
