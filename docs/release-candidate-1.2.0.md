@@ -47,14 +47,18 @@ No live provider request or microphone recording was made.
   real SwiftUI/AppKit rendering in nonactivating panels, normal ring rotation,
   stable reduced-motion ring, and audio-level responsiveness.
 - [x] Release pipeline fixtures, documentation and public-readiness checks.
-- [x] Final versioned suite: 451 tests, 0 failures, 0 skips; portable project
+- [x] Versioned suite at `581fd20`: 451 tests, 0 failures, 0 skips; portable project
   configuration passed. Result: `/tmp/talkie-next-release-final.xcresult`.
 - [x] Host integration test target compiled successfully (not executed).
 - [x] ReleaseAdhoc archive and ZIP packaging passed strict code-seal, bundled
   legal-notice, extracted-app and checksum verification. This is a local,
   unsupported community preview, not a supported release.
-- [ ] Native UI suite: build succeeded; runner failed to initialize because
-  macOS timed out enabling automation. No UI tests claimed as passed.
+- [x] CI `logic-and-ui` passed for `581fd20` in run 35667697974.
+- [ ] Latest commit-send cancellation regression: local build succeeded, but
+  test startup stalled; no new local test pass is claimed. The draft PR's
+  current-head CI must pass before integration.
+- [ ] Local native UI suite: build succeeded; runner failed to initialize
+  because macOS timed out enabling automation.
 - [ ] Interactive native review: Computer Use timed out opening Talkie.
 - [ ] Signed host insertion suite: requires an available desktop automation
   session and Accessibility-approved test app; not executed.

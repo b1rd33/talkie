@@ -145,7 +145,14 @@ actor OpenAIRealtimeSession {
     func finish() async throws -> Transcript {
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            return try await finishTurn()
+            do {
+                return try await finishTurn()
+            } catch {
+                // A cancelled socket send may surface as a transport error. Keep
+                // cancellation distinct so the coordinator cannot start batch fallback.
+                if Task.isCancelled || cancelled { throw CancellationError() }
+                throw error
+            }
         } onCancel: {
             Task { await self.cancel() }
         }
