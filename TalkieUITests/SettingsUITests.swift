@@ -12,17 +12,12 @@ final class SettingsUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
 
-        let settingsMode = app.segmentedControls["Settings mode"]
+        let settingsMode = app.radioGroups["Settings mode"]
         guard settingsMode.waitForExistence(timeout: 5) else {
-            // This is a release gate: missing Settings coverage must fail, not
-            // silently turn the UI job green. Log control identity, never values.
-            for element in app.descendants(matching: .any).allElementsBoundByIndex {
-                print("Settings control: \(element.elementType.rawValue) \(element.identifier) \(element.label)")
-            }
             XCTFail("The native Settings mode control was not exposed.")
             return
         }
-        settingsMode.buttons.element(boundBy: 1).click()
+        settingsMode.radioButtons["Advanced"].click()
         let engines = app.radioButtons["Engines"]
         XCTAssertTrue(engines.waitForExistence(timeout: 2))
         engines.click()

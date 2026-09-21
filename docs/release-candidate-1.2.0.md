@@ -54,9 +54,13 @@ No live provider request or microphone recording was made.
   legal-notice, extracted-app and checksum verification. This is a local,
   unsupported community preview, not a supported release.
 - [x] CI `logic-and-ui` passed for `581fd20` in run 35667697974.
-- [ ] Latest commit-send cancellation regression: local build succeeded, but
-  test startup stalled; no new local test pass is claimed. The draft PR's
-  current-head CI must pass before integration.
+- [x] CI at `62fa7fb`: 452 logic tests passed, 0 failures, 0 skips. UI reported
+  2 passes and 1 skipped Settings test; the job's green status did not prove
+  complete Settings coverage.
+- [x] The skip was replaced with a failure gate. CI diagnostics at `82b4d40`
+  confirmed Settings exists as a native radio group; the test incorrectly
+  searched for a segmented control. Its selector is now corrected.
+- [ ] Current-head strict Settings UI and CodeQL checks must pass before integration.
 - [ ] Local native UI suite: build succeeded; runner failed to initialize
   because macOS timed out enabling automation.
 - [ ] Interactive native review: Computer Use timed out opening Talkie.
