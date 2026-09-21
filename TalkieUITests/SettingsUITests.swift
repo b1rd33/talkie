@@ -14,8 +14,13 @@ final class SettingsUITests: XCTestCase {
 
         let settingsMode = app.segmentedControls["Settings mode"]
         guard settingsMode.waitForExistence(timeout: 5) else {
-            throw XCTSkip(
-                "The local macOS automation session did not expose the native Settings window.")
+            // This is a release gate: missing Settings coverage must fail, not
+            // silently turn the UI job green. Log control identity, never values.
+            for element in app.descendants(matching: .any).allElementsBoundByIndex {
+                print("Settings control: \(element.elementType.rawValue) \(element.identifier) \(element.label)")
+            }
+            XCTFail("The native Settings mode control was not exposed.")
+            return
         }
         settingsMode.buttons.element(boundBy: 1).click()
         let engines = app.radioButtons["Engines"]
