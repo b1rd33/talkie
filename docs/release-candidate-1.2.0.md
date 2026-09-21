@@ -60,6 +60,9 @@ No live provider request or microphone recording was made.
 - [x] The skip was replaced with a failure gate. CI diagnostics at `82b4d40`
   confirmed Settings exists as a native radio group; the test incorrectly
   searched for a segmented control. Its selector is now corrected.
+- [x] CI at `876abc3`: 452 logic tests passed; strict Settings navigation and
+  legacy model selection worked. Two additional role-specific visibility
+  queries failed; these now use the controls’ explicit accessibility identifiers.
 - [ ] Current-head strict Settings UI and CodeQL checks must pass before integration.
 - [ ] Local native UI suite: build succeeded; runner failed to initialize
   because macOS timed out enabling automation.

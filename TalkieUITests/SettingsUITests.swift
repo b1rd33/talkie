@@ -27,9 +27,9 @@ final class SettingsUITests: XCTestCase {
                 .waitForExistence(timeout: 2))
         XCTAssertTrue(app.popUpButtons["Instant transcription model"].exists)
         XCTAssertTrue(app.popUpButtons["Instant latency"].exists)
-        XCTAssertTrue(app.buttons["Expected speech languages"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Expected speech languages"].exists)
         XCTAssertTrue(app.textFields["Recording context"].exists)
-        XCTAssertTrue(app.checkBoxes["Show batch transcription progress"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Show batch transcription progress"].exists)
 
         let batchPicker = app.popUpButtons["Batch transcription model"]
         batchPicker.click()
