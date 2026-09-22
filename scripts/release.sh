@@ -170,12 +170,9 @@ deployment_target="$(
   sed -n 's/.*MACOSX_DEPLOYMENT_TARGET: *"\([^"]*\)".*/\1/p' project.yml | head -1
 )"
 hotkey_version="$(
-  sed -n '/^  HotKey:/,/^  FluidAudio:/s/.*exactVersion: *//p' project.yml | head -1
+  sed -n '/^  HotKey:/,/^settings:/s/.*exactVersion: *//p' project.yml | head -1
 )"
-fluid_audio_version="$(
-  sed -n '/^  FluidAudio:/,/^settings:/s/.*exactVersion: *//p' project.yml | head -1
-)"
-[[ -n "$deployment_target" && -n "$hotkey_version" && -n "$fluid_audio_version" ]] \
+[[ -n "$deployment_target" && -n "$hotkey_version" ]] \
   || fail "could not resolve release metadata from project.yml"
 
 final_dir="build/release-$version"
@@ -382,7 +379,6 @@ xcode_version="$(xcodebuild -version | paste -sd ';' -)"
   echo "xcode=$xcode_version"
   echo "macos_deployment_target=$deployment_target"
   echo "hotkey_version=$hotkey_version"
-  echo "fluid_audio_version=$fluid_audio_version"
   echo "team_id=$DEVELOPMENT_TEAM_ID"
   echo "signing_identity=$SIGNING_IDENTITY"
   echo "app_notarization_status=$app_notary_status"

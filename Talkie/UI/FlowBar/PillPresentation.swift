@@ -43,6 +43,8 @@ struct PillPresentation: Equatable, Sendable {
     var reduceMotion: Bool
     var increasedContrast: Bool
     var isInstant = false
+    var orbSize = 44.0
+    var orbAnimation = "automatic"
     var showsTimer = false
     var showsCancelButton = false
 

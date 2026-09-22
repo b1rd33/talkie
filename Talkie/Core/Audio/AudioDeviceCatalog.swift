@@ -1,5 +1,3 @@
-import AudioToolbox
-import AVFoundation
 import CoreAudio
 import Foundation
 
@@ -20,14 +18,12 @@ enum AudioDeviceResolution: Equatable, Sendable {
     case preferred(AudioInputDevice)
     case systemDefault(AudioInputDevice?)
     case preferredMissing(requestedUID: String, fallback: AudioInputDevice?)
-    case configurationFailed(requestedUID: String?, status: OSStatus)
 
     var actualDevice: AudioInputDevice? {
         switch self {
         case .preferred(let device): device
         case .systemDefault(let device): device
         case .preferredMissing(_, let fallback): fallback
-        case .configurationFailed: nil
         }
     }
 }
@@ -35,7 +31,7 @@ enum AudioDeviceResolution: Equatable, Sendable {
 @MainActor
 protocol AudioDeviceCataloging {
     func inputDevices() -> [AudioInputDevice]
-    func configure(_ engine: AVAudioEngine, preferredUID: String?) -> AudioDeviceResolution
+    func resolve(preferredUID: String?) -> AudioDeviceResolution
 }
 
 @MainActor
@@ -85,22 +81,11 @@ struct SystemAudioDeviceCatalog: AudioDeviceCataloging {
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    func configure(_ engine: AVAudioEngine, preferredUID: String?) -> AudioDeviceResolution {
+    func resolve(preferredUID: String?) -> AudioDeviceResolution {
         let devices = inputDevices()
         let resolution = AudioDeviceSelection.resolution(
             preferredUID: preferredUID, devices: devices, defaultDeviceID: defaultInputDeviceID())
-        guard case .preferred(let device) = resolution else { return resolution }
-        guard let unit = engine.inputNode.audioUnit else {
-            return .configurationFailed(requestedUID: preferredUID, status: kAudio_ParamError)
-        }
-        var mutableID = device.id
-        let status = AudioUnitSetProperty(
-            unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
-            0, &mutableID, UInt32(MemoryLayout<AudioDeviceID>.size))
-        guard status == noErr else {
-            return .configurationFailed(requestedUID: preferredUID, status: status)
-        }
-        return .preferred(device)
+        return resolution
     }
 
     private func defaultInputDeviceID() -> AudioDeviceID? {

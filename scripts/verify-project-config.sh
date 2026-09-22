@@ -33,7 +33,6 @@ if grep -Eq '^[[:space:]]+from:' "$project_file"; then
 fi
 
 require_line 'exactVersion:[[:space:]]+0\.2\.1' 'HotKey must be pinned to 0.2.1'
-require_line 'exactVersion:[[:space:]]+0\.15\.5' 'FluidAudio must be pinned to 0.15.5'
 require_line 'path:[[:space:]]+LICENSE' 'the Apache license must be bundled as an app resource'
 require_line 'path:[[:space:]]+NOTICE' 'the Apache notice must be bundled as an app resource'
 require_line 'path:[[:space:]]+THIRD_PARTY_NOTICES\.txt' 'third-party notices must be bundled as an app resource'

@@ -73,7 +73,9 @@ make_fixture() {
   local root="$fixture_root/$name"
   mkdir -p "$root/scripts" "$root/stubs" "$root/Talkie"
   cp "$repository_root/.gitignore" "$root/.gitignore"
-  cp "$repository_root/project.yml" "$root/project.yml"
+  # Keep this fixture version independent of the app's next release version.
+  sed 's/MARKETING_VERSION: .*/MARKETING_VERSION: "1.1.0"/' \
+    "$repository_root/project.yml" > "$root/project.yml"
   cp "$repository_root/LICENSE" "$root/LICENSE"
   cp "$repository_root/NOTICE" "$root/NOTICE"
   cp "$repository_root/THIRD_PARTY_NOTICES.txt" "$root/THIRD_PARTY_NOTICES.txt"
@@ -596,8 +598,7 @@ for metadata_value in \
   "tree=$(git -C "$accepted_root" rev-parse 'HEAD^{tree}')" \
   "team_id=$team_id" \
   "signing_identity=$identity" \
-  "hotkey_version=0.2.1" \
-  "fluid_audio_version=0.15.5"
+  "hotkey_version=0.2.1"
 do
   grep -Fqx "$metadata_value" "$release_dir/release-metadata.txt" \
     || fail "release metadata missing $metadata_value"

@@ -10,7 +10,6 @@ final class OnboardingWindow {
     private var window: NSWindow?
 
     func show(keychain: KeychainStore, settings: SettingsStore,
-              modelDownloader: ModelDownloader,
               profiles: ProfileStore, setupState: SetupStateStore) {
         if let window {
             window.makeKeyAndOrderFront(nil)
@@ -18,7 +17,6 @@ final class OnboardingWindow {
             return
         }
         let view = OnboardingView(keychain: keychain, settings: settings,
-                                  modelDownloader: modelDownloader,
                                   profiles: profiles,
                                   onFinished: { [weak self, setupState] in
                                       setupState.markCompleted()

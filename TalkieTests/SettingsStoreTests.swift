@@ -146,16 +146,17 @@ final class SettingsStoreTests: XCTestCase {
         let suite = "talkie-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let store = SettingsStore(defaults: defaults)
-        store.pillStyle = .frostedGlass
-        XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, .frostedGlass)
+        store.pillStyle = .liquidGlass
+        XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, .liquidGlass)
     }
 
-    func testOrganicPillStylesSurviveMigrationAndRoundTrip() {
-        let cases: [PillStyle] = [.inkLine, .calmFlowRibbon, .bareWave]
-        for style in cases {
-            let defaults = UserDefaults(suiteName: "talkie-tests-\(UUID().uuidString)")!
-            defaults.set(style.rawValue, forKey: "pillStyle")
-            XCTAssertEqual(SettingsStore(defaults: defaults).pillStyle, style)
+    func testRetiredStylesMigrateToCurrentDesigns() {
+        for raw in ["inkLine", "calmFlowRibbon", "bareWave"] {
+            XCTAssertEqual(PillStyle(migrating: raw), .thinkingOrb)
+        }
+        XCTAssertEqual(PillStyle(migrating: "frostedGlass"), .liquidGlass)
+        for style in PillStyle.allCases {
+            XCTAssertEqual(PillStyle(migrating: style.rawValue), style)
         }
     }
 
@@ -183,5 +184,24 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(defaults: defaults)
         store.transcriptionModel = "whisper-1"
         XCTAssertEqual(SettingsStore(defaults: defaults).transcriptionModel, "whisper-1")
+    }
+}
+
+extension SettingsStoreTests {
+    @MainActor
+    func testPrivateProfileDisablesCloudSpeakerFilteringAndSurvivesRelaunch() {
+        let suite = "talkie-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.speakerFilteringEnabled = true
+        settings.engineMode = "local"
+        settings.cleanupLevel = "none"
+        XCTAssertFalse(settings.speakerFilteringEnabled)
+        let reloaded = SettingsStore(defaults: defaults)
+        let configuration = DictationSessionConfigurationResolver(settings: reloaded).resolve(targetBundleID: nil)
+        XCTAssertEqual(configuration.privacyClass, .localOnly)
+        XCTAssertFalse(configuration.permitsCloudTranscription)
+        XCTAssertFalse(configuration.permitsCloudCleanup)
     }
 }

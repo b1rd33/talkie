@@ -27,7 +27,7 @@ final class SettingsStore {
     var speakerFilteringEnabled: Bool {
         didSet {
             defaults.set(speakerFilteringEnabled, forKey: "speakerFilteringEnabled")
-            if speakerFilteringEnabled {
+            if speakerFilteringEnabled && engineMode != "local" {
                 engineMode = "cloud"
                 transcriptionProvider = "openai"
                 instantLiveType = false
@@ -42,10 +42,21 @@ final class SettingsStore {
     var openrouterTranscriptionModel: String { didSet { defaults.set(openrouterTranscriptionModel, forKey: "openrouterTranscriptionModel") } }
     var showFlowBar: Bool { didSet { defaults.set(showFlowBar, forKey: "showFlowBar") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
-    var engineMode: String { didSet { defaults.set(engineMode, forKey: "engineMode") } }
+    var engineMode: String {
+        didSet {
+            defaults.set(engineMode, forKey: "engineMode")
+            if engineMode != "cloud", speakerFilteringEnabled { speakerFilteringEnabled = false }
+        }
+    }
     var showDockIcon: Bool { didSet { defaults.set(showDockIcon, forKey: "showDockIcon") } }
     /// The Flow Bar pill's visual style (see PillStyle). Persisted as its raw value.
     var pillStyle: PillStyle { didSet { defaults.set(pillStyle.rawValue, forKey: "pillStyle") } }
+    var orbSize: Double {
+        didSet { defaults.set(orbSize, forKey: "orbSize") }
+    }
+    var orbAnimation: String {
+        didSet { defaults.set(orbAnimation, forKey: "orbAnimation") }
+    }
     var showPillTimer: Bool {
         didSet { defaults.set(showPillTimer, forKey: "showPillTimer") }
     }
@@ -134,9 +145,13 @@ final class SettingsStore {
         openrouterTranscriptionModel = defaults.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe"
         showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
-        engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
+        engineMode = defaults.string(forKey: "engineMode")
+            ?? (defaults.string(forKey: "selectedProfileID") == DictationProfile.legacyOfflineID.uuidString
+                ? "local" : "cloud")
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
         pillStyle = PillStyle(migrating: defaults.string(forKey: "pillStyle"))
+        orbSize = PillLayout.clampedOrbSize(defaults.object(forKey: "orbSize") as? Double ?? 44)
+        orbAnimation = defaults.string(forKey: "orbAnimation") ?? "automatic"
         showPillTimer = defaults.object(forKey: "showPillTimer") as? Bool ?? false
         showPillCancelButton =
             defaults.object(forKey: "showPillCancelButton") as? Bool ?? false
@@ -154,7 +169,12 @@ final class SettingsStore {
         pinnedLanguage = defaults.string(forKey: "pinnedLanguage")
         pttShortcut = defaults.string(forKey: "pttShortcut")
         handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")
-        if speakerFilteringEnabled {
+        if engineMode == "local" {
+            // Persist the blocked mode before profile migration replaces a retired ID.
+            defaults.set("local", forKey: "engineMode")
+            speakerFilteringEnabled = false
+            defaults.set(false, forKey: "speakerFilteringEnabled")
+        } else if speakerFilteringEnabled {
             engineMode = "cloud"
             transcriptionProvider = "openai"
             instantLiveType = false

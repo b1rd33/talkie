@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### 1.2.0 release candidate
+
+- Refresh Settings with native Liquid Glass navigation/buttons on macOS 26+,
+  larger controls and a roomier layout, with older-macOS fallbacks.
+- Hide Thinking Orb at idle. Add a live-preview animation picker for all nine
+  library designs and a 28–96 pt size slider; resize the floating panel safely.
+
+- Surface live transcription deltas before the audio turn is committed; cancel
+  finalization promptly and release session configuration and focused context.
+- Revalidate the focused app and field after clipboard delays and before live
+  typing; suppress follow-up Return when delivery is unsafe.
+- Resolve current provider and privacy settings for History retries, and show
+  when a completed dictation was copied for manual pasting.
+- Keep Private / Offline local after speaker filtering was enabled.
+- Validate voice-reference audio and honor the selected microphone, including
+  cancellation during recorder startup.
+- Add ThinkingOrbsKit animation and native Liquid Glass (macOS 26+), with
+  reduced-motion/transparency support and a material fallback on older macOS.
+  Replace Ink Line, Calm Flow Ribbon and Bare Wave with Thinking Orb; retain
+  Bare Waveform and Dynamic Island.
+- Rebind the recorder to the actual default or fallback microphone, and add a
+  local input-level test that names the device and releases capture afterward.
+- Capture microphone input through AVFoundation capture sessions using each
+  buffer's actual PCM format; preserve buffered speech across sample-rate changes.
+- Show microphone startup, pulse Thinking Orb itself with the input level, and
+  display a readable, dismissible failure message. Keep the actual duration in failed history.
+- Open Home and Settings in the active full-screen Space; keep Advanced tabs
+  inside the Settings window so switching modes does not change its title bar.
+- Open a visible Home window on launch, provide a direct Settings button, and
+  improve permission recovery with app registration and a Finder shortcut.
+- Include the pending speaker-filtering and reliability integration from PRs
+  #16 and #17; those changes are not yet part of a published stable release.
+
+This candidate is not a signed, notarized release. See
+`docs/release-candidate-1.2.0.md` for checks and remaining gates.
+
 ## [1.1.0] - 2026-08-06
 
 ### Added

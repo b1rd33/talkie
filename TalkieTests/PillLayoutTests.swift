@@ -61,9 +61,22 @@ final class PillLayoutTests: XCTestCase {
     }
 
     func testOtherStylesHonorRequestedPosition() {
-        for style in [PillStyle.bareWaveform, .inkLine, .calmFlowRibbon, .bareWave,
-                      .frostedGlass, .hidden] {
+        for style in [PillStyle.bareWaveform, .thinkingOrb,
+                      .liquidGlass, .hidden] {
             XCTAssertEqual(PillLayout.effectivePosition(style: style, requested: "bottomLeft"), "bottomLeft")
+        }
+    }
+
+    func testOrbSizeIsBoundedAndPanelContainsItsLoudestPulse() {
+        XCTAssertEqual(PillLayout.clampedOrbSize(.nan), 44)
+        XCTAssertEqual(PillLayout.clampedOrbSize(1000), 96)
+        XCTAssertEqual(PillLayout.clampedOrbSize(-2), 28)
+        for size in [28.0, 44, 96] {
+            let panel = PillLayout.panelSize(style: .thinkingOrb, orbSize: size)
+            XCTAssertGreaterThanOrEqual(panel.height, size * 1.18 + 4)
+            let origin = PillLayout.origin(position: "topCenter", panelSize: panel, screenFrame: screen)
+            XCTAssertEqual(origin.x + panel.width / 2, screen.midX)
+            XCTAssertEqual(origin.y + panel.height, screen.maxY - PillLayout.margin)
         }
     }
 

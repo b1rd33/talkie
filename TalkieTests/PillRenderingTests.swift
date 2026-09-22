@@ -18,8 +18,8 @@ final class PillRenderingTests: XCTestCase {
             .idle, .recording(handsFree: false), .recording(handsFree: true),
             .transcribing, .cleaning, .inserting, .success, .error
         ]
-        let styles: [PillStyle] = [.bareWaveform, .inkLine, .calmFlowRibbon, .bareWave,
-                                   .dynamicIsland, .frostedGlass]
+        let styles: [PillStyle] = [.bareWaveform, .thinkingOrb,
+                                   .dynamicIsland, .liquidGlass]
 
         for style in styles {
             for state in states {
@@ -31,14 +31,18 @@ final class PillRenderingTests: XCTestCase {
 
                 XCTAssertEqual(image.pixelsWide, Int(PillLayout.panelSize.width * 2))
                 XCTAssertEqual(image.pixelsHigh, Int(PillLayout.panelSize.height * 2))
-                XCTAssertTrue(containsVisiblePixel(image), "Blank render for \(style) / \(state)")
+                if style == .thinkingOrb && state == .idle {
+                    XCTAssertFalse(containsVisiblePixel(image), "Idle orb must be invisible")
+                } else {
+                    XCTAssertTrue(containsVisiblePixel(image), "Blank render for \(style) / \(state)")
+                }
             }
         }
     }
 
     func testReducedMotionAndIncreasedContrastRenderDeterministically() throws {
         var presentation = PillPresentation.preview(.recording(handsFree: true))
-        presentation.style = .frostedGlass
+        presentation.style = .liquidGlass
         presentation.reduceMotion = true
         presentation.increasedContrast = true
 
@@ -124,7 +128,7 @@ final class PillRenderingTests: XCTestCase {
 
     func testProcessingRingMovesWhileMounted() async throws {
         var processing = PillPresentation.preview(.transcribing)
-        processing.reduceMotion = true // mirrors the user's production macOS setting
+        processing.reduceMotion = false
         let hosting = makeHosting(PillRendererView(
             presentation: processing,
             levelSource: SimulatedAudioLevelSource(seed: 21, fixture: .quiet)))
@@ -140,11 +144,27 @@ final class PillRenderingTests: XCTestCase {
                           second.representation(using: .png, properties: [:]))
     }
 
-    func testReducedMotionOrganicWaveformStillRespondsToMicrophoneLevel() async throws {
+    func testReducedMotionProcessingRingStaysStillWhileMounted() async throws {
+        var processing = PillPresentation.preview(.transcribing)
+        processing.reduceMotion = true
+        let hosting = makeHosting(PillRendererView(
+            presentation: processing,
+            levelSource: SimulatedAudioLevelSource(seed: 21, fixture: .quiet)))
+        let window = attachToNonactivatingPanel(hosting)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        let first = try snapshot(hosting)
+        try await Task.sleep(for: .milliseconds(225))
+        let second = try snapshot(hosting)
+        XCTAssertEqual(first.representation(using: .png, properties: [:]),
+                       second.representation(using: .png, properties: [:]))
+    }
+
+    func testThinkingOrbRespondsWhileMounted() async throws {
         var presentation = PillPresentation.preview(.recording(handsFree: false))
-        presentation.style = .inkLine
+        presentation.style = .thinkingOrb
         presentation.audioLevel = 0
-        presentation.reduceMotion = true
+        presentation.reduceMotion = false
         let source = MutableLevelSource(level: 0)
         let hosting = makeHosting(PillRendererView(
             presentation: presentation,
@@ -161,6 +181,23 @@ final class PillRenderingTests: XCTestCase {
 
         XCTAssertNotEqual(quiet.representation(using: .png, properties: [:]),
                           loud.representation(using: .png, properties: [:]))
+    }
+
+    func testReducedMotionOrbStaysStillWhileMounted() async throws {
+        var presentation = PillPresentation.preview(.transcribing)
+        presentation.style = .thinkingOrb
+        presentation.reduceMotion = true
+        let hosting = makeHosting(PillRendererView(
+            presentation: presentation,
+            levelSource: SimulatedAudioLevelSource(seed: 21, fixture: .quiet)))
+        let panel = attachToNonactivatingPanel(hosting)
+        defer { panel.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        let first = try snapshot(hosting)
+        try await Task.sleep(for: .milliseconds(225))
+        let second = try snapshot(hosting)
+        XCTAssertEqual(first.representation(using: .png, properties: [:]),
+                       second.representation(using: .png, properties: [:]))
     }
 
     private func render<V: View>(_ view: V) throws -> NSBitmapImageRep {

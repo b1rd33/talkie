@@ -4,28 +4,14 @@ import XCTest
 final class EngineRouterTests: XCTestCase {
     actor CallCounter {
         private var count = 0
-
         func record() { count += 1 }
         func value() -> Int { count }
-    }
-
-    struct StubEngine: TranscriptionEngine {
-        var result: Result<Transcript, Error>
-        func transcribe(
-            _ audio: RecordedAudio,
-            dictionaryTerms: [String],
-            onPartial: TranscriptionProgressSink?
-        ) async throws -> Transcript {
-            try result.get()
-        }
     }
 
     struct CountingEngine: TranscriptionEngine {
         let counter: CallCounter
         var result: Result<Transcript, Error>
-
-        func transcribe(_ audio: RecordedAudio,
-                        dictionaryTerms: [String],
+        func transcribe(_ audio: RecordedAudio, dictionaryTerms: [String],
                         onPartial: TranscriptionProgressSink?) async throws -> Transcript {
             await counter.record()
             return try result.get()
@@ -34,150 +20,38 @@ final class EngineRouterTests: XCTestCase {
 
     private let audio = RecordedAudio(fileURL: URL(fileURLWithPath: "/tmp/x.m4a"), duration: 1)
 
-    func testCloudModeUsesCloud() async throws {
-        let router = EngineRouter(
-            cloud: StubEngine(result: .success(Transcript(text: "cloud", engineID: "openai"))),
-            local: StubEngine(result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "cloud" }, localAvailable: { true })
-        let t = try await router.transcribe(audio, dictionaryTerms: [])
-        XCTAssertEqual(t.text, "cloud")
-        XCTAssertFalse(t.usedFallback)
-    }
-
-    func testLocalModeUsesLocal() async throws {
-        let router = EngineRouter(
-            cloud: StubEngine(result: .success(Transcript(text: "cloud", engineID: "openai"))),
-            local: StubEngine(result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "local" }, localAvailable: { true })
-        let t = try await router.transcribe(audio, dictionaryTerms: [])
-        XCTAssertEqual(t.text, "local")
-    }
-
-    func testLocalModeWithoutModelsFailsClosedWithoutCallingCloud() async {
-        let cloudCalls = CallCounter()
-        let localCalls = CallCounter()
-        let router = EngineRouter(
-            cloud: CountingEngine(
-                counter: cloudCalls,
-                result: .success(Transcript(text: "cloud", engineID: "openai"))),
-            local: CountingEngine(
-                counter: localCalls,
-                result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "local" }, localAvailable: { false })
-
-        do {
-            _ = try await router.transcribe(audio, dictionaryTerms: [])
-            XCTFail("local mode must fail closed when its models are unavailable")
-        } catch {
-            XCTAssertEqual(
-                (error as? LocalizedError)?.errorDescription,
-                "On-device models aren't downloaded. Download them in Settings → Engines, or explicitly switch to Cloud or Instant."
-            )
+    func testCloudModesUseCloudAndLegacyLocalNeverCallsIt() async throws {
+        for mode in ["cloud", "instant", "local"] {
+            let calls = CallCounter()
+            let router = EngineRouter(cloud: CountingEngine(
+                counter: calls, result: .success(Transcript(text: "cloud"))), mode: { mode })
+            do {
+                let transcript = try await router.transcribe(audio, dictionaryTerms: [])
+                XCTAssertNotEqual(mode, "local")
+                XCTAssertEqual(transcript.text, "cloud")
+            } catch {
+                XCTAssertEqual(mode, "local")
+                XCTAssertEqual(error as? EngineError, .localTranscriptionRemoved)
+            }
+            let count = await calls.value()
+            XCTAssertEqual(count, mode == "local" ? 0 : 1)
         }
-        let cloudCallCount = await cloudCalls.value()
-        let localCallCount = await localCalls.value()
-        XCTAssertEqual(cloudCallCount, 0)
-        XCTAssertEqual(localCallCount, 0)
     }
 
-    func testLocalOnlySnapshotCannotBecomeCloudThroughFallback() async throws {
-        let cloudCalls = CallCounter()
-        let localCalls = CallCounter()
-        let configuration = DictationSessionConfiguration(
-            profileID: DictationProfile.privateOffline.id,
-            engineMode: .local,
-            transcription: TranscriptionConfiguration(
-                provider: .openAI,
-                openAIModel: "cloud-model",
-                openRouterModel: "cloud-model",
-                realtimeModel: "realtime-model",
-                realtimeDelay: .medium,
-                contextPrompt: "",
-                expectedLanguageCodes: [],
-                streamBatch: false,
-                speakerFilteringRequested: false,
-                speakerFilter: nil),
-            cleanup: CleanupConfiguration(
-                level: .none,
-                provider: .openAI,
-                model: "cloud-cleaner",
-                customInstructions: ""),
-            dictionaryTerms: [],
-            dictionaryPromptTerms: [],
-            snippets: [],
-            pressEnterEnabled: false,
-            focusedContext: nil,
-            style: .neutral,
-            pinnedLanguage: nil,
-            keepRecording: false,
-            instantSkipCleanup: false,
-            batchProgressEnabled: false,
-            liveTypingEnabled: false)
-        XCTAssertEqual(configuration.privacyClass, .localOnly)
-        XCTAssertFalse(configuration.permitsCloudTranscription)
-        XCTAssertFalse(configuration.permitsCloudCleanup)
-
-        let router = EngineRouter(
-            cloud: CountingEngine(
-                counter: cloudCalls,
-                result: .success(Transcript(text: "cloud", engineID: "openai"))),
-            local: CountingEngine(
-                counter: localCalls,
-                result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            configuration: configuration,
-            localAvailable: { true })
-
-        let transcript = try await router.transcribe(audio, dictionaryTerms: [])
-        XCTAssertEqual(transcript.text, "local")
-        let cloudCallCount = await cloudCalls.value()
-        let localCallCount = await localCalls.value()
-        XCTAssertEqual(cloudCallCount, 0)
-        XCTAssertEqual(localCallCount, 1)
-    }
-
-    func testCloudOfflineFallsBackToLocal() async throws {
-        let router = EngineRouter(
-            cloud: StubEngine(result: .failure(EngineError.offline)),
-            local: StubEngine(result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "cloud" }, localAvailable: { true })
-        let t = try await router.transcribe(audio, dictionaryTerms: [])
-        XCTAssertEqual(t.text, "local")
-        XCTAssertTrue(t.usedFallback)
-    }
-
-    func testCloudOfflineWithoutLocalRethrows() async {
-        let router = EngineRouter(
-            cloud: StubEngine(result: .failure(EngineError.offline)),
-            local: StubEngine(result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "cloud" }, localAvailable: { false })
-        do {
-            _ = try await router.transcribe(audio, dictionaryTerms: [])
-            XCTFail("expected throw")
-        } catch let error as EngineError {
-            XCTAssertEqual(error, .offline)
-        } catch { XCTFail("wrong error: \(error)") }
-    }
-
-    func testCloudServerErrorFallsBackToLocal() async throws {
-        let router = EngineRouter(
-            cloud: StubEngine(result: .failure(EngineError.requestFailed(status: 503, message: "upstream down"))),
-            local: StubEngine(result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "cloud" }, localAvailable: { true })
-        let t = try await router.transcribe(audio, dictionaryTerms: [])
-        XCTAssertEqual(t.text, "local")
-        XCTAssertTrue(t.usedFallback)
-    }
-
-    func testCloudAuthErrorDoesNotFallBack() async {
-        let router = EngineRouter(
-            cloud: StubEngine(result: .failure(EngineError.requestFailed(status: 401, message: "bad key"))),
-            local: StubEngine(result: .success(Transcript(text: "local", engineID: "parakeet"))),
-            mode: { "cloud" }, localAvailable: { true })
-        do {
-            _ = try await router.transcribe(audio, dictionaryTerms: [])
-            XCTFail("expected throw")
-        } catch let error as EngineError {
-            XCTAssertEqual(error, .requestFailed(status: 401, message: "bad key"))
-        } catch { XCTFail("wrong error: \(error)") }
+    func testCloudErrorsPropagateWithoutLocalFallback() async {
+        for error in [EngineError.offline, .requestFailed(status: 503, message: "down"),
+                      .requestFailed(status: 401, message: "bad key")] {
+            let calls = CallCounter()
+            let router = EngineRouter(cloud: CountingEngine(
+                counter: calls, result: .failure(error)), mode: { "cloud" })
+            do {
+                _ = try await router.transcribe(audio, dictionaryTerms: [])
+                XCTFail("Expected provider error")
+            } catch let actual {
+                XCTAssertEqual(actual as? EngineError, error)
+            }
+            let count = await calls.value()
+            XCTAssertEqual(count, 1)
+        }
     }
 }

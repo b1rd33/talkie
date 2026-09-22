@@ -45,16 +45,15 @@ app never loses focus.
 - [ ] ⇧⌥V re-pastes the last dictation at the current cursor
 - [ ] Sub-300ms `fn` tap → nothing recorded, no error
 
-## Engines & offline (spec §10)
+## Cloud engines and retired offline profiles
 
-- [ ] Local mode (Settings → Engines → "On this Mac") → dictation works,
-      History row shows engine "parakeet"
-- [ ] Offline fallback: cloud mode + Wi-Fi OFF (models downloaded) → dictation
-      still inserts, pill flashes the "offline" badge, History shows "parakeet"
-- [ ] Wi-Fi OFF + local models removed (Settings → Engines → "Remove models";
-      status flips to "Not downloaded") → error pill
-      "No internet connection.", nothing inserted.
-      Re-download models afterwards.
+- [ ] Cloud batch and Instant send audio only to the selected provider.
+- [ ] Wi-Fi OFF produces a network error; no local model or automatic offline fallback runs.
+- [ ] Upgrade a saved local/offline profile: pressing the dictation key or retrying
+      history shows guidance to choose a cloud profile, with no recording or upload.
+- [ ] Speaker filtering cannot override a saved local/offline profile.
+- [ ] Explicitly choose a cloud profile and add its API key: dictation works.
+- [ ] Existing history, recordings and custom profiles remain available.
 
 ## Fresh-machine onboarding (spec §11)
 
@@ -110,7 +109,7 @@ Provider prices may change.
 - [ ] Detected languages appear only on `gpt-transcribe` history results
 - [ ] **Recording context** reaches direct OpenAI transcription, but bounded
       surrounding field text does not
-- [ ] Local and OpenRouter modes send none of the new OpenAI fields
+- [ ] OpenRouter mode sends none of the new OpenAI fields
 
 ## Productivity and privacy
 
@@ -120,7 +119,7 @@ Provider prices may change.
 - [ ] “press enter” is inert by default; when opted in it works only as a suffix
       while the press-time target remains focused
 - [ ] Switch language from the menu bar for one session; regional formatting is
-      honored and local mode clearly reports its English-only model limit
+      honored; retired local profiles show migration guidance
 - [ ] Enable context awareness → spacing/capitalization fits cursor context;
       disable it or exclude the app → no field text is read
 - [ ] Password/secure fields never provide context; surrounding/selected text is
@@ -135,7 +134,7 @@ Provider prices may change.
 - [ ] Automated signed checks pass in TextEdit, Notes, and Terminal using fixture
       audio/provider responses with the real focus and insertion stack
 - [ ] Assisted checks pass in Slack, Mail, Safari, and Xcode
-- [ ] Secure-field, physical `fn`, real microphone, launch-at-login, offline mode,
+- [ ] Secure-field, physical `fn`, real microphone, launch-at-login, network failure,
       Gatekeeper, clean-user install, signature seal, and update identity pass
 
 ## Native pill and icon

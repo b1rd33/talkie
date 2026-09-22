@@ -4,6 +4,7 @@ import ApplicationServices
 import Foundation
 import OSLog
 import ServiceManagement
+import SwiftData
 import SwiftUI
 import UserNotifications
 
@@ -33,11 +34,12 @@ final class AppServices {
     let pasteLastInserter: TextInserter
     let coordinator: DictationCoordinator
     let history: HistoryStore?
-    let modelDownloader: ModelDownloader
     let onboarding: OnboardingWindow
     let selectionTransforms: SelectionTransformCoordinator
     let selectionTransformWindow: SelectionTransformWindow
     private(set) var flowBar: FlowBarPanel?
+    private var hubWindow: NSWindow?
+    private var settingsWindow: NSWindow?
 #if DEBUG
     private var e2eBridge: E2ETestControlBridge?
     private var screenshotDemoPill: ScreenshotDemoPillPanel?
@@ -57,14 +59,15 @@ final class AppServices {
         let recorder = AudioRecorder(preferredDeviceUID: {
             defaults.string(forKey: "preferredAudioDeviceUID")
         })
-        let speakerReference = SpeakerReferenceController()
+        let speakerReference = SpeakerReferenceController(recorder: AudioRecorder(preferredDeviceUID: {
+            defaults.string(forKey: "preferredAudioDeviceUID")
+        }))
         let activeApp = ActiveAppMonitor()
         let contextReader = FocusedContextReader()
         let shortcuts = ShortcutManager()
         let permissions = PermissionManager()
         let notifier = Notifier()
         let pasteLastInserter = TextInserter(notifier: notifier)
-        let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
         let onboarding = OnboardingWindow()
 
         let credentialOverrides = environment.credentialOverrides
@@ -147,17 +150,9 @@ final class AppServices {
                 }
                 return defaults.string(forKey: "transcriptionProvider") ?? "openai"
             })
-        let backend = FluidAudioBackend()
-        let localEngine = ParakeetEngine(backend: backend)
-        let router = EngineRouter(
-            cloud: cloudSwitch, local: localEngine,
-            mode: {
-                if defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false {
-                    return "cloud"
-                }
-                return defaults.string(forKey: "engineMode") ?? "cloud"
-            },
-            localAvailable: { FluidAudioBackend.modelsPresent })
+        let router = EngineRouter(cloud: cloudSwitch, mode: {
+            defaults.string(forKey: "engineMode") ?? "cloud"
+        })
         let history = try? HistoryStore(inMemory: environment.historyInMemory)
         let resolver = StyleResolver(overrides: { [history] in
             history?.styleOverridesByBundleID() ?? [:]
@@ -207,13 +202,7 @@ final class AppServices {
                 openai: openAI,
                 openrouter: openRouter,
                 provider: { transcription.provider.rawValue })
-            // `.localOnly` is deliberately resolved to local regardless of any
-            // later settings mutation; EngineRouter never cloud-falls-back in local mode.
-            return EngineRouter(
-                cloud: cloud,
-                local: localEngine,
-                configuration: configuration,
-                localAvailable: { FluidAudioBackend.modelsPresent })
+            return EngineRouter(cloud: cloud, configuration: configuration)
         }
 
         let configuredCleanupService: (DictationSessionConfiguration) -> any CleanupServicing = { configuration in
@@ -330,7 +319,6 @@ final class AppServices {
         self.pasteLastInserter = pasteLastInserter
         self.coordinator = coordinator
         self.history = history
-        self.modelDownloader = modelDownloader
         self.onboarding = onboarding
         self.selectionTransforms = selectionTransforms
         self.selectionTransformWindow = selectionTransformWindow
@@ -349,10 +337,55 @@ final class AppServices {
         showOnboarding()
     }
 
+    func showSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(origin: .zero, size: SettingsView.windowSize),
+                styleMask: [.titled, .closable, .miniaturizable],
+                backing: .buffered, defer: false)
+            window.title = "Talkie Settings"
+            let controller = NSHostingController(
+                rootView: SettingsView(keychain: keychain, settings: settings))
+            controller.sizingOptions = []
+            window.contentViewController = controller
+            window.setContentSize(SettingsView.windowSize)
+            window.isReleasedWhenClosed = false
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .canJoinAllApplications]
+            window.center()
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showHub() {
+        if hubWindow == nil {
+            let content = Group {
+                if let history {
+                    HubView(history: history).modelContainer(history.container)
+                } else {
+                    HubView(history: nil)
+                }
+            }
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 880, height: 560),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered, defer: false)
+            window.title = "Talkie"
+            window.contentViewController = NSHostingController(rootView: content)
+            window.isReleasedWhenClosed = false
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .canJoinAllApplications]
+            window.center()
+            hubWindow = window
+        }
+        hubWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
         onboarding.show(keychain: keychain, settings: settings,
-                        modelDownloader: modelDownloader, profiles: profiles,
+                        profiles: profiles,
                         setupState: setupState)
     }
 
@@ -557,7 +590,7 @@ final class AppServices {
     /// on/off toggle and pill style never fight the state-driven loop.
     private func trackPillVisibility() {
         _ = withObservationTracking {
-            (settings.showFlowBar, settings.pillStyle)
+            (settings.showFlowBar, settings.pillStyle, settings.orbSize, settings.orbAnimation)
         } onChange: { [weak self] in
             Task { @MainActor in self?.trackPillVisibility() }
         }
@@ -636,6 +669,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         AppServices.shared.startUI()
+        if AppServices.shared.setupState.setupCompleted {
+            AppServices.shared.showHub()
+        }
     }
 
 #if DEBUG
@@ -645,12 +681,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             keychain: AppServices.shared.keychain,
             settings: AppServices.shared.settings)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+            contentRect: NSRect(origin: .zero, size: SettingsView.windowSize),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false)
         window.title = "Talkie Settings"
-        window.contentViewController = NSHostingController(rootView: content)
+        let controller = NSHostingController(rootView: content)
+        controller.sizingOptions = []
+        window.contentViewController = controller
+        window.setContentSize(SettingsView.windowSize)
         window.isReleasedWhenClosed = false
         window.center()
         window.orderFrontRegardless()
@@ -659,6 +698,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         e2eSettingsWindow = window
     }
 #endif
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !Self.isRunningTests else { return false }
+        AppServices.shared.showHub()
+        return false
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
 #if DEBUG
@@ -671,15 +716,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         if let action = response.notification.request.content.userInfo["talkie.action"] as? String,
            let destination = NotificationDestination(action: action) {
-            if let url = destination.systemSettingsURL {
-                NSWorkspace.shared.open(url)
+            if destination.systemSettingsURL != nil {
+                Task { @MainActor in
+                    AppServices.shared.permissions.openSettings(for: destination)
+                }
                 completionHandler()
                 return
             }
-            NSApp.activate(ignoringOtherApps: true)
-            // SwiftUI Settings has no public programmatic opener; this selector is the
-            // established workaround on macOS 14 — verify it still resolves on the SDK you build with.
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            Task { @MainActor in AppServices.shared.showSettings() }
         }
         completionHandler()
     }

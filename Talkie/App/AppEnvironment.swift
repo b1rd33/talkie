@@ -251,7 +251,7 @@ struct AppEnvironment {
         defaults.set(SetupStateStore.currentStateVersion,
                      forKey: SetupStateStore.stateVersionKey)
         defaults.set(false, forKey: "simpleMode")
-        let profile = DictationProfile.privateOffline
+        let profile = DictationProfile.bestAccuracy
         defaults.set(profile.engineMode, forKey: "engineMode")
         defaults.set(profile.instantSkipCleanup, forKey: "instantSkipCleanup")
         defaults.set(profile.instantLiveType, forKey: "instantLiveType")
@@ -264,7 +264,7 @@ struct AppEnvironment {
         defaults.set(profile.cleanupModel, forKey: "cleanupModel")
         defaults.set(profile.customCleanupPrompt, forKey: "customCleanupPrompt")
         defaults.set("en", forKey: "pinnedLanguage")
-        defaults.set(PillStyle.calmFlowRibbon.rawValue, forKey: "pillStyle")
+        defaults.set(PillStyle.thinkingOrb.rawValue, forKey: "pillStyle")
         defaults.set("topCenter", forKey: "pillPosition")
         defaults.set(profile.id.uuidString, forKey: "selectedProfileID")
         return AppEnvironment(

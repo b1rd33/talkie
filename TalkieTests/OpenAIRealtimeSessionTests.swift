@@ -12,6 +12,7 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         var sent: [String] = []
         var inbox: [Data] = []
         var connectError: Error?
+        var commitDelay: Duration?
         var disconnectAfterInbox = false
         private var committed = false
         private var receiveIndex = 0
@@ -19,6 +20,9 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         func connect() async throws { if let connectError { throw connectError } }
         func send(_ data: Data) async throws {
             let text = String(decoding: data, as: UTF8.self)
+            if text.contains("input_audio_buffer.commit"), let commitDelay {
+                try await Task.sleep(for: commitDelay)
+            }
             lock.lock()
             sent.append(text)
             if text.contains("input_audio_buffer.commit") { committed = true }
@@ -386,5 +390,59 @@ final class OpenAIRealtimeSessionTests: XCTestCase {
         } catch let error as EngineError {
             XCTAssertEqual(error, .offline)
         } catch { XCTFail("wrong error: \(error)") }
+    }
+}
+
+extension OpenAIRealtimeSessionTests {
+    func testLiveDeltasReachSinkBeforeClientCommit() async throws {
+        let transport = StreamingFakeTransport()
+        transport.streamInbox = [Self.delta("live text", itemID: "live")]
+        transport.commitInbox = [Self.committed("live"), Self.completed("final text", itemID: "live")]
+        let partial = expectation(description: "uncommitted live delta")
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "gpt-live-transcribe", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            onPartial: { if $0 == "live text" { partial.fulfill() } },
+            settlingInterval: .milliseconds(10))
+        try await session.begin()
+        await fulfillment(of: [partial], timeout: 1)
+        let transcript = try await session.finish()
+        XCTAssertEqual(transcript.text, "final text")
+    }
+
+    func testCancellingFinishResumesWithoutWaitingForServerTimeout() async throws {
+        let session = OpenAIRealtimeSession(
+            transport: FakeTransport(), model: "gpt-live-transcribe", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000),
+            finishTimeout: .milliseconds(200))
+        try await session.begin()
+        let finish = Task { try await session.finish() }
+        try await Task.sleep(for: .milliseconds(20))
+        finish.cancel()
+        do {
+            _ = try await finish.value
+            XCTFail("Cancelled finish must throw")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+    }
+}
+
+
+extension OpenAIRealtimeSessionTests {
+    func testCancellationDuringCommitSendDoesNotBecomeBatchFallbackError() async throws {
+        let transport = FakeTransport()
+        transport.commitDelay = .seconds(1)
+        let session = OpenAIRealtimeSession(
+            transport: transport, model: "gpt-live-transcribe", vocabulary: nil, language: nil,
+            encoder: RealtimePCMEncoder(inputRate: 24_000, outputRate: 24_000))
+        try await session.begin()
+        let finish = Task { try await session.finish() }
+        try await Task.sleep(for: .milliseconds(20))
+        finish.cancel()
+        do {
+            _ = try await finish.value
+            XCTFail("Expected cancellation")
+        } catch { XCTAssertTrue(error is CancellationError) }
     }
 }

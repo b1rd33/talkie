@@ -1,28 +1,27 @@
 import AppKit
 import SwiftUI
+import ThinkingOrbsKit
 import ServiceManagement
 
 struct SettingsView: View {
+    static let windowSize = NSSize(width: 660, height: 640)
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
+    @State private var selectedTab = "Profiles"
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("Settings mode", selection: $settings.simpleMode) {
-                    Text("Simple").tag(true)
-                    Text("Advanced").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 220)
-                .accessibilityIdentifier("Settings mode")
+                SettingsNavigation(label: "Settings mode", options: ["Simple", "Advanced"],
+                                   selection: Binding(
+                                    get: { settings.simpleMode ? "Simple" : "Advanced" },
+                                    set: { settings.simpleMode = $0 == "Simple" }))
                 Spacer()
                 Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
                     .font(.caption)
             }
-            .padding(8)
-            Divider()
+            .padding(20)
+            Divider().opacity(0.35)
             if settings.simpleMode {
                 SimpleSettingsView(keychain: keychain, settings: settings,
                                    profiles: AppServices.shared.profiles)
@@ -30,7 +29,18 @@ struct SettingsView: View {
                 devTabs
             }
         }
-        .frame(width: screenshotReadableWidth, height: 480)
+        .frame(width: screenshotReadableWidth, height: Self.windowSize.height)
+        .scrollContentBackground(.hidden)
+        .toggleStyle(.switch)
+        .controlSize(.large)
+        .modifier(SettingsControlStyle())
+        .background {
+            Color(nsColor: .windowBackgroundColor)
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [.accentColor.opacity(0.08), .clear],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+        }
     }
 
     private var screenshotReadableWidth: CGFloat {
@@ -39,21 +49,76 @@ struct SettingsView: View {
             return 720
         }
 #endif
-        return 560
+        return Self.windowSize.width
     }
 
     private var devTabs: some View {
-        TabView {
-            ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
-                .tabItem { Label("Profiles", systemImage: "person.crop.circle") }
-            GeneralSettingsTab(settings: settings)
-                .tabItem { Label("General", systemImage: "gearshape") }
-            EngineSettingsTab(keychain: keychain, settings: settings,
-                              downloader: AppServices.shared.modelDownloader,
-                              speakerReference: AppServices.shared.speakerReference)
-                .tabItem { Label("Engines", systemImage: "waveform") }
-            StyleSettingsTab(settings: settings, history: AppServices.shared.history)
-                .tabItem { Label("Style", systemImage: "textformat") }
+        VStack(spacing: 0) {
+            SettingsNavigation(label: "Settings section",
+                               options: ["Profiles", "General", "Engines", "Style"],
+                               selection: $selectedTab)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            Group {
+                switch selectedTab {
+                case "General": GeneralSettingsTab(settings: settings)
+                case "Engines":
+                    EngineSettingsTab(keychain: keychain, settings: settings,
+                                      speakerReference: AppServices.shared.speakerReference)
+                case "Style": StyleSettingsTab(settings: settings, history: AppServices.shared.history)
+                default: ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+}
+
+/// Native glass controls on current macOS; the older system keeps its own buttons.
+private struct SettingsControlStyle: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+private struct SettingsNavigation: View {
+    let label: String
+    let options: [String]
+    @Binding var selection: String
+
+    var body: some View {
+        Group {
+            if #available(macOS 26.0, *) {
+                GlassEffectContainer(spacing: 8) { buttons }
+            } else {
+                buttons
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(label)
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 8) {
+            ForEach(options, id: \.self) { option in
+                Group {
+                    if #available(macOS 26.0, *), option == selection {
+                        Button(option) { selection = option }.buttonStyle(.glassProminent)
+                    } else if #available(macOS 26.0, *) {
+                        Button(option) { selection = option }.buttonStyle(.glass)
+                    } else {
+                        Button(option) { selection = option }.buttonStyle(.bordered)
+                            .tint(option == selection ? .accentColor : nil)
+                    }
+                }
+                .accessibilityAddTraits(option == selection ? .isSelected : [])
+            }
         }
     }
 }
@@ -78,14 +143,15 @@ private struct ProfilesSettingsTab: View {
         Form {
             Section("Profile") {
                 Picker("Active profile", selection: Binding(
-                    get: { profiles.selectedProfileID ?? DictationProfile.privateOffline.id },
+                    get: { profiles.selectedProfileID },
                     set: { id in
                         guard let p = profiles.allProfiles.first(where: { $0.id == id }) else { return }
                         p.apply(to: settings) // writes the whole pipeline consistently
                         profiles.select(p.id)
                     })) {
+                    Text("Choose a cloud profile").tag(Optional<UUID>.none)
                     ForEach(profiles.allProfiles) { p in
-                        Text(p.displaySummary).tag(p.id)
+                        Text(p.displaySummary).tag(Optional(p.id))
                     }
                 }
                 if let selected = profiles.selectedProfile {
@@ -135,7 +201,7 @@ private struct ProfilesSettingsTab: View {
 
     private static func keyText(_ key: RequiredKey) -> String {
         switch key {
-        case .none: "No API key needed — runs on-device."
+        case .none: "Choose a cloud profile to enable dictation."
         case .openAI: "Needs your OpenAI key."
         case .openRouter: "Needs your OpenRouter key."
         case .both: "Needs both your OpenAI and OpenRouter keys."
@@ -183,7 +249,7 @@ private struct StyleSettingsTab: View {
                     }
                 }
                 if settings.engineMode == "local" {
-                    Text("The current on-device Parakeet model is English-only. Choose Cloud or Instant for the expanded language list.")
+                    Text(EngineError.localTranscriptionRemoved.errorDescription!)
                         .font(.caption).foregroundStyle(.orange)
                 } else {
                     Text("Regional variants guide formatting; transcription receives the provider-supported base language code.")
@@ -308,26 +374,48 @@ private struct GeneralSettingsTab: View {
                        isOn: $settings.enablePressEnterAction)
                 Text("Off by default. When enabled, Talkie presses Return only when those words end a dictation and the original app still has focus.")
                     .font(.caption).foregroundStyle(.secondary)
-                Picker("Microphone", selection: $settings.preferredAudioDeviceUID) {
-                    Text("System default").tag(String?.none)
-                    ForEach(SystemAudioDeviceCatalog().inputDevices()) { device in
-                        Text(device.name).tag(Optional(device.uid))
-                    }
-                }
-                Text("Selection uses the device’s stable UID. If it disconnects, Talkie automatically uses the system default.")
-                    .font(.caption).foregroundStyle(.secondary)
+                MicrophoneCheckView(settings: settings)
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
                 Picker("Pill style", selection: $settings.pillStyle) {
                     Text("Bare waveform — chromeless, dots when idle").tag(PillStyle.bareWaveform)
-                    Text("Ink Line — a quiet, living line").tag(PillStyle.inkLine)
-                    Text("Calm Flow Ribbon — layered flowing lines").tag(PillStyle.calmFlowRibbon)
-                    Text("Bare Wave — continuous organic waveform").tag(PillStyle.bareWave)
+                    Text("Thinking Orb — animated particles").tag(PillStyle.thinkingOrb)
                     Text("Dynamic Island — docked top-center").tag(PillStyle.dynamicIsland)
-                    Text("Frosted glass — translucent capsule").tag(PillStyle.frostedGlass)
+                    Text("Liquid Glass — clear capsule").tag(PillStyle.liquidGlass)
                     Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
                 }
+                .accessibilityIdentifier("Pill style")
+                if settings.pillStyle == .thinkingOrb {
+                    Picker("Orb animation", selection: $settings.orbAnimation) {
+                        Text("Automatic — follows dictation").tag("automatic")
+                        ForEach(OrbState.allCases, id: \.rawValue) { animation in
+                            Text(animation.visualName).tag(animation.rawValue)
+                        }
+                    }
+                    .accessibilityIdentifier("Orb animation")
+                    HStack {
+                        Slider(value: $settings.orbSize, in: 28...96, step: 2) {
+                            Text("Orb size")
+                        }
+                        .accessibilityIdentifier("Orb size")
+                        Text("\(Int(settings.orbSize)) pt")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                    Text("Appears only while dictating or processing. Every animation responds to your voice.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                PillRendererView(
+                    presentation: {
+                        var preview = PillPresentation.preview(.recording(handsFree: false))
+                        preview.style = settings.pillStyle
+                        preview.orbSize = settings.orbSize
+                        preview.orbAnimation = settings.orbAnimation
+                        return preview
+                    }(),
+                    levelSource: SimulatedAudioLevelSource(seed: 42, fixture: .conversation))
+                    .accessibilityLabel("Animation preview — simulated audio")
                 Toggle("Show recording timer", isOn: $settings.showPillTimer)
                     .disabled(!settings.showFlowBar)
                 Toggle("Show cancel button", isOn: $settings.showPillCancelButton)
@@ -383,7 +471,6 @@ private struct GeneralSettingsTab: View {
 private struct EngineSettingsTab: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
-    let downloader: ModelDownloader
     @Bindable var speakerReference: SpeakerReferenceController
     @State private var openAIKey: String = ""
     @State private var openRouterKey: String = ""
@@ -405,7 +492,6 @@ private struct EngineSettingsTab: View {
                 Picker("Transcription runs", selection: $settings.engineMode) {
                     Text("Cloud — batch (≈ $0.27/hr)").tag("cloud")
                     Text("Cloud — instant streaming (≈ $1.02/hr)").tag("instant")
-                    Text("On this Mac — free, offline").tag("local")
                 }
                 .pickerStyle(.radioGroup)
                 Text("Instant streams audio while you speak. Batch records first, then transcribes the completed file. Model pricing and latency vary.")
@@ -419,28 +505,9 @@ private struct EngineSettingsTab: View {
                 Text("Types raw text as you speak — skips cleanup. Needs Accessibility access.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Local models") {
-                if settings.engineMode == "local", !FluidAudioBackend.modelsPresent {
-                    Text("Local mode will not use cloud automatically. Download models below or switch to Cloud or Instant explicitly.")
-                        .font(.caption).foregroundStyle(.orange)
-                }
-                switch downloader.state {
-                case .ready:
-                    LabeledContent("Status", value: "Downloaded")
-                    removeModelsButton
-                case .downloading:
-                    ProgressView(value: downloader.progress) { Text("Downloading… \(Int(downloader.progress * 100))%") }
-                case .failed(let message):
-                    Text(message).foregroundStyle(.red)
-                    Button("Retry") { Task { await downloader.download() } }
-                case .idle:
-                    LabeledContent("Status", value: FluidAudioBackend.modelsPresent ? "Downloaded" : "Not downloaded (~2 GB)")
-                    if FluidAudioBackend.modelsPresent {
-                        removeModelsButton
-                    } else {
-                        Button("Download models") { Task { await downloader.download() } }
-                    }
-                }
+            if settings.engineMode == "local" {
+                Text(EngineError.localTranscriptionRemoved.errorDescription!)
+                    .font(.caption).foregroundStyle(.orange)
             }
             Section("API Keys") {
                 SecureField("OpenAI API key (sk-…)", text: $openAIKey)
@@ -627,10 +694,4 @@ private struct EngineSettingsTab: View {
         }
     }
 
-    private var removeModelsButton: some View {
-        Button("Remove models") {
-            try? FileManager.default.removeItem(at: FluidAudioBackend.modelsDirectory)
-            downloader.reset()
-        }
-    }
 }

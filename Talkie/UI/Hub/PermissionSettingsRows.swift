@@ -19,6 +19,11 @@ struct PermissionSettingsRows: View {
             permissions.openSettings(for: .accessibility)
         }
 
+        Text("In System Settings, this permission is called Accessibility or Device Control and Data Access. If Talkie is missing, click + and choose this app. If it is enabled but still needs attention, remove the old entry and add this copy again, then restart Talkie.")
+            .font(.caption).foregroundStyle(.secondary)
+        Button("Show Talkie in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        }
         Button("Check permissions again") { permissions.refresh() }
         Button("Run Setup Assistant…") { AppServices.shared.showOnboarding() }
     }

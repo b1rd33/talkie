@@ -12,12 +12,11 @@ configs:
   Release: release
   ReleaseAdhoc: release
 packages:
+  ThinkingOrbsKit:
+    path: Vendor/ThinkingOrbsKit
   HotKey:
     url: https://github.com/soffes/HotKey
     exactVersion: 0.2.1
-  FluidAudio:
-    url: https://github.com/FluidInference/FluidAudio
-    exactVersion: 0.15.5
 settings:
   base:
     SWIFT_VERSION: "5.10"
@@ -35,6 +34,8 @@ targets:
         buildPhase: resources
       - path: THIRD_PARTY_NOTICES.txt
         buildPhase: resources
+      - path: Vendor/ThinkingOrbsKit/ThinkingOrbs-LICENSE.txt
+        buildPhase: resources
     info:
       path: Talkie/Info.plist
       properties:
@@ -50,8 +51,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: Talkie/Talkie.entitlements
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "1.2.0"
+        CURRENT_PROJECT_VERSION: "9"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Debug:
@@ -64,14 +65,14 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
         # Account-less distribution: ad-hoc signature, hardened runtime OFF so the
-        # ad-hoc-signed embedded frameworks (FluidAudio/HotKey) still load.
+        # ad-hoc-signed embedded frameworks (HotKey) still load.
         ReleaseAdhoc:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "-"
           ENABLE_HARDENED_RUNTIME: NO
     dependencies:
+      - package: ThinkingOrbsKit
       - package: HotKey
-      - package: FluidAudio
   TalkieTests:
     type: bundle.unit-test
     platform: macOS

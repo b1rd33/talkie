@@ -15,7 +15,6 @@ xcodegen generate
 
 The Swift packages must remain pinned to the exact versions declared in `project.yml`:
 
-- FluidAudio `0.15.5`
 - HotKey `0.2.1`
 
 Do not replace these `exactVersion` pins with ranges. If a dependency update is intentional, update the pin, regenerate the project, and explain the compatibility and license review in the pull request.

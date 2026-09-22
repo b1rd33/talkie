@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Which API key(s) the user has — drives first-run profile auto-selection.
-enum KeyChoice { case openAI, openRouter, neither }
+enum KeyChoice { case openAI, openRouter }
 
 /// Holds the user's custom profiles and which profile is selected. Built-ins are
 /// code constants (`DictationProfile.builtIns`); only custom profiles + the selected
@@ -69,11 +69,11 @@ final class ProfileStore {
         customProfiles[idx] = updated
     }
 
-    /// Removes a custom profile; if it was selected, falls back to Private/Offline.
+    /// Removes a custom profile without applying a different pipeline.
     /// Built-ins can't be deleted.
     func delete(_ id: UUID) {
         customProfiles.removeAll { $0.id == id }
-        if selectedProfileID == id { selectedProfileID = DictationProfile.privateOffline.id }
+        if selectedProfileID == id { selectedProfileID = nil }
     }
 
     /// One-time migration of an existing install: when nothing is selected yet, wrap the
@@ -97,7 +97,6 @@ final class ProfileStore {
         switch choice {
         case .openAI: return .instant
         case .openRouter: return .cheapestCloud
-        case .neither: return .privateOffline
         }
     }
 

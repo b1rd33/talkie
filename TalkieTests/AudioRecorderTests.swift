@@ -3,6 +3,25 @@ import AVFoundation
 @testable import Talkie
 
 final class AudioRecorderTests: XCTestCase {
+    func testBluetoothRateChangePreservesDurationAndStreamingAudio() throws {
+        let sink = AudioSink()
+        var streamed: [Float] = []
+        sink.chunkConsumer = { streamed.append(contentsOf: $0) }
+        for rate in [48_000.0, 24_000.0] {
+            sink.capture(makeBuffer(sampleRate: rate, channels: 1))
+        }
+        sink.finish()
+        try sink.validateCapture()
+        XCTAssertEqual(sink.duration, 1, accuracy: 0.03)
+        XCTAssertEqual(streamed, sink.drainSamples())
+        XCTAssertEqual(AudioHealthPolicy.standard.evaluate(sink.metrics), .healthy)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bluetooth-\(UUID()).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try sink.writeM4A(to: url)
+        let file = try AVAudioFile(forReading: url)
+        XCTAssertEqual(Double(file.length) / file.fileFormat.sampleRate, 1, accuracy: 0.05)
+    }
+
     /// 0.5s of 440Hz sine at 48kHz stereo — simulates a hardware-format tap buffer.
     private func makeBuffer(sampleRate: Double = 48_000, channels: AVAudioChannelCount = 2,
                             seconds: Double = 0.5, amplitude: Float = 0.5) -> AVAudioPCMBuffer {

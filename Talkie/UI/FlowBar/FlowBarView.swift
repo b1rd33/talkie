@@ -34,6 +34,8 @@ struct FlowBarView: View {
             reduceMotion: reduceMotion,
             increasedContrast: colorSchemeContrast == .increased,
             isInstant: settings?.engineMode == "instant",
+            orbSize: settings?.orbSize ?? 44,
+            orbAnimation: settings?.orbAnimation ?? "automatic",
             showsTimer: settings?.showPillTimer ?? false,
             showsCancelButton: settings?.showPillCancelButton ?? false)
     }
@@ -42,6 +44,7 @@ struct FlowBarView: View {
         PillRendererView(
             presentation: presentation,
             levelSource: recorder,
+            microphoneReady: recorder.isRecording,
             recordingStartedAt: recordingStarted,
             cleanupFailureReason: coordinator.cleanupFailureReason,
             onCancel: { coordinator.cancel() },
@@ -71,6 +74,7 @@ struct FlowBarView: View {
 struct PillRendererView: View {
     let presentation: PillPresentation
     let levelSource: any AudioLevelReading
+    var microphoneReady = true
     var recordingStartedAt: Date?
     var cleanupFailureReason: String?
     var onCancel: () -> Void = {}
@@ -81,11 +85,7 @@ struct PillRendererView: View {
 
     private var style: PillStyle { presentation.style }
     private var isChromeless: Bool {
-        style == .bareWaveform || style == .inkLine || style == .calmFlowRibbon ||
-            style == .bareWave || style == .hidden
-    }
-    private var isOrganicWaveform: Bool {
-        style == .inkLine || style == .calmFlowRibbon || style == .bareWave
+        style == .bareWaveform || style == .thinkingOrb || style == .hidden
     }
     private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
     private var motion: PillMotionProfile {
@@ -102,22 +102,29 @@ struct PillRendererView: View {
                 idleView
             case .recording:
                 activePill {
-                    if style == .dynamicIsland {
-                        Circle().fill(.red).frame(width: 7, height: 7)
-                    }
-                    if isOrganicWaveform {
-                        OrganicWaveformView(style: style, levelSource: levelSource,
-                                            presentation: presentation, color: contentForeground)
+                    if !microphoneReady {
+                        Text("Starting microphone…").font(.caption).foregroundStyle(contentForeground)
                     } else {
-                        WaveformCanvasView(recorder: levelSource, color: contentForeground)
-                            .accessibilityHidden(true)
+                        if style == .dynamicIsland {
+                            Circle().fill(.red).frame(width: 7, height: 7)
+                        }
+                        if style == .thinkingOrb {
+                            DictationOrbView(presentation: presentation, levelSource: levelSource)
+                        } else {
+                            WaveformCanvasView(recorder: levelSource, color: contentForeground)
+                                .accessibilityHidden(true)
+                        }
                     }
                     if presentation.showsTimer { timerView }
                     if presentation.showsCancelButton { cancelButton }
                 }
             case .transcribing, .cleaning, .inserting, .success:
                 activePill {
-                    processingRing
+                    if style == .thinkingOrb {
+                        DictationOrbView(presentation: presentation, levelSource: levelSource)
+                    } else {
+                        processingRing
+                    }
                     if presentation.showsCancelButton && presentation.isCancellable {
                         cancelButton
                     }
@@ -127,7 +134,7 @@ struct PillRendererView: View {
             }
         }
         .frame(width: PillLayout.panelSize.width,
-               height: PillLayout.panelSize.height,
+               height: PillLayout.panelSize(style: style, orbSize: presentation.orbSize).height,
                alignment: style == .dynamicIsland ? .top : .bottom)
         .padding(style == .dynamicIsland ? .top : .bottom, 2)
         .scaleEffect(isHandsFree
@@ -221,16 +228,12 @@ struct PillRendererView: View {
                 }
             }
             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-        case .inkLine, .calmFlowRibbon, .bareWave:
-            OrganicWaveformView(style: style, levelSource: levelSource,
-                                presentation: presentation, color: contentForeground)
-                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-        case .frostedGlass:
-            Capsule().fill(.ultraThinMaterial)
-                .frame(width: 60, height: 11)
-                .overlay(Capsule().strokeBorder(.white.opacity(presentation.increasedContrast ? 0.7 : 0.3),
-                                                lineWidth: presentation.increasedContrast ? 1 : 0.5))
-                .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        case .thinkingOrb:
+            Color.clear.frame(width: 1, height: 1)
+        case .liquidGlass:
+            Color.clear.frame(width: 60, height: 11)
+                .modifier(PillGlassSurface(increasedContrast: presentation.increasedContrast))
+                .overlay(Capsule().strokeBorder(.primary.opacity(0.2), lineWidth: 0.5))
         case .dynamicIsland:
             Capsule().fill(.black)
                 .frame(width: 96, height: 20)
@@ -241,22 +244,26 @@ struct PillRendererView: View {
         }
     }
 
-    @ViewBuilder private func errorView(_ message: String) -> some View {
-        if isChromeless {
-            HStack(spacing: 5) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-                Text(message).foregroundStyle(.primary).lineLimit(1).truncationMode(.tail)
+    private func errorView(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.red)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Dictation failed").font(.caption.bold())
+                Text(message).font(.system(size: 10)).lineLimit(2)
             }
-            .font(.caption)
-            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-        } else {
-            content(accent: .red) {
-                Text(message).font(.caption)
-                    .foregroundStyle(style == .frostedGlass
-                                     ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
-                    .lineLimit(1).truncationMode(.tail)
-            }
+            Button(action: onCancel) { Image(systemName: "xmark") }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error")
         }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.red.opacity(0.6)))
+        .help(message)
     }
 
     private var cancelButton: some View {
@@ -278,19 +285,16 @@ struct PillRendererView: View {
     @ViewBuilder
     private func content(accent: Color?, @ViewBuilder _ inner: () -> some View) -> some View {
         switch style {
-        case .bareWaveform, .inkLine, .calmFlowRibbon, .bareWave, .hidden:
+        case .bareWaveform, .thinkingOrb, .hidden:
             inner()
-                .frame(height: 34)
+                .frame(height: style == .thinkingOrb
+                       ? max(48, PillLayout.clampedOrbSize(presentation.orbSize) * 1.18) : 34)
                 .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
-        case .frostedGlass:
+        case .liquidGlass:
             inner()
                 .padding(.horizontal, 16)
                 .frame(height: 34)
-                .background(accent.map { AnyShapeStyle($0.opacity(0.55)) }
-                            ?? AnyShapeStyle(.ultraThinMaterial), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(presentation.increasedContrast ? 0.7 : 0.3),
-                                                lineWidth: presentation.increasedContrast ? 1 : 0.5))
-                .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+                .modifier(PillGlassSurface(increasedContrast: presentation.increasedContrast))
         case .dynamicIsland:
             inner()
                 .padding(.horizontal, 16)
@@ -310,9 +314,17 @@ private struct ProcessingRingView: View {
     let motion: PillMotionProfile
 
     @State private var rotation = 0.0
-    private let clock = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
-
     var body: some View {
+        if presentation.visualPhase == .processing && motion.processingRotationDuration > 0 {
+            ring.onReceive(Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()) { date in
+                rotation = motion.processingRotationDegrees(at: date.timeIntervalSinceReferenceDate)
+            }
+        } else {
+            ring
+        }
+    }
+
+    private var ring: some View {
         Circle()
             .trim(from: 0, to: presentation.ringTrimEnd)
             .stroke(
@@ -321,16 +333,9 @@ private struct ProcessingRingView: View {
                     lineWidth: presentation.increasedContrast ? 2 : 1.5,
                     lineCap: .round))
             .frame(width: 16, height: 16)
-            .rotationEffect(.degrees(rotation))
+            .rotationEffect(.degrees(motion.processingRotationDuration > 0 ? rotation : 0))
             .accessibilityHidden(true)
-            .onReceive(clock) { date in
-                guard presentation.visualPhase == .processing else {
-                    rotation = 0
-                    return
-                }
-                rotation = motion.processingRotationDegrees(
-                    at: date.timeIntervalSinceReferenceDate)
-            }
+
     }
 }
 

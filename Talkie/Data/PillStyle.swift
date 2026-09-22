@@ -1,38 +1,19 @@
 import Foundation
 
-/// The Flow Bar pill's visual style. Replaces the former raw strings
-/// (classic/dot/compact/hidden) with a typed, migratable preference.
 enum PillStyle: String, CaseIterable, Sendable {
-    /// Chromeless live waveform; three faint dots when idle. The new default.
     case bareWaveform
-    /// A single, slender organic line with no pill background.
-    case inkLine
-    /// Three quiet, layered lines that drift together.
-    case calmFlowRibbon
-    /// A continuous organic waveform with no background or capsule.
-    case bareWave
-    /// Black island docked top-center that morphs between idle and active.
+    case thinkingOrb
     case dynamicIsland
-    /// Translucent frosted-glass capsule.
-    case frostedGlass
-    /// Nothing when idle; bare-waveform look while a dictation is active.
+    case liquidGlass
     case hidden
 
     static let `default` = PillStyle.bareWaveform
 
-    /// Maps any stored/legacy raw value to a current style. The retired styles
-    /// (classic, dot, compact) and any unknown/missing value collapse into the
-    /// default; "hidden" is preserved.
     init(migrating raw: String?) {
         switch raw {
-        case PillStyle.bareWaveform.rawValue: self = .bareWaveform
-        case PillStyle.inkLine.rawValue: self = .inkLine
-        case PillStyle.calmFlowRibbon.rawValue: self = .calmFlowRibbon
-        case PillStyle.bareWave.rawValue: self = .bareWave
-        case PillStyle.dynamicIsland.rawValue: self = .dynamicIsland
-        case PillStyle.frostedGlass.rawValue: self = .frostedGlass
-        case PillStyle.hidden.rawValue: self = .hidden
-        default: self = .default // classic / dot / compact / nil / anything else
+        case "inkLine", "calmFlowRibbon", "bareWave": self = .thinkingOrb
+        case "frostedGlass": self = .liquidGlass
+        default: self = raw.flatMap(Self.init(rawValue:)) ?? .default
         }
     }
 }

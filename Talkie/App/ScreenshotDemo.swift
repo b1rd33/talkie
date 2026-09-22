@@ -32,7 +32,7 @@ final class ScreenshotDemoPillPanel {
 
         let presentation = PillPresentation(
             state: .recording(handsFree: false),
-            style: .calmFlowRibbon,
+            style: .thinkingOrb,
             elapsed: 4,
             audioLevel: 1,
             errorMessage: nil,

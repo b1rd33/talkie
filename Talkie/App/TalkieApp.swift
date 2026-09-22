@@ -6,8 +6,7 @@ struct TalkieApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
-        // Stop the Settings scene from auto-restoring; its restored Pill style
-        // picker would otherwise replay a stale selection over the user's choice.
+        // Clear restoration left by the old, separate SwiftUI Settings window.
         SettingsSceneRestoration.clear()
     }
 
@@ -17,25 +16,17 @@ struct TalkieApp: App {
         } label: {
             MenuBarIcon(coordinator: AppServices.shared.coordinator)
         }
-        Window("Talkie", id: "hub") {
-            if let history = AppServices.shared.history {
-                HubView(history: history)
-                    .modelContainer(history.container) // @Query in Tasks 7–8 reads this
-            } else {
-                HubView(history: nil)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { AppServices.shared.showSettings() }
+                    .keyboardShortcut(",")
             }
-        }
-        .defaultSize(width: 880, height: 560)
-        Settings {
-            SettingsView(keychain: AppServices.shared.keychain,
-                         settings: AppServices.shared.settings)
         }
     }
 }
 
-/// Menu-bar dropdown. Lives in its own View so @Environment(\.openWindow) resolves.
+/// Menu-bar dropdown sharing the app's window and dictation actions.
 struct MenuBarContent: View {
-    @Environment(\.openWindow) private var openWindow
     @Bindable private var settings = AppServices.shared.settings
     private let coordinator = AppServices.shared.coordinator
 
@@ -43,12 +34,13 @@ struct MenuBarContent: View {
         Text("Talkie — hold fn to dictate")
         Text("Transform selected text: ⇧⌥T").font(.caption)
         Divider()
-        // spec §7: the menu carries the Cloud/Local engine picker too — bound to
-        // the same SettingsStore property the Engines tab's radio group uses (Phase 3).
+        // The menu and Settings share the same engine preference.
+        if settings.engineMode == "local" {
+            Text(EngineError.localTranscriptionRemoved.errorDescription!)
+        }
         Picker("Engine", selection: $settings.engineMode) {
             Text("Cloud (OpenAI)").tag("cloud")
             Text("Instant (OpenAI streaming)").tag("instant")
-            Text("On this Mac (Parakeet)").tag("local")
         }
         .pickerStyle(.inline)
         Picker("Language", selection: $settings.pinnedLanguage) {
@@ -66,11 +58,9 @@ struct MenuBarContent: View {
         Button("Undo last insertion") { _ = coordinator.undoLastInsertion() }
         Divider()
         Button("Open Talkie") {
-            openWindow(id: "hub")
-            // LSUIElement apps don't auto-activate; without this the hub opens behind others.
-            NSApp.activate(ignoringOtherApps: true)
+            AppServices.shared.showHub()
         }
-        SettingsLink { Text("Settings…") }
+        Button("Settings…") { AppServices.shared.showSettings() }
             .keyboardShortcut(",")
         Divider()
         Button("Quit Talkie") { NSApp.terminate(nil) }

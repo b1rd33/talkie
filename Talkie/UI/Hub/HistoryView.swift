@@ -78,6 +78,7 @@ private struct HistoryListView: View {
                     } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
                     .help("Retry from kept audio — copies the result")
+                    .accessibilityLabel("Retry from kept audio")
                 }
                 Button {
                     NSPasteboard.general.clearContents()
@@ -85,6 +86,8 @@ private struct HistoryListView: View {
                 } label: { Image(systemName: "doc.on.doc") }
                 .buttonStyle(.borderless)
                 .help("Copy cleaned text")
+                .accessibilityLabel("Copy cleaned text")
+                .disabled(record.cleanedText.isEmpty)
                 Button { // spec §7: re-copy raw
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(record.rawText, forType: .string)
@@ -101,6 +104,11 @@ private struct HistoryListView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            if record.deliveryRoute == .clipboardOnly {
+                Label("Copied to clipboard — paste it where you need it", systemImage: "clipboard")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if !record.detectedLanguages.isEmpty {
                 Label(
                     "Detected: \(localizedLanguageNames(record.detectedLanguages))",

@@ -20,7 +20,7 @@ protocol TextInserting: AnyObject {
     func copyToClipboard(_ text: String, targetBundleID: String?) -> DeliveryOutcome
     /// Best-effort Return key action. Implementations must independently verify that
     /// synthetic input is safe before posting it.
-    func pressEnter() -> Bool
+    func pressEnter(after delivery: DeliveryOutcome) -> Bool
     func undo() -> Bool
 }
 
@@ -33,7 +33,7 @@ extension TextInserting {
         copyToClipboard(text, targetBundleID: nil)
     }
 
-    func pressEnter() -> Bool { false }
+    func pressEnter(after delivery: DeliveryOutcome) -> Bool { false }
     func undo() -> Bool { false }
 }
 
@@ -50,6 +50,9 @@ final class TextInserter: TextInserting {
     private let secureInputCheck: () -> Bool
     private let axTrustedCheck: () -> Bool
     private let notifier: Notifying?
+    private let captureFocus: (String?) -> (() -> Bool)?
+    private let sleep: (Duration) async throws -> Void
+    private var pastedTargetIsFocused: (() -> Bool)?
     private let restoreDelay: Duration
     private let pasteboardGuard: PasteboardGuarding
 
@@ -60,7 +63,9 @@ final class TextInserter: TextInserting {
          axTrustedCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
          notifier: Notifying? = nil,
          pasteboardGuard: PasteboardGuarding? = nil,
-         restoreDelay: Duration = .milliseconds(300)) {
+         restoreDelay: Duration = .milliseconds(300),
+         captureFocus: ((String?) -> (() -> Bool)?)? = nil,
+         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.pasteKeystroke = pasteKeystroke ?? Self.postCmdV
         self.enterKeystroke = enterKeystroke ?? { Self.postKey(CGKeyCode(kVK_Return)) }
         self.undoKeystroke = undoKeystroke ?? Self.postCmdZ
@@ -69,9 +74,12 @@ final class TextInserter: TextInserting {
         self.notifier = notifier
         self.pasteboardGuard = pasteboardGuard ?? PasteboardGuard()
         self.restoreDelay = restoreDelay
+        self.captureFocus = captureFocus ?? { FocusedInputTarget.capture(bundleID: $0) }
+        self.sleep = sleep
     }
 
     func insert(_ text: String, targetBundleID: String?) async throws -> DeliveryOutcome {
+        pastedTargetIsFocused = nil
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return DeliveryOutcome(
@@ -101,8 +109,25 @@ final class TextInserter: TextInserting {
                 fallbackReason: "accessibility_unavailable")
         }
 
+        guard let targetIsFocused = captureFocus(targetBundleID), targetIsFocused() else {
+            return copyToClipboard(trimmed, targetBundleID: targetBundleID)
+        }
         pasteboardGuard.snapshotAndWrite(trimmed)
-        try await Task.sleep(for: .milliseconds(50)) // let the pasteboard server settle
+        do {
+            try await sleep(.milliseconds(50)) // let the pasteboard server settle
+            try Task.checkCancellation()
+        } catch {
+            pasteboardGuard.restoreIfUnchanged()
+            throw error
+        }
+        guard targetIsFocused(), !secureInputCheck(), axTrustedCheck() else {
+            // The transcript is already on the clipboard; do not restore over it.
+            notifier?.notify(title: "Copied — press ⌘V",
+                             body: "The focused field changed — the text is on your clipboard.")
+            return DeliveryOutcome(route: .clipboardOnly, verification: .unverified,
+                                   targetBundleID: targetBundleID,
+                                   fallbackReason: "target_focus_changed")
+        }
         guard pasteKeystroke() else {
             // ⌘V couldn't be posted (spec §10 "paste failure"): keep the transcript on
             // the clipboard — no restore, the user needs it there — and tell them.
@@ -114,8 +139,10 @@ final class TextInserter: TextInserting {
                 targetBundleID: targetBundleID,
                 fallbackReason: "paste_keystroke_failed")
         }
-        try await Task.sleep(for: restoreDelay) // let the target app read it
-        pasteboardGuard.restoreIfUnchanged()
+        pastedTargetIsFocused = targetIsFocused
+        defer { pasteboardGuard.restoreIfUnchanged() }
+        try await sleep(restoreDelay) // let the target app read it
+        try Task.checkCancellation()
         return DeliveryOutcome(
             route: .clipboardPaste,
             verification: .unverified,
@@ -143,8 +170,12 @@ final class TextInserter: TextInserting {
             fallbackReason: "target_not_frontmost")
     }
 
-    func pressEnter() -> Bool {
-        guard !secureInputCheck(), axTrustedCheck() else { return false }
+    func pressEnter(after delivery: DeliveryOutcome) -> Bool {
+        guard !secureInputCheck(), axTrustedCheck(),
+              delivery.attemptedTargetInsertion,
+              let targetBundleID = delivery.targetBundleID,
+              let currentTarget = captureFocus(targetBundleID), currentTarget(),
+              delivery.route != .clipboardPaste || pastedTargetIsFocused?() == true else { return false }
         return enterKeystroke()
     }
 
