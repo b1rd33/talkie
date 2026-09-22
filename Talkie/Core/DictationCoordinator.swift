@@ -462,7 +462,10 @@ final class DictationCoordinator {
             state = .idle
         case .transcribing, .cleaning:
             processingTask?.cancel()
-        case .idle, .inserting, .error:
+        case .error:
+            errorDismissTask?.cancel()
+            state = .idle
+        case .idle, .inserting:
             break
         }
     }

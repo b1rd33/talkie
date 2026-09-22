@@ -221,6 +221,8 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertEqual(history.recent(limit: 1).first?.durationSec, 2)
         XCTAssertEqual(history.recent(limit: 1).first?.audioHealthSummary, "healthy")
         XCTAssertEqual(events, [.batchEmptyResult])
+        coordinator.cancel()
+        XCTAssertEqual(coordinator.state, .idle)
     }
 
     func testUnhealthyRecordingIsRejectedBeforeProviderCall() async throws {
