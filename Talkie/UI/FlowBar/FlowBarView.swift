@@ -108,8 +108,6 @@ struct PillRendererView: View {
                         }
                         if style == .thinkingOrb {
                             DictationOrbView(presentation: presentation, levelSource: levelSource)
-                            WaveformCanvasView(recorder: levelSource, color: contentForeground, barCount: 16)
-                                .accessibilityHidden(true)
                         } else {
                             WaveformCanvasView(recorder: levelSource, color: contentForeground)
                                 .accessibilityHidden(true)

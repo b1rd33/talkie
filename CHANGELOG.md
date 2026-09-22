@@ -21,8 +21,8 @@
   local input-level test that names the device and releases capture afterward.
 - Capture microphone input through AVFoundation capture sessions using each
   buffer's actual PCM format; preserve buffered speech across sample-rate changes.
-- Show microphone startup, a live input waveform beside Thinking Orb, and a
-  readable, dismissible failure message. Keep the actual duration in failed history.
+- Show microphone startup, pulse Thinking Orb itself with the input level, and
+  display a readable, dismissible failure message. Keep the actual duration in failed history.
 - Open Home and Settings in the active full-screen Space; keep Advanced tabs
   inside the Settings window so switching modes does not change its title bar.
 - Open a visible Home window on launch, provide a direct Settings button, and

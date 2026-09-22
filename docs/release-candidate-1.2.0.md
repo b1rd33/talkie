@@ -8,7 +8,7 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 - Main: `27e70af` (1.1.0 candidate, PR #15).
 - This branch starts at `8b9f8d6`, the current head of open PR #17, which depends
   on open PR #16. Neither PR was merged during this task.
-- Version prepared: 1.2.0, build 7. No release tag has been created.
+- Version prepared: 1.2.0, build 8. No release tag has been created.
 - HotKey remains pinned to 0.2.1. FluidAudio was removed with local transcription.
 - ThinkingOrbsKit is vendored from Libraries.dev commit
   `2015f0ba79a9faec351719c4a6d590a1e6bfa243`, with its MIT license bundled.
@@ -164,3 +164,13 @@ Public release signing remains a separate task.
   the current MacBook Pro microphone end to end; AirPods were not active.
 - GitHub `logic-and-ui` passed for code head `21f9cdf` (3m26s); later documentation
   commits only record installed-build evidence.
+
+## Build 8 orb feedback
+
+- Removed the separate waveform beside Thinking Orb at the user's request.
+  The sphere itself responds to microphone loudness, with a quicker attack,
+  gentle decay and a wider visible pulse. Reduce Motion still keeps it still.
+- The capture and transcription pipeline is unchanged from the user-verified
+  build 7.
+- All 10 existing native pill-rendering tests passed, including orb motion and
+  Reduce Motion (`/tmp/talkie-build8-orb-tests.xcresult`).

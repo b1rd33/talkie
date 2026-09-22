@@ -25,7 +25,8 @@ struct DictationOrbView: View {
         if presentation.isActive && !presentation.reduceMotion {
             orb.onReceive(Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()) { date in
                 time = date.timeIntervalSinceReferenceDate
-                level += (levelSource.latestLevel - level) * 0.25
+                let target = max(0, min(1, levelSource.latestLevel))
+                level += (target - level) * (target > level ? 0.65 : 0.18)
             }
         } else {
             orb
@@ -36,7 +37,7 @@ struct DictationOrbView: View {
         ThinkingOrb(state: state, size: .px64, displaySize: 44)
             .orbFrozenTime(presentation.reduceMotion ? 1.7 : time)
             .scaleEffect(presentation.visualPhase == .recording && !presentation.reduceMotion
-                         ? 0.9 + CGFloat(level) * 0.1 : 1)
+                         ? 0.86 + CGFloat(sqrt(level)) * 0.32 : 1)
             .accessibilityHidden(true)
     }
 }
