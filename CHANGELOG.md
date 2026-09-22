@@ -4,6 +4,11 @@
 
 ### 1.2.0 release candidate
 
+- Refresh Settings with native Liquid Glass navigation/buttons on macOS 26+,
+  larger controls and a roomier layout, with older-macOS fallbacks.
+- Hide Thinking Orb at idle. Add a live-preview animation picker for all nine
+  library designs and a 28–96 pt size slider; resize the floating panel safely.
+
 - Surface live transcription deltas before the audio turn is committed; cancel
   finalization promptly and release session configuration and focused context.
 - Revalidate the focused app and field after clipboard delays and before live

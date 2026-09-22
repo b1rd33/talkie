@@ -12,12 +12,12 @@ final class SettingsUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
 
-        let settingsMode = app.radioGroups["Settings mode"]
+        let settingsMode = app.buttons["Advanced"]
         guard settingsMode.waitForExistence(timeout: 5) else {
             XCTFail("The native Settings mode control was not exposed.")
             return
         }
-        settingsMode.radioButtons["Advanced"].click()
+        settingsMode.click()
         let engines = app.descendants(matching: .any)["Engines"].firstMatch
         XCTAssertTrue(engines.waitForExistence(timeout: 2))
         engines.click()
@@ -42,9 +42,9 @@ final class SettingsUITests: XCTestCase {
                                "--e2e-scenario", "settings-model-controls"]
         app.launch()
         defer { app.terminate() }
-        let modes = app.radioGroups["Settings mode"]
+        let modes = app.buttons["Advanced"]
         XCTAssertTrue(modes.waitForExistence(timeout: 5))
-        modes.radioButtons["Advanced"].click()
+        modes.click()
         app.descendants(matching: .any)["General"].firstMatch.click()
         XCTAssertTrue(app.buttons["Test microphone"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["Show Talkie in Finder"].exists)
@@ -57,5 +57,12 @@ final class SettingsUITests: XCTestCase {
         XCTAssertFalse(app.menuItems["Calm Flow Ribbon — layered flowing lines"].exists)
         XCTAssertFalse(app.menuItems["Bare Wave — continuous organic waveform"].exists)
         app.menuItems["Thinking Orb — animated particles"].click()
+        XCTAssertTrue(app.sliders["Orb size"].exists)
+        let animations = app.popUpButtons["Orb animation"]
+        XCTAssertTrue(animations.exists)
+        animations.click()
+        XCTAssertTrue(app.menuItems["Connected web"].exists)
+        XCTAssertTrue(app.menuItems["Braided strands"].exists)
+        app.menuItems["Globe"].click()
     }
 }

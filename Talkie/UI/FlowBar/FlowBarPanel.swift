@@ -40,14 +40,14 @@ final class FlowBarPanel {
         self.makeRoot = makeRoot
         let host = NSHostingView(rootView: makeRoot())
         self.host = host
-        // The pill is a fixed-size panel (PillLayout.panelSize). Empty sizing
+        // We size the panel explicitly from PillLayout. Empty sizing
         // options stop NSHostingView from driving the window size on rootView
         // reassignment — that resize zeroed the panel and broke positioning.
         host.sizingOptions = []
         host.frame = NSRect(origin: .zero, size: PillLayout.panelSize)
         panel.contentView = host
         reposition()
-        panel.orderFrontRegardless()
+        applyActivity(state: coordinator.state, recentlyCompleted: false)
 
         // Rebuild with the new colorScheme when the user switches Light/Dark.
         DistributedNotificationCenter.default.addObserver(
@@ -100,7 +100,7 @@ final class FlowBarPanel {
     }
 
     /// Re-reads Settings → pill position and moves the panel (AppServices tracks
-    /// changes). Sets the full frame from PillLayout's constant size — never from
+    /// changes). Sets the full frame from PillLayout's bounded size — never from
     /// panel.frame, which is transiently zero around rootView swaps.
     func reposition() {
         // NSScreen.main is nil when the app is inactive with no key window — which can
@@ -113,7 +113,10 @@ final class FlowBarPanel {
         let position = PillLayout.effectivePosition(
             style: settings?.pillStyle ?? .default,
             requested: settings?.pillPosition ?? "bottomCenter")
-        let origin = PillLayout.origin(position: position, screenFrame: screen.visibleFrame)
-        panel.setFrame(NSRect(origin: origin, size: PillLayout.panelSize), display: true)
+        let size = PillLayout.panelSize(style: settings?.pillStyle ?? .default,
+                                       orbSize: settings?.orbSize ?? 44)
+        let origin = PillLayout.origin(position: position, panelSize: size, screenFrame: screen.visibleFrame)
+        host.frame = NSRect(origin: .zero, size: size)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 }

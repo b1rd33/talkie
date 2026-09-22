@@ -10,10 +10,19 @@ final class PillVisibilityPolicyTests: XCTestCase {
     }
 
     func testVisibleStylesStayVisibleWhenIdle() {
-        for style in [PillStyle.bareWaveform, .thinkingOrb,
+        for style in [PillStyle.bareWaveform,
                       .dynamicIsland, .liquidGlass] {
             XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
                 state: .idle, style: style, showFlowBar: true, recentlyCompleted: false), "\(style)")
+        }
+    }
+
+    func testOrbOnlyAppearsDuringAnActiveDictationOrCompletion() {
+        XCTAssertFalse(PillVisibilityPolicy.shouldShowPanel(
+            state: .idle, style: .thinkingOrb, showFlowBar: true, recentlyCompleted: false))
+        for state in [DictationState.recording, .transcribing, .error("failed")] {
+            XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
+                state: state, style: .thinkingOrb, showFlowBar: true, recentlyCompleted: false))
         }
     }
 

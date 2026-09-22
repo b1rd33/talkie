@@ -9,15 +9,15 @@ import Foundation
 /// ordered OUT and mouse events are ignored, so AppKit never hit-tests it.
 enum PillVisibilityPolicy {
     /// Should the panel be on screen at all?
-    /// hidden/compact styles exist only while a dictation is active (plus the
+    /// Hidden and orb styles exist only while a dictation is active (plus the
     /// brief neutral-ring exit right after completion).
     static func shouldShowPanel(state: DictationState, style: PillStyle,
                                 showFlowBar: Bool, recentlyCompleted: Bool) -> Bool {
         guard showFlowBar else { return false }
         switch style {
-        case .hidden:
+        case .hidden, .thinkingOrb:
             return state != .idle || recentlyCompleted
-        default: // bareWaveform, dynamicIsland, frostedGlass — always present
+        default: // other styles retain their idle indicator
             return true
         }
     }

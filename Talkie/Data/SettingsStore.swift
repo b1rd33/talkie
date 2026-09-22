@@ -51,6 +51,12 @@ final class SettingsStore {
     var showDockIcon: Bool { didSet { defaults.set(showDockIcon, forKey: "showDockIcon") } }
     /// The Flow Bar pill's visual style (see PillStyle). Persisted as its raw value.
     var pillStyle: PillStyle { didSet { defaults.set(pillStyle.rawValue, forKey: "pillStyle") } }
+    var orbSize: Double {
+        didSet { defaults.set(orbSize, forKey: "orbSize") }
+    }
+    var orbAnimation: String {
+        didSet { defaults.set(orbAnimation, forKey: "orbAnimation") }
+    }
     var showPillTimer: Bool {
         didSet { defaults.set(showPillTimer, forKey: "showPillTimer") }
     }
@@ -144,6 +150,8 @@ final class SettingsStore {
                 ? "local" : "cloud")
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
         pillStyle = PillStyle(migrating: defaults.string(forKey: "pillStyle"))
+        orbSize = PillLayout.clampedOrbSize(defaults.object(forKey: "orbSize") as? Double ?? 44)
+        orbAnimation = defaults.string(forKey: "orbAnimation") ?? "automatic"
         showPillTimer = defaults.object(forKey: "showPillTimer") as? Bool ?? false
         showPillCancelButton =
             defaults.object(forKey: "showPillCancelButton") as? Bool ?? false

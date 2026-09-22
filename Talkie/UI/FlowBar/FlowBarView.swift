@@ -34,6 +34,8 @@ struct FlowBarView: View {
             reduceMotion: reduceMotion,
             increasedContrast: colorSchemeContrast == .increased,
             isInstant: settings?.engineMode == "instant",
+            orbSize: settings?.orbSize ?? 44,
+            orbAnimation: settings?.orbAnimation ?? "automatic",
             showsTimer: settings?.showPillTimer ?? false,
             showsCancelButton: settings?.showPillCancelButton ?? false)
     }
@@ -132,7 +134,7 @@ struct PillRendererView: View {
             }
         }
         .frame(width: PillLayout.panelSize.width,
-               height: PillLayout.panelSize.height,
+               height: PillLayout.panelSize(style: style, orbSize: presentation.orbSize).height,
                alignment: style == .dynamicIsland ? .top : .bottom)
         .padding(style == .dynamicIsland ? .top : .bottom, 2)
         .scaleEffect(isHandsFree
@@ -227,7 +229,7 @@ struct PillRendererView: View {
             }
             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
         case .thinkingOrb:
-            DictationOrbView(presentation: presentation, levelSource: levelSource)
+            Color.clear.frame(width: 1, height: 1)
         case .liquidGlass:
             Color.clear.frame(width: 60, height: 11)
                 .modifier(PillGlassSurface(increasedContrast: presentation.increasedContrast))
@@ -285,7 +287,8 @@ struct PillRendererView: View {
         switch style {
         case .bareWaveform, .thinkingOrb, .hidden:
             inner()
-                .frame(height: style == .thinkingOrb ? 48 : 34)
+                .frame(height: style == .thinkingOrb
+                       ? max(48, PillLayout.clampedOrbSize(presentation.orbSize) * 1.18) : 34)
                 .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
         case .liquidGlass:
             inner()

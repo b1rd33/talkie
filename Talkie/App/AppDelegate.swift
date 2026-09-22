@@ -340,12 +340,15 @@ final class AppServices {
     func showSettings() {
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+                contentRect: NSRect(origin: .zero, size: SettingsView.windowSize),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false)
             window.title = "Talkie Settings"
-            window.contentViewController = NSHostingController(
+            let controller = NSHostingController(
                 rootView: SettingsView(keychain: keychain, settings: settings))
+            controller.sizingOptions = []
+            window.contentViewController = controller
+            window.setContentSize(SettingsView.windowSize)
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .canJoinAllApplications]
             window.center()
@@ -587,7 +590,7 @@ final class AppServices {
     /// on/off toggle and pill style never fight the state-driven loop.
     private func trackPillVisibility() {
         _ = withObservationTracking {
-            (settings.showFlowBar, settings.pillStyle)
+            (settings.showFlowBar, settings.pillStyle, settings.orbSize, settings.orbAnimation)
         } onChange: { [weak self] in
             Task { @MainActor in self?.trackPillVisibility() }
         }
@@ -678,12 +681,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             keychain: AppServices.shared.keychain,
             settings: AppServices.shared.settings)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+            contentRect: NSRect(origin: .zero, size: SettingsView.windowSize),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false)
         window.title = "Talkie Settings"
-        window.contentViewController = NSHostingController(rootView: content)
+        let controller = NSHostingController(rootView: content)
+        controller.sizingOptions = []
+        window.contentViewController = controller
+        window.setContentSize(SettingsView.windowSize)
         window.isReleasedWhenClosed = false
         window.center()
         window.orderFrontRegardless()

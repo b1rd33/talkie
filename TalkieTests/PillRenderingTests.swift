@@ -31,7 +31,11 @@ final class PillRenderingTests: XCTestCase {
 
                 XCTAssertEqual(image.pixelsWide, Int(PillLayout.panelSize.width * 2))
                 XCTAssertEqual(image.pixelsHigh, Int(PillLayout.panelSize.height * 2))
-                XCTAssertTrue(containsVisiblePixel(image), "Blank render for \(style) / \(state)")
+                if style == .thinkingOrb && state == .idle {
+                    XCTAssertFalse(containsVisiblePixel(image), "Idle orb must be invisible")
+                } else {
+                    XCTAssertTrue(containsVisiblePixel(image), "Blank render for \(style) / \(state)")
+                }
             }
         }
     }

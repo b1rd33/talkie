@@ -8,7 +8,7 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 - Main: `27e70af` (1.1.0 candidate, PR #15).
 - This branch starts at `8b9f8d6`, the current head of open PR #17, which depends
   on open PR #16. Neither PR was merged during this task.
-- Version prepared: 1.2.0, build 8. No release tag has been created.
+- Version prepared: 1.2.0, build 9. No release tag has been created.
 - HotKey remains pinned to 0.2.1. FluidAudio was removed with local transcription.
 - ThinkingOrbsKit is vendored from Libraries.dev commit
   `2015f0ba79a9faec351719c4a6d590a1e6bfa243`, with its MIT license bundled.
@@ -174,3 +174,24 @@ Public release signing remains a separate task.
   build 7.
 - All 10 existing native pill-rendering tests passed, including orb motion and
   Reduce Motion (`/tmp/talkie-build8-orb-tests.xcresult`).
+
+## Build 9 appearance controls
+
+- The orb panel is ordered out at idle, including startup; the idle renderer
+  is also empty. Recording, processing, errors and the completion exit remain visible.
+- Appearance exposes all nine installed ThinkingOrbsKit designs plus Automatic,
+  and a persisted 28–96 pt size slider with live preview. Panel bounds include the
+  loudest audio pulse, and positioning uses those bounds without querying AppKit's
+  transient window size. No new dependency or capture changes.
+- Settings uses native Liquid Glass buttons/navigation on macOS 26+, larger
+  system controls and a 660×640 content area. Older systems use native bordered buttons.
+- 447 logic/rendering tests passed, including idle visibility and bounded panel
+  sizing (`/tmp/talkie-build9-regression.xcresult`).
+- Both Settings UI tests passed, including animation selection and the size
+  control (`/tmp/talkie-build9-settings-v2.xcresult`). Settings window sizing is
+  explicit before centering, preventing its initial hosting-view size jump.
+- ReleaseAdhoc build and strict development-signature verification passed.
+  Build 9 is installed at `/Applications/Talkie.app`; build 8 is preserved as
+  `build/local-install/Talkie-before-appearance-controls.app.backup`.
+- Computer Use confirmed the refreshed Settings, animation/size controls and
+  retained Microphone/Accessibility grants. Capture code is unchanged.

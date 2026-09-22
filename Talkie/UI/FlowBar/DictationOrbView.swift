@@ -11,7 +11,8 @@ struct DictationOrbView: View {
     @State private var level: Float = 0
 
     private var state: OrbState {
-        switch presentation.state {
+        if let selected = OrbState(rawValue: presentation.orbAnimation) { return selected }
+        return switch presentation.state {
         case .idle, .success: .breathing
         case .recording: .listening
         case .transcribing: .searching
@@ -34,7 +35,7 @@ struct DictationOrbView: View {
     }
 
     private var orb: some View {
-        ThinkingOrb(state: state, size: .px64, displaySize: 44)
+        ThinkingOrb(state: state, size: .px64, displaySize: PillLayout.clampedOrbSize(presentation.orbSize))
             .orbFrozenTime(presentation.reduceMotion ? 1.7 : time)
             .scaleEffect(presentation.visualPhase == .recording && !presentation.reduceMotion
                          ? 0.86 + CGFloat(sqrt(level)) * 0.32 : 1)
@@ -54,6 +55,23 @@ struct PillGlassSurface: ViewModifier {
             content.glassEffect(.clear, in: Capsule())
         } else {
             content.background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+}
+
+
+extension OrbState {
+    var visualName: String {
+        switch self {
+        case .working: "Orbiting particles"
+        case .searching: "Globe"
+        case .solving: "Twisting sphere"
+        case .listening: "Sound sphere"
+        case .connecting: "Connected web"
+        case .weaving: "Braided strands"
+        case .composing: "Flowing ribbon"
+        case .breathing: "Breathing ring"
+        case .shaping: "Morphing shapes"
         }
     }
 }

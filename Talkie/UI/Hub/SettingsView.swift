@@ -1,8 +1,10 @@
 import AppKit
 import SwiftUI
+import ThinkingOrbsKit
 import ServiceManagement
 
 struct SettingsView: View {
+    static let windowSize = NSSize(width: 660, height: 640)
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
     @State private var selectedTab = "Profiles"
@@ -10,20 +12,16 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("Settings mode", selection: $settings.simpleMode) {
-                    Text("Simple").tag(true)
-                    Text("Advanced").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 220)
-                .accessibilityIdentifier("Settings mode")
+                SettingsNavigation(label: "Settings mode", options: ["Simple", "Advanced"],
+                                   selection: Binding(
+                                    get: { settings.simpleMode ? "Simple" : "Advanced" },
+                                    set: { settings.simpleMode = $0 == "Simple" }))
                 Spacer()
                 Link(PrivacyCopy.policyLinkLabel, destination: ProjectLinks.privacyPolicy)
                     .font(.caption)
             }
-            .padding(8)
-            Divider()
+            .padding(20)
+            Divider().opacity(0.35)
             if settings.simpleMode {
                 SimpleSettingsView(keychain: keychain, settings: settings,
                                    profiles: AppServices.shared.profiles)
@@ -31,7 +29,18 @@ struct SettingsView: View {
                 devTabs
             }
         }
-        .frame(width: screenshotReadableWidth, height: 480)
+        .frame(width: screenshotReadableWidth, height: Self.windowSize.height)
+        .scrollContentBackground(.hidden)
+        .toggleStyle(.switch)
+        .controlSize(.large)
+        .modifier(SettingsControlStyle())
+        .background {
+            Color(nsColor: .windowBackgroundColor)
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [.accentColor.opacity(0.08), .clear],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+        }
     }
 
     private var screenshotReadableWidth: CGFloat {
@@ -40,20 +49,16 @@ struct SettingsView: View {
             return 720
         }
 #endif
-        return 560
+        return Self.windowSize.width
     }
 
     private var devTabs: some View {
         VStack(spacing: 0) {
-            Picker("Settings section", selection: $selectedTab) {
-                Text("Profiles").tag("Profiles")
-                Text("General").tag("General")
-                Text("Engines").tag("Engines")
-                Text("Style").tag("Style")
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(8)
+            SettingsNavigation(label: "Settings section",
+                               options: ["Profiles", "General", "Engines", "Style"],
+                               selection: $selectedTab)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
             Group {
                 switch selectedTab {
                 case "General": GeneralSettingsTab(settings: settings)
@@ -68,6 +73,54 @@ struct SettingsView: View {
         }
     }
 
+}
+
+/// Native glass controls on current macOS; the older system keeps its own buttons.
+private struct SettingsControlStyle: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+private struct SettingsNavigation: View {
+    let label: String
+    let options: [String]
+    @Binding var selection: String
+
+    var body: some View {
+        Group {
+            if #available(macOS 26.0, *) {
+                GlassEffectContainer(spacing: 8) { buttons }
+            } else {
+                buttons
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(label)
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 8) {
+            ForEach(options, id: \.self) { option in
+                Group {
+                    if #available(macOS 26.0, *), option == selection {
+                        Button(option) { selection = option }.buttonStyle(.glassProminent)
+                    } else if #available(macOS 26.0, *) {
+                        Button(option) { selection = option }.buttonStyle(.glass)
+                    } else {
+                        Button(option) { selection = option }.buttonStyle(.bordered)
+                            .tint(option == selection ? .accentColor : nil)
+                    }
+                }
+                .accessibilityAddTraits(option == selection ? .isSelected : [])
+            }
+        }
+    }
 }
 
 /// The cleanup controls are inert when instant mode is inserting raw streamed
@@ -333,10 +386,32 @@ private struct GeneralSettingsTab: View {
                     Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
                 }
                 .accessibilityIdentifier("Pill style")
+                if settings.pillStyle == .thinkingOrb {
+                    Picker("Orb animation", selection: $settings.orbAnimation) {
+                        Text("Automatic — follows dictation").tag("automatic")
+                        ForEach(OrbState.allCases, id: \.rawValue) { animation in
+                            Text(animation.visualName).tag(animation.rawValue)
+                        }
+                    }
+                    .accessibilityIdentifier("Orb animation")
+                    HStack {
+                        Slider(value: $settings.orbSize, in: 28...96, step: 2) {
+                            Text("Orb size")
+                        }
+                        .accessibilityIdentifier("Orb size")
+                        Text("\(Int(settings.orbSize)) pt")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                    Text("Appears only while dictating or processing. Every animation responds to your voice.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 PillRendererView(
                     presentation: {
                         var preview = PillPresentation.preview(.recording(handsFree: false))
                         preview.style = settings.pillStyle
+                        preview.orbSize = settings.orbSize
+                        preview.orbAnimation = settings.orbAnimation
                         return preview
                     }(),
                     levelSource: SimulatedAudioLevelSource(seed: 42, fixture: .conversation))
