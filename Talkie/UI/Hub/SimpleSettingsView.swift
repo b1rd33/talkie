@@ -54,6 +54,10 @@ struct SimpleSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Microphone") {
+                MicrophoneCheckView(settings: settings)
+            }
+
             Section("Permissions") {
                 PermissionSettingsRows(permissions: AppServices.shared.permissions)
             }

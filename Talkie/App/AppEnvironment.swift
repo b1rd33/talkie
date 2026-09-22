@@ -264,7 +264,7 @@ struct AppEnvironment {
         defaults.set(profile.cleanupModel, forKey: "cleanupModel")
         defaults.set(profile.customCleanupPrompt, forKey: "customCleanupPrompt")
         defaults.set("en", forKey: "pinnedLanguage")
-        defaults.set(PillStyle.calmFlowRibbon.rawValue, forKey: "pillStyle")
+        defaults.set(PillStyle.thinkingOrb.rawValue, forKey: "pillStyle")
         defaults.set("topCenter", forKey: "pillPosition")
         defaults.set(profile.id.uuidString, forKey: "selectedProfileID")
         return AppEnvironment(

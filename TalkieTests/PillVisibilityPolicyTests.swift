@@ -10,8 +10,8 @@ final class PillVisibilityPolicyTests: XCTestCase {
     }
 
     func testVisibleStylesStayVisibleWhenIdle() {
-        for style in [PillStyle.bareWaveform, .inkLine, .calmFlowRibbon, .bareWave,
-                      .dynamicIsland, .frostedGlass] {
+        for style in [PillStyle.bareWaveform, .thinkingOrb,
+                      .dynamicIsland, .liquidGlass] {
             XCTAssertTrue(PillVisibilityPolicy.shouldShowPanel(
                 state: .idle, style: style, showFlowBar: true, recentlyCompleted: false), "\(style)")
         }

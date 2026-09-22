@@ -17,15 +17,6 @@ struct TalkieApp: App {
         } label: {
             MenuBarIcon(coordinator: AppServices.shared.coordinator)
         }
-        Window("Talkie", id: "hub") {
-            if let history = AppServices.shared.history {
-                HubView(history: history)
-                    .modelContainer(history.container) // @Query in Tasks 7–8 reads this
-            } else {
-                HubView(history: nil)
-            }
-        }
-        .defaultSize(width: 880, height: 560)
         Settings {
             SettingsView(keychain: AppServices.shared.keychain,
                          settings: AppServices.shared.settings)
@@ -33,9 +24,8 @@ struct TalkieApp: App {
     }
 }
 
-/// Menu-bar dropdown. Lives in its own View so @Environment(\.openWindow) resolves.
+/// Menu-bar dropdown sharing the app's window and dictation actions.
 struct MenuBarContent: View {
-    @Environment(\.openWindow) private var openWindow
     @Bindable private var settings = AppServices.shared.settings
     private let coordinator = AppServices.shared.coordinator
 
@@ -66,11 +56,9 @@ struct MenuBarContent: View {
         Button("Undo last insertion") { _ = coordinator.undoLastInsertion() }
         Divider()
         Button("Open Talkie") {
-            openWindow(id: "hub")
-            // LSUIElement apps don't auto-activate; without this the hub opens behind others.
-            NSApp.activate(ignoringOtherApps: true)
+            AppServices.shared.showHub()
         }
-        SettingsLink { Text("Settings…") }
+        Button("Settings…") { AppServices.shared.showSettings() }
             .keyboardShortcut(",")
         Divider()
         Button("Quit Talkie") { NSApp.terminate(nil) }

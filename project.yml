@@ -12,6 +12,8 @@ configs:
   Release: release
   ReleaseAdhoc: release
 packages:
+  ThinkingOrbsKit:
+    path: Vendor/ThinkingOrbsKit
   HotKey:
     url: https://github.com/soffes/HotKey
     exactVersion: 0.2.1
@@ -35,6 +37,8 @@ targets:
         buildPhase: resources
       - path: THIRD_PARTY_NOTICES.txt
         buildPhase: resources
+      - path: Vendor/ThinkingOrbsKit/ThinkingOrbs-LICENSE.txt
+        buildPhase: resources
     info:
       path: Talkie/Info.plist
       properties:
@@ -51,7 +55,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: Talkie/Talkie.entitlements
         MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Debug:
@@ -70,6 +74,7 @@ targets:
           CODE_SIGN_IDENTITY: "-"
           ENABLE_HARDENED_RUNTIME: NO
     dependencies:
+      - package: ThinkingOrbsKit
       - package: HotKey
       - package: FluidAudio
   TalkieTests:

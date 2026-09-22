@@ -13,8 +13,14 @@
 - Keep Private / Offline local after speaker filtering was enabled.
 - Validate voice-reference audio and honor the selected microphone, including
   cancellation during recorder startup.
-- Smooth organic waveform level decay, preserve the neutral processing ring,
-  and stop repeating ring rotation under Reduce Motion.
+- Add ThinkingOrbsKit animation and native Liquid Glass (macOS 26+), with
+  reduced-motion/transparency support and a material fallback on older macOS.
+  Replace Ink Line, Calm Flow Ribbon and Bare Wave with Thinking Orb; retain
+  Bare Waveform and Dynamic Island.
+- Rebind the recorder to the actual default or fallback microphone, and add a
+  local input-level test that names the device and releases capture afterward.
+- Open a visible Home window on launch, provide a direct Settings button, and
+  improve permission recovery with app registration and a Finder shortcut.
 - Include the pending speaker-filtering and reliability integration from PRs
   #16 and #17; those changes are not yet part of a published stable release.
 

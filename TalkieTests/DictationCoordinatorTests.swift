@@ -859,6 +859,7 @@ final class DictationCoordinatorTests: XCTestCase {
     }
 
     func testChunksBufferedWhileSessionConnectsAreDelivered() async {
+        let connected = expectation(description: "Session received the pre-connect audio")
         let live = MockLiveSession()
         let recorder = MockRecorder()
         let coordinator = DictationCoordinator(recorder: recorder, engine: MockEngine(),
@@ -869,9 +870,11 @@ final class DictationCoordinatorTests: XCTestCase {
                                                    // connecting: the tap must already be wired when the
                                                    // factory runs, and the chunk must reach the session
                                                    recorder.chunkConsumer?([0.1, 0.2])
+                                                   connected.fulfill()
                                                    return live
                                                })
         await coordinator.dictationKeyPressed()
+        await fulfillment(of: [connected], timeout: 2)
         await coordinator.dictationKeyReleased()
         await coordinator.waitForIdle()
         XCTAssertEqual(live.fed, 2) // gate chunk + pre-connect chunk both replayed in order

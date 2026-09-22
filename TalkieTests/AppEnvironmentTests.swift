@@ -165,7 +165,7 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment.defaults.string(forKey: "selectedProfileID"),
                        DictationProfile.privateOffline.id.uuidString)
         XCTAssertEqual(environment.defaults.string(forKey: "pillStyle"),
-                       PillStyle.calmFlowRibbon.rawValue)
+                       PillStyle.thinkingOrb.rawValue)
         XCTAssertEqual(environment.defaults.string(forKey: "pinnedLanguage"), "en")
         XCTAssertEqual(AppDelegate.launchAction(for: environment.mode), .startScreenshotDemo)
     }

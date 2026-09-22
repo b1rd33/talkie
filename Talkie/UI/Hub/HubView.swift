@@ -31,7 +31,7 @@ struct HubView: View {
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190)
             .safeAreaInset(edge: .bottom) {
-                SettingsLink {
+                Button { AppServices.shared.showSettings() } label: {
                     Label("Settings", systemImage: "gearshape")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

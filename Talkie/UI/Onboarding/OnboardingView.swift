@@ -153,8 +153,7 @@ private struct AccessibilityStep: View {
                 Label("Not granted yet.", systemImage: "hourglass")
                     .foregroundStyle(.orange)
                 Button("Open System Settings") {
-                    NSWorkspace.shared.open(URL(string:
-                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                    AppServices.shared.permissions.openSettings(for: .accessibility)
                 }
                 .buttonStyle(.borderedProminent)
                 Text("Enable Talkie in the Accessibility list, then come back — this page updates by itself.")

@@ -60,6 +60,18 @@ enum AudioDeviceSelection {
         return .preferred(preferred)
     }
 
+    static func apply(_ resolution: AudioDeviceResolution, requestedUID: String?,
+                      setDevice: (AudioDeviceID) -> OSStatus) -> AudioDeviceResolution {
+        guard let device = resolution.actualDevice else {
+            return .configurationFailed(requestedUID: requestedUID, status: kAudio_ParamError)
+        }
+        let status = setDevice(device.id)
+        guard status == noErr else {
+            return .configurationFailed(requestedUID: requestedUID, status: status)
+        }
+        return resolution
+    }
+
     static func activeDeviceWasRemoved(uid: String?, devices: [AudioInputDevice]) -> Bool {
         guard let uid else { return false }
         return !devices.contains(where: { $0.uid == uid })
@@ -89,18 +101,14 @@ struct SystemAudioDeviceCatalog: AudioDeviceCataloging {
         let devices = inputDevices()
         let resolution = AudioDeviceSelection.resolution(
             preferredUID: preferredUID, devices: devices, defaultDeviceID: defaultInputDeviceID())
-        guard case .preferred(let device) = resolution else { return resolution }
-        guard let unit = engine.inputNode.audioUnit else {
-            return .configurationFailed(requestedUID: preferredUID, status: kAudio_ParamError)
+        // Always rebind: a reused engine may still point at the previous selection.
+        return AudioDeviceSelection.apply(resolution, requestedUID: preferredUID) { deviceID in
+            guard let unit = engine.inputNode.audioUnit else { return kAudio_ParamError }
+            var mutableID = deviceID
+            return AudioUnitSetProperty(
+                unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
+                0, &mutableID, UInt32(MemoryLayout<AudioDeviceID>.size))
         }
-        var mutableID = device.id
-        let status = AudioUnitSetProperty(
-            unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
-            0, &mutableID, UInt32(MemoryLayout<AudioDeviceID>.size))
-        guard status == noErr else {
-            return .configurationFailed(requestedUID: preferredUID, status: status)
-        }
-        return .preferred(device)
     }
 
     private func defaultInputDeviceID() -> AudioDeviceID? {

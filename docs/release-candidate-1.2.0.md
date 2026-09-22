@@ -8,8 +8,10 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 - Main: `27e70af` (1.1.0 candidate, PR #15).
 - This branch starts at `8b9f8d6`, the current head of open PR #17, which depends
   on open PR #16. Neither PR was merged during this task.
-- Version prepared: 1.2.0, build 3. No release tag has been created.
-- Dependency pins remain FluidAudio 0.15.5 and HotKey 0.2.1.
+- Version prepared: 1.2.0, build 4. No release tag has been created.
+- Remote dependency pins remain FluidAudio 0.15.5 and HotKey 0.2.1.
+- ThinkingOrbsKit is vendored from Libraries.dev commit
+  `2015f0ba79a9faec351719c4a6d590a1e6bfa243`, with its MIT license bundled.
 
 ## Verified findings and fixes
 
@@ -30,15 +32,20 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
   local-only behavior across restart.
 - History identifies clipboard-only recovery; existing retry, copy-last,
   language selection, profiles, dictionary/snippets and cost views are retained.
-- Organic styles use the smoothed microphone level instead of clamping decay
-  to the initial level. Normal processing rotation remains native; Reduce Motion
-  stops rotation. Idle organic views have no timer subscription.
+- Thinking Orb replaces Ink Line, Calm Flow Ribbon and Bare Wave. Dynamic
+  Island remains; Liquid Glass replaces Frosted Glass with an older-OS fallback.
+  Orb motion is verified in a nonactivating panel and stops under Reduce Motion.
+- Audio capture binds the actual resolved default/fallback device. A local
+  five-second microphone check identifies the device and releases capture.
+- Home opens on launch/reopen, Settings opens directly, and permission repair
+  registers Talkie before opening the system pane and can reveal the app in Finder.
 - Host integration fixtures now use the current private session paths instead
   of the retired report argument and refuse to close already-running host apps.
 
 Current provider contract checked against official documentation:
 https://developers.openai.com/api/docs/guides/realtime-transcription
-No live provider request or microphone recording was made.
+Automated validation made no live provider requests. During interactive review,
+the user ran the local microphone check and it reported input detected.
 
 ## Checks
 
@@ -63,15 +70,20 @@ No live provider request or microphone recording was made.
 - [x] CI at `876abc3`: 452 logic tests passed; strict Settings navigation and
   legacy model selection worked. Two additional role-specific visibility
   queries failed; these now use the controls’ explicit accessibility identifiers.
-- [ ] Current-head strict Settings UI and CodeQL checks must pass before integration.
-- [ ] Local native UI suite: build succeeded; runner failed to initialize
-  because macOS timed out enabling automation.
-- [ ] Interactive native review: Computer Use timed out opening Talkie.
-- [ ] Signed host insertion suite: requires an available desktop automation
-  session and Accessibility-approved test app; not executed.
-- [ ] Physical Fn, real speech, focus-switch host behavior, TCC revoke/regrant,
-  fresh/completed onboarding and idle CPU observation: user-assisted checks
-  remain in `docs/testing-matrix.md`.
+- [x] Pre-orb PR head `79c0c6a`: required GitHub checks passed.
+- [x] Local orb/audio regression: 453 logic/rendering tests passed, 0 failures.
+  Result: `/tmp/talkie-orbs-regression-final.xcresult`.
+- [x] Both Settings UI checks passed, including the new style choices and
+  microphone/permission controls. Result: `/tmp/talkie-orbs-settings-final.xcresult`.
+- [x] ReleaseAdhoc build and locally development-signed app seal verified.
+- [x] Computer Use confirmed visible Home/Settings and user-run microphone input.
+- [x] Investigated permission failure: macOS logged a code-requirement mismatch
+  against the old ad-hoc build. Reset only Talkie's Accessibility entry.
+- [x] Regranted app-control access; the installed app reports both Microphone
+  and Accessibility Granted after restart. Left Talkie closed after verification.
+- [ ] Updated PR head must pass required CI before integration.
+- [ ] Signed host insertion suite and physical Fn/focus-switch checks remain
+  user-assisted checks in `docs/testing-matrix.md`.
 
 ## Release gates
 
@@ -86,7 +98,13 @@ changing the global active account. Main requires current `logic-and-ui` and
 `Analyze Swift (swift, manual)` checks, including for administrators. PR #16
 reports a blocked merge state. No approval or protection bypass is permitted.
 
-One production Talkie process was observed at `/Applications/Talkie.app`.
-That installed app is ad-hoc signed. Its settings, history, TCC registrations
-and application bundle have not been replaced or reset. Canonical installation
-alone does not provide a stable signing identity.
+## Local installation
+
+With explicit user approval, `/Applications/Talkie.app` was replaced by build 4,
+signed with the available Apple Development identity. The original bundle is
+retained at `build/local-install/Talkie-before-orbs.app.backup`. Settings and
+history were preserved. Only Talkie's stale Accessibility grant was reset after
+macOS diagnostics confirmed a signature mismatch; other app grants were untouched.
+
+This local installation and PR do not require Developer ID or notarization.
+Public release signing remains a separate task.

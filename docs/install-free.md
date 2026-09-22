@@ -40,8 +40,23 @@ one in.
 > preview isn't signed with a stable Apple identity, macOS treats each new version
 > as a "new" app and can forget the Accessibility permission. If, after updating,
 > dictation only copies to the clipboard instead of typing, open
-> **System Settings → Privacy & Security → Accessibility** and switch Talkie back
-> on.
+> **System Settings → Privacy & Security → Accessibility** (called **Device Control
+> and Data Access** on newer macOS) and switch Talkie back on. If it already shows
+> enabled but Talkie still reports missing access, quit Talkie, remove its old
+> entry, then use **+** to add `/Applications/Talkie.app` and reopen Talkie.
+
+If the old entry cannot be removed, this command clears only Talkie's
+Accessibility grant; add the installed app and authorize it again afterward:
+
+```bash
+tccutil reset Accessibility com.archiev.talkie
+```
+
+For repeated local development installs, sign every build with the same Apple
+Development identity and use the same app location. Switching between ad-hoc and
+certificate signatures invalidates existing grants. A local development build
+does not need Developer ID or notarization; those are separate public release
+requirements.
 
 ## Maintainer: building a community preview
 

@@ -370,6 +370,7 @@ final class AudioRecorder: AudioRecording {
     private var captureRequestedDeviceUID: String?
     private var deviceWasLost = false
     private(set) var isRecording = false
+    var activeInputName: String? { deviceResolution?.actualDevice?.name }
 
     init(preferredDeviceUID: @escaping () -> String? = { nil },
          deviceCatalog: (any AudioDeviceCataloging)? = nil,
@@ -391,8 +392,14 @@ final class AudioRecorder: AudioRecording {
 
     func start() async throws {
         guard !isRecording else { return }
-        let granted = await AVCaptureDevice.requestAccess(for: .audio)
-        guard granted else { throw AudioError.microphoneDenied }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: break
+        case .notDetermined:
+            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+                throw AudioError.microphoneDenied
+            }
+        default: throw AudioError.microphoneDenied
+        }
 
         sink = AudioSink(healthPolicy: healthPolicy)
         sink.chunkConsumer = chunkConsumer
@@ -404,7 +411,7 @@ final class AudioRecorder: AudioRecording {
         }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else { throw AudioError.engineFailure("no input device") }
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw AudioError.engineFailure("no input device") }
         let sink = self.sink
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
             try? sink.append(buffer)
@@ -442,6 +449,8 @@ final class AudioRecorder: AudioRecording {
 
     func discard() {
         teardown()
+        sink = AudioSink(healthPolicy: healthPolicy)
+        sink.chunkConsumer = chunkConsumer
     }
 
     private func teardown() {

@@ -5,7 +5,7 @@ final class PillPresentationTests: XCTestCase {
     func testRecordingPresentationCarriesLevelAndWarnings() {
         let value = PillPresentation(
             state: .recording(handsFree: false),
-            style: .frostedGlass,
+            style: .liquidGlass,
             elapsed: 4,
             audioLevel: 0.42,
             errorMessage: nil,

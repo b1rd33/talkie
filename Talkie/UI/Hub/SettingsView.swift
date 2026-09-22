@@ -308,26 +308,26 @@ private struct GeneralSettingsTab: View {
                        isOn: $settings.enablePressEnterAction)
                 Text("Off by default. When enabled, Talkie presses Return only when those words end a dictation and the original app still has focus.")
                     .font(.caption).foregroundStyle(.secondary)
-                Picker("Microphone", selection: $settings.preferredAudioDeviceUID) {
-                    Text("System default").tag(String?.none)
-                    ForEach(SystemAudioDeviceCatalog().inputDevices()) { device in
-                        Text(device.name).tag(Optional(device.uid))
-                    }
-                }
-                Text("Selection uses the device’s stable UID. If it disconnects, Talkie automatically uses the system default.")
-                    .font(.caption).foregroundStyle(.secondary)
+                MicrophoneCheckView(settings: settings)
             }
             Section("Appearance") {
                 Toggle("Show Flow Bar pill", isOn: $settings.showFlowBar)
                 Picker("Pill style", selection: $settings.pillStyle) {
                     Text("Bare waveform — chromeless, dots when idle").tag(PillStyle.bareWaveform)
-                    Text("Ink Line — a quiet, living line").tag(PillStyle.inkLine)
-                    Text("Calm Flow Ribbon — layered flowing lines").tag(PillStyle.calmFlowRibbon)
-                    Text("Bare Wave — continuous organic waveform").tag(PillStyle.bareWave)
+                    Text("Thinking Orb — animated particles").tag(PillStyle.thinkingOrb)
                     Text("Dynamic Island — docked top-center").tag(PillStyle.dynamicIsland)
-                    Text("Frosted glass — translucent capsule").tag(PillStyle.frostedGlass)
+                    Text("Liquid Glass — clear capsule").tag(PillStyle.liquidGlass)
                     Text("Hidden — appears only while dictating").tag(PillStyle.hidden)
                 }
+                .accessibilityIdentifier("Pill style")
+                PillRendererView(
+                    presentation: {
+                        var preview = PillPresentation.preview(.recording(handsFree: false))
+                        preview.style = settings.pillStyle
+                        return preview
+                    }(),
+                    levelSource: SimulatedAudioLevelSource(seed: 42, fixture: .conversation))
+                    .accessibilityLabel("Animation preview — simulated audio")
                 Toggle("Show recording timer", isOn: $settings.showPillTimer)
                     .disabled(!settings.showFlowBar)
                 Toggle("Show cancel button", isOn: $settings.showPillCancelButton)

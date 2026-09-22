@@ -73,6 +73,9 @@ final class ReleaseConfigurationTests: XCTestCase {
             "Apache NOTICE must be included in the distributed app bundle"
         )
 
+        let orbNotice = try String(contentsOf: resources.appendingPathComponent("ThinkingOrbs-LICENSE.txt"),
+                                   encoding: .utf8)
+        XCTAssertEqual(orbNotice, try repositoryFile("Vendor/ThinkingOrbsKit/ThinkingOrbs-LICENSE.txt"))
         let thirdPartyNoticeURL = resources.appendingPathComponent("THIRD_PARTY_NOTICES.txt")
         let notice = try String(contentsOf: thirdPartyNoticeURL, encoding: .utf8)
         XCTAssertEqual(

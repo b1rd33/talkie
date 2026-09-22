@@ -4,6 +4,7 @@ import ApplicationServices
 import Foundation
 import OSLog
 import ServiceManagement
+import SwiftData
 import SwiftUI
 import UserNotifications
 
@@ -38,6 +39,8 @@ final class AppServices {
     let selectionTransforms: SelectionTransformCoordinator
     let selectionTransformWindow: SelectionTransformWindow
     private(set) var flowBar: FlowBarPanel?
+    private var hubWindow: NSWindow?
+    private var settingsWindow: NSWindow?
 #if DEBUG
     private var e2eBridge: E2ETestControlBridge?
     private var screenshotDemoPill: ScreenshotDemoPillPanel?
@@ -351,6 +354,46 @@ final class AppServices {
         showOnboarding()
     }
 
+    func showSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+                styleMask: [.titled, .closable, .miniaturizable],
+                backing: .buffered, defer: false)
+            window.title = "Talkie Settings"
+            window.contentViewController = NSHostingController(
+                rootView: SettingsView(keychain: keychain, settings: settings))
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showHub() {
+        if hubWindow == nil {
+            let content = Group {
+                if let history {
+                    HubView(history: history).modelContainer(history.container)
+                } else {
+                    HubView(history: nil)
+                }
+            }
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 880, height: 560),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered, defer: false)
+            window.title = "Talkie"
+            window.contentViewController = NSHostingController(rootView: content)
+            window.isReleasedWhenClosed = false
+            window.center()
+            hubWindow = window
+        }
+        hubWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
         onboarding.show(keychain: keychain, settings: settings,
@@ -638,6 +681,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         AppServices.shared.startUI()
+        if AppServices.shared.setupState.setupCompleted {
+            AppServices.shared.showHub()
+        }
     }
 
 #if DEBUG
@@ -662,6 +708,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 #endif
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !Self.isRunningTests else { return false }
+        AppServices.shared.showHub()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
 #if DEBUG
         AppServices.shared.stopE2E()
@@ -673,15 +725,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         if let action = response.notification.request.content.userInfo["talkie.action"] as? String,
            let destination = NotificationDestination(action: action) {
-            if let url = destination.systemSettingsURL {
-                NSWorkspace.shared.open(url)
+            if destination.systemSettingsURL != nil {
+                Task { @MainActor in
+                    AppServices.shared.permissions.openSettings(for: destination)
+                }
                 completionHandler()
                 return
             }
-            NSApp.activate(ignoringOtherApps: true)
-            // SwiftUI Settings has no public programmatic opener; this selector is the
-            // established workaround on macOS 14 — verify it still resolves on the SDK you build with.
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            Task { @MainActor in AppServices.shared.showSettings() }
         }
         completionHandler()
     }

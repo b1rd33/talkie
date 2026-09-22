@@ -40,7 +40,8 @@ unless package.fetch("products").empty? && package.fetch("targets").empty?
   abort "error: Package.swift is metadata-only for Dependabot and must not define products or targets"
 end
 
-expected = project.fetch("packages").to_h do |name, specification|
+# Local packages are checked-in source, not remote Dependabot/lockfile pins.
+expected = project.fetch("packages").reject { |_, spec| spec.key?("path") }.to_h do |name, specification|
   [
     name.downcase,
     {

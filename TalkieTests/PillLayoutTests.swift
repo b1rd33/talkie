@@ -61,8 +61,8 @@ final class PillLayoutTests: XCTestCase {
     }
 
     func testOtherStylesHonorRequestedPosition() {
-        for style in [PillStyle.bareWaveform, .inkLine, .calmFlowRibbon, .bareWave,
-                      .frostedGlass, .hidden] {
+        for style in [PillStyle.bareWaveform, .thinkingOrb,
+                      .liquidGlass, .hidden] {
             XCTAssertEqual(PillLayout.effectivePosition(style: style, requested: "bottomLeft"), "bottomLeft")
         }
     }

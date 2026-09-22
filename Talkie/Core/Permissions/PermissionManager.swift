@@ -58,6 +58,7 @@ final class PermissionManager: PermissionManaging {
     @ObservationIgnored private let microphoneStatusProvider: () -> AVAuthorizationStatus
     @ObservationIgnored private let accessibilityStatusProvider: () -> Bool
     @ObservationIgnored private let requestMicrophone: (@escaping (Bool) -> Void) -> Void
+    @ObservationIgnored private let requestAccessibility: () -> Void
     @ObservationIgnored private let openURL: (URL) -> Void
 
     init(microphoneStatus: @escaping () -> AVAuthorizationStatus = {
@@ -67,11 +68,16 @@ final class PermissionManager: PermissionManaging {
          requestMicrophone: @escaping (@escaping (Bool) -> Void) -> Void = { completion in
              AVCaptureDevice.requestAccess(for: .audio, completionHandler: completion)
          },
+         requestAccessibility: @escaping () -> Void = {
+             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+             _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+         },
          openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
         microphoneStatusProvider = microphoneStatus
         accessibilityStatusProvider = accessibilityStatus
         self.requestMicrophone = requestMicrophone
         self.openURL = openURL
+        self.requestAccessibility = requestAccessibility
         self.microphoneStatus = microphoneStatus()
         accessibilityGranted = accessibilityStatus()
     }
@@ -87,12 +93,18 @@ final class PermissionManager: PermissionManaging {
     }
 
     func requestMicrophoneAccess() {
+        refresh()
+        guard microphoneStatus == .notDetermined else { return }
         requestMicrophone { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
     }
 
     func openSettings(for destination: NotificationDestination) {
+        refresh()
+        if destination == .accessibility && !accessibilityGranted {
+            requestAccessibility()
+        }
         guard let url = destination.systemSettingsURL else { return }
         openURL(url)
     }

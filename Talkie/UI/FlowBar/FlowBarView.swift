@@ -81,11 +81,7 @@ struct PillRendererView: View {
 
     private var style: PillStyle { presentation.style }
     private var isChromeless: Bool {
-        style == .bareWaveform || style == .inkLine || style == .calmFlowRibbon ||
-            style == .bareWave || style == .hidden
-    }
-    private var isOrganicWaveform: Bool {
-        style == .inkLine || style == .calmFlowRibbon || style == .bareWave
+        style == .bareWaveform || style == .thinkingOrb || style == .hidden
     }
     private var contentForeground: Color { style == .dynamicIsland ? .white : .primary }
     private var motion: PillMotionProfile {
@@ -105,9 +101,8 @@ struct PillRendererView: View {
                     if style == .dynamicIsland {
                         Circle().fill(.red).frame(width: 7, height: 7)
                     }
-                    if isOrganicWaveform {
-                        OrganicWaveformView(style: style, levelSource: levelSource,
-                                            presentation: presentation, color: contentForeground)
+                    if style == .thinkingOrb {
+                        DictationOrbView(presentation: presentation, levelSource: levelSource)
                     } else {
                         WaveformCanvasView(recorder: levelSource, color: contentForeground)
                             .accessibilityHidden(true)
@@ -117,7 +112,11 @@ struct PillRendererView: View {
                 }
             case .transcribing, .cleaning, .inserting, .success:
                 activePill {
-                    processingRing
+                    if style == .thinkingOrb {
+                        DictationOrbView(presentation: presentation, levelSource: levelSource)
+                    } else {
+                        processingRing
+                    }
                     if presentation.showsCancelButton && presentation.isCancellable {
                         cancelButton
                     }
@@ -221,16 +220,12 @@ struct PillRendererView: View {
                 }
             }
             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-        case .inkLine, .calmFlowRibbon, .bareWave:
-            OrganicWaveformView(style: style, levelSource: levelSource,
-                                presentation: presentation, color: contentForeground)
-                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-        case .frostedGlass:
-            Capsule().fill(.ultraThinMaterial)
-                .frame(width: 60, height: 11)
-                .overlay(Capsule().strokeBorder(.white.opacity(presentation.increasedContrast ? 0.7 : 0.3),
-                                                lineWidth: presentation.increasedContrast ? 1 : 0.5))
-                .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+        case .thinkingOrb:
+            DictationOrbView(presentation: presentation, levelSource: levelSource)
+        case .liquidGlass:
+            Color.clear.frame(width: 60, height: 11)
+                .modifier(PillGlassSurface(increasedContrast: presentation.increasedContrast))
+                .overlay(Capsule().strokeBorder(.primary.opacity(0.2), lineWidth: 0.5))
         case .dynamicIsland:
             Capsule().fill(.black)
                 .frame(width: 96, height: 20)
@@ -252,7 +247,7 @@ struct PillRendererView: View {
         } else {
             content(accent: .red) {
                 Text(message).font(.caption)
-                    .foregroundStyle(style == .frostedGlass
+                    .foregroundStyle(style == .liquidGlass
                                      ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
                     .lineLimit(1).truncationMode(.tail)
             }
@@ -278,19 +273,15 @@ struct PillRendererView: View {
     @ViewBuilder
     private func content(accent: Color?, @ViewBuilder _ inner: () -> some View) -> some View {
         switch style {
-        case .bareWaveform, .inkLine, .calmFlowRibbon, .bareWave, .hidden:
+        case .bareWaveform, .thinkingOrb, .hidden:
             inner()
-                .frame(height: 34)
+                .frame(height: style == .thinkingOrb ? 48 : 34)
                 .shadow(color: .black.opacity(0.4), radius: 4, y: 1)
-        case .frostedGlass:
+        case .liquidGlass:
             inner()
                 .padding(.horizontal, 16)
                 .frame(height: 34)
-                .background(accent.map { AnyShapeStyle($0.opacity(0.55)) }
-                            ?? AnyShapeStyle(.ultraThinMaterial), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(presentation.increasedContrast ? 0.7 : 0.3),
-                                                lineWidth: presentation.increasedContrast ? 1 : 0.5))
-                .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
+                .modifier(PillGlassSurface(increasedContrast: presentation.increasedContrast))
         case .dynamicIsland:
             inner()
                 .padding(.horizontal, 16)
