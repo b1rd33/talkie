@@ -195,7 +195,8 @@ extension SettingsStoreTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults)
         settings.speakerFilteringEnabled = true
-        DictationProfile.privateOffline.apply(to: settings)
+        settings.engineMode = "local"
+        settings.cleanupLevel = "none"
         XCTAssertFalse(settings.speakerFilteringEnabled)
         let reloaded = SettingsStore(defaults: defaults)
         let configuration = DictationSessionConfigurationResolver(settings: reloaded).resolve(targetBundleID: nil)

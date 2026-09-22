@@ -9,7 +9,6 @@ enum OnboardingStep: Int, CaseIterable {
 struct OnboardingView: View {
     let keychain: KeychainStore
     let settings: SettingsStore
-    let modelDownloader: ModelDownloader
     let profiles: ProfileStore
     var onFinished: () -> Void = {}
 
@@ -39,7 +38,7 @@ struct OnboardingView: View {
             FnKeyStep()
         case .engineChoice:
             KeyChoiceStep(keychain: keychain, settings: settings,
-                          downloader: modelDownloader, profiles: profiles)
+                          profiles: profiles)
         case .practice:
             PracticeStep()
         case .done:
@@ -208,7 +207,6 @@ private struct FnKeyStep: View {
 private struct KeyChoiceStep: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
-    let downloader: ModelDownloader
     let profiles: ProfileStore
 
     @State private var choice: KeyChoice?
@@ -230,8 +228,6 @@ private struct KeyChoiceStep: View {
                     .tag(Optional(KeyChoice.openAI))
                 Text("I have an OpenRouter key — sets up \(ProfileStore.firstRunProfile(forKeyChoice: .openRouter).name)")
                     .tag(Optional(KeyChoice.openRouter))
-                Text("Neither — run offline (\(ProfileStore.firstRunProfile(forKeyChoice: .neither).name))")
-                    .tag(Optional(KeyChoice.neither))
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
@@ -259,7 +255,8 @@ private struct KeyChoiceStep: View {
     @ViewBuilder private var keyFields: some View {
         let selected = profiles.selectedProfile
         if selected?.engineMode == "local" {
-            offlineModels
+            Text(EngineError.localTranscriptionRemoved.errorDescription!)
+                .foregroundStyle(.orange)
         } else {
             switch selected?.requiredKey ?? .none {
             case .openAI:
@@ -289,27 +286,6 @@ private struct KeyChoiceStep: View {
             .font(.caption).foregroundStyle(.secondary)
     }
 
-    @ViewBuilder private var offlineModels: some View {
-        switch downloader.state {
-        case .ready:
-            Label("Local models downloaded.", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-        case .downloading:
-            ProgressView(value: downloader.progress) {
-                Text("Downloading models… \(Int(downloader.progress * 100))%")
-            }
-        case .failed(let message):
-            Text(message).foregroundStyle(.red)
-            Button("Retry download") { Task { await downloader.download() } }
-        case .idle:
-            if FluidAudioBackend.modelsPresent {
-                Label("Local models downloaded.", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            } else {
-                Button("Download models (~2 GB)") { Task { await downloader.download() } }
-                    .buttonStyle(.borderedProminent)
-            }
-        }
-    }
-
     /// Selects + applies the profile matching the choice (engine + providers + models
     /// + cleanup), so the rest of the app is consistent with what the user picked.
     private func select(_ newChoice: KeyChoice) {
@@ -329,7 +305,7 @@ private struct KeyChoiceStep: View {
         // (e.g. Best Accuracy or a custom profile won't light the "Instant" radio).
         // Anything else (Best Accuracy, custom, migrated two-key) → no radio + caption.
         guard let id = profiles.selectedProfileID else { return nil }
-        return [KeyChoice.openAI, .openRouter, .neither].first {
+        return [KeyChoice.openAI, .openRouter].first {
             ProfileStore.firstRunProfile(forKeyChoice: $0).id == id
         }
     }

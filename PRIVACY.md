@@ -2,9 +2,11 @@
 
 Talkie has no account system, analytics, advertising, or Talkie-operated server. When a cloud feature is enabled, Talkie connects directly from your Mac to the provider you selected with your own API key. The provider's terms and retention practices apply to data it receives.
 
-## On-device transcription
+## Retired local transcription
 
-Audio stays on your Mac during transcription. The local model files are downloaded from Hugging Face, but dictated audio, transcripts, and nearby context are not sent there.
+Local transcription is no longer available. Saved local/offline profiles fail closed: Talkie does not record or upload dictation audio until you explicitly choose a cloud profile in Settings. Enabling speaker filtering does not override this restriction. Previously downloaded model files are left on disk; Talkie no longer downloads or uses them.
+
+## Audio retention
 
 After a successfully completed dictation, Talkie attempts to delete temporary audio unless **Keep audio recordings** is enabled. Deletion is best-effort: a deletion error can leave the temporary file on your Mac. Failed or cancelled dictations, including an insertion failure after transcription, may retain audio locally for retry or recovery.
 
@@ -30,7 +32,6 @@ When you explicitly run a selected-text transform, the selected text and your tr
 | --- | --- | --- | --- |
 | OpenAI | Direct batch transcription when selected; all instant transcription; cleanup or selected-text transforms when selected | Recorded or streaming audio and transcription hints; or transcript/selected text, processing instructions, and optional nearby context | [Services Agreement](https://openai.com/policies/services-agreement/) · [Service Terms](https://openai.com/policies/service-terms/) · [API data controls](https://developers.openai.com/api/docs/guides/your-data) |
 | OpenRouter | Batch transcription, cleanup, or selected-text transforms when selected; checking remaining OpenRouter credits when the Home screen appears and an OpenRouter key is saved | Recorded audio and transcription settings; transcript/selected text, processing instructions, and optional nearby context; or an authenticated credits request. OpenRouter may route model requests to the model provider you select. | [Privacy](https://openrouter.ai/privacy) · [Terms](https://openrouter.ai/terms) |
-| Hugging Face | Downloading the on-device transcription model (`FluidInference/parakeet-tdt-0.6b-v3-coreml`) | Model download requests and ordinary network metadata; no dictated audio, transcripts, or nearby context | [Privacy](https://huggingface.co/privacy) · [Terms](https://huggingface.co/terms-of-service) |
 
 Provider policies can change. Review the linked policies before using cloud features.
 

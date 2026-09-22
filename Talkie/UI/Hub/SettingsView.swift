@@ -53,7 +53,6 @@ struct SettingsView: View {
             GeneralSettingsTab(settings: settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
             EngineSettingsTab(keychain: keychain, settings: settings,
-                              downloader: AppServices.shared.modelDownloader,
                               speakerReference: AppServices.shared.speakerReference)
                 .tabItem { Label("Engines", systemImage: "waveform") }
             StyleSettingsTab(settings: settings, history: AppServices.shared.history)
@@ -83,14 +82,15 @@ private struct ProfilesSettingsTab: View {
         Form {
             Section("Profile") {
                 Picker("Active profile", selection: Binding(
-                    get: { profiles.selectedProfileID ?? DictationProfile.privateOffline.id },
+                    get: { profiles.selectedProfileID },
                     set: { id in
                         guard let p = profiles.allProfiles.first(where: { $0.id == id }) else { return }
                         p.apply(to: settings) // writes the whole pipeline consistently
                         profiles.select(p.id)
                     })) {
+                    Text("Choose a cloud profile").tag(Optional<UUID>.none)
                     ForEach(profiles.allProfiles) { p in
-                        Text(p.displaySummary).tag(p.id)
+                        Text(p.displaySummary).tag(Optional(p.id))
                     }
                 }
                 if let selected = profiles.selectedProfile {
@@ -140,7 +140,7 @@ private struct ProfilesSettingsTab: View {
 
     private static func keyText(_ key: RequiredKey) -> String {
         switch key {
-        case .none: "No API key needed — runs on-device."
+        case .none: "Choose a cloud profile to enable dictation."
         case .openAI: "Needs your OpenAI key."
         case .openRouter: "Needs your OpenRouter key."
         case .both: "Needs both your OpenAI and OpenRouter keys."
@@ -188,7 +188,7 @@ private struct StyleSettingsTab: View {
                     }
                 }
                 if settings.engineMode == "local" {
-                    Text("The current on-device Parakeet model is English-only. Choose Cloud or Instant for the expanded language list.")
+                    Text(EngineError.localTranscriptionRemoved.errorDescription!)
                         .font(.caption).foregroundStyle(.orange)
                 } else {
                     Text("Regional variants guide formatting; transcription receives the provider-supported base language code.")
@@ -388,7 +388,6 @@ private struct GeneralSettingsTab: View {
 private struct EngineSettingsTab: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
-    let downloader: ModelDownloader
     @Bindable var speakerReference: SpeakerReferenceController
     @State private var openAIKey: String = ""
     @State private var openRouterKey: String = ""
@@ -410,7 +409,6 @@ private struct EngineSettingsTab: View {
                 Picker("Transcription runs", selection: $settings.engineMode) {
                     Text("Cloud — batch (≈ $0.27/hr)").tag("cloud")
                     Text("Cloud — instant streaming (≈ $1.02/hr)").tag("instant")
-                    Text("On this Mac — free, offline").tag("local")
                 }
                 .pickerStyle(.radioGroup)
                 Text("Instant streams audio while you speak. Batch records first, then transcribes the completed file. Model pricing and latency vary.")
@@ -424,28 +422,9 @@ private struct EngineSettingsTab: View {
                 Text("Types raw text as you speak — skips cleanup. Needs Accessibility access.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Local models") {
-                if settings.engineMode == "local", !FluidAudioBackend.modelsPresent {
-                    Text("Local mode will not use cloud automatically. Download models below or switch to Cloud or Instant explicitly.")
-                        .font(.caption).foregroundStyle(.orange)
-                }
-                switch downloader.state {
-                case .ready:
-                    LabeledContent("Status", value: "Downloaded")
-                    removeModelsButton
-                case .downloading:
-                    ProgressView(value: downloader.progress) { Text("Downloading… \(Int(downloader.progress * 100))%") }
-                case .failed(let message):
-                    Text(message).foregroundStyle(.red)
-                    Button("Retry") { Task { await downloader.download() } }
-                case .idle:
-                    LabeledContent("Status", value: FluidAudioBackend.modelsPresent ? "Downloaded" : "Not downloaded (~2 GB)")
-                    if FluidAudioBackend.modelsPresent {
-                        removeModelsButton
-                    } else {
-                        Button("Download models") { Task { await downloader.download() } }
-                    }
-                }
+            if settings.engineMode == "local" {
+                Text(EngineError.localTranscriptionRemoved.errorDescription!)
+                    .font(.caption).foregroundStyle(.orange)
             }
             Section("API Keys") {
                 SecureField("OpenAI API key (sk-…)", text: $openAIKey)
@@ -632,10 +611,4 @@ private struct EngineSettingsTab: View {
         }
     }
 
-    private var removeModelsButton: some View {
-        Button("Remove models") {
-            try? FileManager.default.removeItem(at: FluidAudioBackend.modelsDirectory)
-            downloader.reset()
-        }
-    }
 }

@@ -105,7 +105,6 @@ public_documents.each do |document|
 end
 
 {
-  "docs/images/talkie-settings.png" => [680, 360],
   "docs/images/talkie-pill.png" => [300, 80],
 }.each do |path, minimum|
   unless File.file?(path)

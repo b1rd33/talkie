@@ -7,7 +7,7 @@ struct SpeakerFilteringSettingsSection: View {
     var body: some View {
         Section("Speaker filtering") {
             Toggle("Transcribe only my enrolled voice", isOn: $settings.speakerFilteringEnabled)
-                .disabled(!speakerReference.hasReference)
+                .disabled(!speakerReference.hasReference || settings.engineMode == "local")
                 .accessibilityIdentifier("Transcribe only my enrolled voice")
 
             HStack {

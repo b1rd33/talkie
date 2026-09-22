@@ -3,7 +3,7 @@ import Foundation
 enum EngineMode: String, Sendable, Equatable {
     case cloud
     case instant
-    case local
+    case local // Compatibility sentinel only; recording and uploads are blocked.
 
     init(storedValue: String) {
         self = EngineMode(rawValue: storedValue) ?? .cloud
@@ -108,7 +108,7 @@ struct DictationSessionConfigurationResolver {
     var speakerFilter: () -> SpeakerFilterConfiguration? = { nil }
 
     func resolve(targetBundleID: String?) -> DictationSessionConfiguration {
-        let mode = settings.speakerFilteringEnabled
+        let mode = settings.speakerFilteringEnabled && settings.engineMode != "local"
             ? EngineMode.cloud
             : EngineMode(storedValue: settings.engineMode)
         let provider = settings.speakerFilteringEnabled

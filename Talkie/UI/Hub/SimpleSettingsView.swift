@@ -16,14 +16,15 @@ struct SimpleSettingsView: View {
         Form {
             Section("What do you want?") {
                 Picker("Mode", selection: Binding(
-                    get: { profiles.selectedProfileID ?? DictationProfile.privateOffline.id },
+                    get: { profiles.selectedProfileID },
                     set: { id in
                         guard let p = profiles.allProfiles.first(where: { $0.id == id }) else { return }
                         p.apply(to: settings)
                         profiles.select(p.id)
                     })) {
+                    Text("Choose a cloud profile").tag(Optional<UUID>.none)
                     ForEach(profiles.allProfiles) { p in
-                        Text(p.displaySummary).tag(p.id)
+                        Text(p.displaySummary).tag(Optional(p.id))
                     }
                 }
                 .labelsHidden()
@@ -78,7 +79,7 @@ struct SimpleSettingsView: View {
         case "instant":
             return "Live model: \(settings.realtimeTranscriptionModel)"
         case "local":
-            return "Transcription model: On-device Parakeet"
+            return EngineError.localTranscriptionRemoved.errorDescription!
         default:
             let model = settings.transcriptionProvider == "openrouter"
                 ? settings.openrouterTranscriptionModel
@@ -89,21 +90,10 @@ struct SimpleSettingsView: View {
 
     @ViewBuilder private var keyFields: some View {
         let selected = profiles.selectedProfile
-        // Local profiles fail closed when models are absent. Surface this for ANY local
-        // profile, independent of requiredKey (covers local + cleanup too).
-        let localModelsMissing = (selected?.engineMode == "local") && !FluidAudioBackend.modelsPresent
-        if localModelsMissing {
-            Label("On-device models aren't downloaded yet. Talkie will not use cloud automatically — download them in the Setup Assistant or switch to a cloud profile explicitly.",
-                  systemImage: "exclamationmark.triangle.fill")
-                .font(.caption).foregroundStyle(.orange)
-            Button("Open Setup Assistant…") { AppServices.shared.showOnboarding() }
-        }
         switch selected?.requiredKey ?? .none {
         case .none:
-            if !localModelsMissing {
-                Label("No API key needed — runs on your Mac.", systemImage: "checkmark.seal")
-                    .font(.caption).foregroundStyle(.green)
-            }
+            Text("Choose a cloud profile and add its API key to use dictation.")
+                .font(.caption).foregroundStyle(.secondary)
         case .openAI:
             openAIField
         case .openRouter:

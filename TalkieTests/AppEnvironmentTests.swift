@@ -159,11 +159,11 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertNil(environment.e2e)
         XCTAssertEqual(environment.keychainService,
                        "com.archiev.talkie.screenshot.docs-session")
-        XCTAssertEqual(environment.defaults.string(forKey: "engineMode"), "local")
-        XCTAssertEqual(environment.defaults.string(forKey: "cleanupLevel"), "none")
+        XCTAssertEqual(environment.defaults.string(forKey: "engineMode"), "cloud")
+        XCTAssertEqual(environment.defaults.string(forKey: "cleanupLevel"), "high")
         XCTAssertEqual(environment.defaults.string(forKey: "cleanupProvider"), "openai")
         XCTAssertEqual(environment.defaults.string(forKey: "selectedProfileID"),
-                       DictationProfile.privateOffline.id.uuidString)
+                       DictationProfile.bestAccuracy.id.uuidString)
         XCTAssertEqual(environment.defaults.string(forKey: "pillStyle"),
                        PillStyle.thinkingOrb.rawValue)
         XCTAssertEqual(environment.defaults.string(forKey: "pinnedLanguage"), "en")

@@ -9,7 +9,7 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 - This branch starts at `8b9f8d6`, the current head of open PR #17, which depends
   on open PR #16. Neither PR was merged during this task.
 - Version prepared: 1.2.0, build 5. No release tag has been created.
-- Remote dependency pins remain FluidAudio 0.15.5 and HotKey 0.2.1.
+- HotKey remains pinned to 0.2.1. FluidAudio was removed with local transcription.
 - ThinkingOrbsKit is vendored from Libraries.dev commit
   `2015f0ba79a9faec351719c4a6d590a1e6bfa243`, with its MIT license bundled.
 
@@ -28,8 +28,8 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
   closed after losing it. No blind deletion is introduced.
 - Speaker enrollment now validates audio health before overwriting a reference,
   uses the selected input device, and discards capture that starts after removal.
-- Selecting Private / Offline disables cloud speaker filtering and preserves
-  local-only behavior across restart.
+- Legacy local/offline profiles block recording and uploads across restart until
+  a cloud profile is explicitly chosen. Local ASR and model-download UI are removed.
 - History identifies clipboard-only recovery; existing retry, copy-last,
   language selection, profiles, dictionary/snippets and cost views are retained.
 - Thinking Orb replaces Ink Line, Calm Flow Ribbon and Bare Wave. Dynamic

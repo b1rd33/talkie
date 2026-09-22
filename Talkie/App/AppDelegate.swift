@@ -34,7 +34,6 @@ final class AppServices {
     let pasteLastInserter: TextInserter
     let coordinator: DictationCoordinator
     let history: HistoryStore?
-    let modelDownloader: ModelDownloader
     let onboarding: OnboardingWindow
     let selectionTransforms: SelectionTransformCoordinator
     let selectionTransformWindow: SelectionTransformWindow
@@ -69,7 +68,6 @@ final class AppServices {
         let permissions = PermissionManager()
         let notifier = Notifier()
         let pasteLastInserter = TextInserter(notifier: notifier)
-        let modelDownloader = ModelDownloader(fetch: FluidAudioBackend.downloadModels)
         let onboarding = OnboardingWindow()
 
         let credentialOverrides = environment.credentialOverrides
@@ -152,17 +150,9 @@ final class AppServices {
                 }
                 return defaults.string(forKey: "transcriptionProvider") ?? "openai"
             })
-        let backend = FluidAudioBackend()
-        let localEngine = ParakeetEngine(backend: backend)
-        let router = EngineRouter(
-            cloud: cloudSwitch, local: localEngine,
-            mode: {
-                if defaults.object(forKey: "speakerFilteringEnabled") as? Bool ?? false {
-                    return "cloud"
-                }
-                return defaults.string(forKey: "engineMode") ?? "cloud"
-            },
-            localAvailable: { FluidAudioBackend.modelsPresent })
+        let router = EngineRouter(cloud: cloudSwitch, mode: {
+            defaults.string(forKey: "engineMode") ?? "cloud"
+        })
         let history = try? HistoryStore(inMemory: environment.historyInMemory)
         let resolver = StyleResolver(overrides: { [history] in
             history?.styleOverridesByBundleID() ?? [:]
@@ -212,13 +202,7 @@ final class AppServices {
                 openai: openAI,
                 openrouter: openRouter,
                 provider: { transcription.provider.rawValue })
-            // `.localOnly` is deliberately resolved to local regardless of any
-            // later settings mutation; EngineRouter never cloud-falls-back in local mode.
-            return EngineRouter(
-                cloud: cloud,
-                local: localEngine,
-                configuration: configuration,
-                localAvailable: { FluidAudioBackend.modelsPresent })
+            return EngineRouter(cloud: cloud, configuration: configuration)
         }
 
         let configuredCleanupService: (DictationSessionConfiguration) -> any CleanupServicing = { configuration in
@@ -335,7 +319,6 @@ final class AppServices {
         self.pasteLastInserter = pasteLastInserter
         self.coordinator = coordinator
         self.history = history
-        self.modelDownloader = modelDownloader
         self.onboarding = onboarding
         self.selectionTransforms = selectionTransforms
         self.selectionTransformWindow = selectionTransformWindow
@@ -399,7 +382,7 @@ final class AppServices {
     /// Also reachable from Settings → General → "Run Setup Assistant…".
     func showOnboarding() {
         onboarding.show(keychain: keychain, settings: settings,
-                        modelDownloader: modelDownloader, profiles: profiles,
+                        profiles: profiles,
                         setupState: setupState)
     }
 

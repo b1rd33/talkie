@@ -1686,3 +1686,48 @@ extension DictationCoordinatorTests {
         XCTAssertEqual(resolved, ["old", "new"])
     }
 }
+
+
+extension DictationCoordinatorTests {
+    func testLegacyLocalBlocksRecordingRealtimeAndHistoryRetryBeforeProviders() async throws {
+        let defaults = UserDefaults(suiteName: "talkie-local-removal-\(UUID().uuidString)")!
+        defaults.set("local", forKey: "engineMode")
+        defaults.set(true, forKey: "speakerFilteringEnabled")
+        let settings = SettingsStore(defaults: defaults)
+        settings.speakerFilteringEnabled = true // must not override the legacy privacy choice
+        XCTAssertEqual(settings.engineMode, "local")
+        let resolver = DictationSessionConfigurationResolver(settings: settings)
+        let recorder = MockRecorder()
+        let engine = MockEngine()
+        let cleanup = MockCleanup()
+        var providerCalls = 0
+        let coordinator = DictationCoordinator(
+            recorder: recorder, engine: engine, cleanup: cleanup, inserter: MockInserter(),
+            sessionConfigurationProvider: { _ in resolver.resolve(targetBundleID: nil) },
+            transcriptionEngineProvider: { _ in providerCalls += 1; return engine },
+            cleanupServiceProvider: { _ in providerCalls += 1; return cleanup },
+            configuredLiveSessionFactory: { _, _ in
+                XCTFail("Legacy local settings must not open realtime")
+                throw EngineError.invalidResponse
+            })
+        await coordinator.dictationKeyPressed()
+        XCTAssertEqual(recorder.started, 0)
+        XCTAssertEqual(coordinator.state, .error(EngineError.localTranscriptionRemoved.errorDescription!))
+        XCTAssertEqual(providerCalls, 0)
+
+        coordinator.cancel()
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: source) }
+        try Data("fixture".utf8).write(to: source)
+        let history = try HistoryStore(inMemory: true)
+        history.save(rawText: "", cleanedText: "", appBundleID: nil, appName: nil,
+                     duration: 2, engine: "parakeet", status: .failed, audioPath: source.path)
+        let result = await coordinator.retry(history.recent(limit: 1)[0])
+        XCTAssertNil(result)
+        XCTAssertEqual(coordinator.state, .error(EngineError.localTranscriptionRemoved.errorDescription!))
+        XCTAssertEqual(providerCalls, 0)
+        XCTAssertTrue(engine.receivedTerms.isEmpty)
+        XCTAssertTrue(cleanup.calls.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+    }
+}

@@ -99,7 +99,6 @@ expect_file Package.swift
 expect_file Package.resolved
 expect_pattern Package.swift 'Dependabot dependency mirror' "dependency-only manifest must document its metadata purpose"
 expect_pattern Package.swift '\.package\(url:[[:space:]]*"https://github\.com/soffes/HotKey",[[:space:]]+exact:[[:space:]]+"0\.2\.1"\)' "HotKey mirror dependency missing"
-expect_pattern Package.swift '\.package\(url:[[:space:]]*"https://github\.com/FluidInference/FluidAudio",[[:space:]]+exact:[[:space:]]+"0\.15\.5"\)' "FluidAudio mirror dependency missing"
 expect_file scripts/verify-dependency-mirror.sh
 expect_pattern scripts/verify-dependency-mirror.sh 'swift package.*dump-package' "dependency mirror verification must inspect SwiftPM semantics"
 expect_pattern scripts/verify-dependency-mirror.sh 'Package\.resolved' "dependency mirror verification must inspect the tracked SwiftPM lockfile"

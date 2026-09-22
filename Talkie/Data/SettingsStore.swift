@@ -27,7 +27,7 @@ final class SettingsStore {
     var speakerFilteringEnabled: Bool {
         didSet {
             defaults.set(speakerFilteringEnabled, forKey: "speakerFilteringEnabled")
-            if speakerFilteringEnabled {
+            if speakerFilteringEnabled && engineMode != "local" {
                 engineMode = "cloud"
                 transcriptionProvider = "openai"
                 instantLiveType = false
@@ -139,7 +139,9 @@ final class SettingsStore {
         openrouterTranscriptionModel = defaults.string(forKey: "openrouterTranscriptionModel") ?? "mistralai/voxtral-mini-transcribe"
         showFlowBar = defaults.object(forKey: "showFlowBar") as? Bool ?? true
         launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? false
-        engineMode = defaults.string(forKey: "engineMode") ?? "cloud"
+        engineMode = defaults.string(forKey: "engineMode")
+            ?? (defaults.string(forKey: "selectedProfileID") == DictationProfile.legacyOfflineID.uuidString
+                ? "local" : "cloud")
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
         pillStyle = PillStyle(migrating: defaults.string(forKey: "pillStyle"))
         showPillTimer = defaults.object(forKey: "showPillTimer") as? Bool ?? false
@@ -160,6 +162,8 @@ final class SettingsStore {
         pttShortcut = defaults.string(forKey: "pttShortcut")
         handsFreeShortcut = defaults.string(forKey: "handsFreeShortcut")
         if engineMode == "local" {
+            // Persist the blocked mode before profile migration replaces a retired ID.
+            defaults.set("local", forKey: "engineMode")
             speakerFilteringEnabled = false
             defaults.set(false, forKey: "speakerFilteringEnabled")
         } else if speakerFilteringEnabled {

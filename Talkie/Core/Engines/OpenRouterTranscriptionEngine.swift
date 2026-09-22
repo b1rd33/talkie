@@ -46,7 +46,7 @@ struct OpenRouterTranscriptionEngine: TranscriptionEngine {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // Dictionary terms are not biasable on this endpoint (no prompt field) —
-        // they're enforced at cleanup, same as the local engine (spec §6).
+        // they're enforced at cleanup (spec §6).
         let payload: [String: Any] = [
             "model": model,
             "input_audio": [

@@ -6,7 +6,7 @@ final class DictationProfileTests: XCTestCase {
     // MARK: requiredKey
 
     func testRequiredKeyPerBuiltIn() {
-        XCTAssertEqual(DictationProfile.privateOffline.requiredKey, .none)
+        XCTAssertFalse(DictationProfile.builtIns.contains { $0.engineMode == "local" })
         XCTAssertEqual(DictationProfile.liveTyping.requiredKey, .openAI)
         XCTAssertEqual(DictationProfile.instant.requiredKey, .openAI)
         XCTAssertEqual(DictationProfile.bestAccuracy.requiredKey, .openAI)

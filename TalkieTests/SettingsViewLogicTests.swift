@@ -88,14 +88,13 @@ final class SettingsViewLogicTests: XCTestCase {
         XCTAssertFalse(readme.contains("is **deleted after transcription**"))
     }
 
-    func testLocalModelWarningsPromiseNoAutomaticCloudFallback() throws {
-        let simpleSettings = try repositoryFile("Talkie/UI/Hub/SimpleSettingsView.swift")
-        let advancedSettings = try repositoryFile("Talkie/UI/Hub/SettingsView.swift")
-
-        XCTAssertFalse(simpleSettings.contains("falls back to the cloud"))
-        XCTAssertTrue(simpleSettings.contains("will not use cloud automatically"))
-        XCTAssertTrue(advancedSettings.contains("will not use cloud automatically"))
-        XCTAssertTrue(advancedSettings.contains("switch to Cloud or Instant explicitly"))
+    func testRemovedLocalModeGuidanceAppearsInBothSettingsViews() throws {
+        for path in ["Talkie/UI/Hub/SimpleSettingsView.swift", "Talkie/UI/Hub/SettingsView.swift"] {
+            let source = try repositoryFile(path)
+            XCTAssertTrue(source.contains("EngineError.localTranscriptionRemoved.errorDescription"))
+            XCTAssertFalse(source.contains("Download models"))
+        }
+        XCTAssertTrue(EngineError.localTranscriptionRemoved.errorDescription!.contains("Choose a cloud profile"))
     }
 
     func testAppearanceExposesIndependentOptionalPillChrome() throws {

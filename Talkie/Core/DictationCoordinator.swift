@@ -242,6 +242,10 @@ final class DictationCoordinator {
         liveInserter?.reset(targetBundleID: targetApp.bundleID)
         let usesTypedConfiguration = sessionConfigurationProvider != nil
         let configuration = sessionConfigurationProvider?(targetApp) ?? legacyConfiguration()
+        guard configuration.permitsCloudTranscription else {
+            fail(EngineError.localTranscriptionRemoved)
+            return
+        }
         activeConfiguration = configuration
         activeCleanupModel = usesTypedConfiguration || !configuration.cleanup.model.isEmpty
             ? configuration.cleanup.model : nil
@@ -887,6 +891,10 @@ final class DictationCoordinator {
         clearActiveSession()
         let configuration = sessionConfigurationProvider?((record.appBundleID, record.appName))
             ?? legacyConfiguration()
+        guard configuration.permitsCloudTranscription else {
+            fail(EngineError.localTranscriptionRemoved)
+            return nil
+        }
         activeEngine = transcriptionEngineProvider?(configuration)
         let retryCleanup = cleanupServiceProvider?(configuration) ?? cleanup
         defer { clearActiveSession() }

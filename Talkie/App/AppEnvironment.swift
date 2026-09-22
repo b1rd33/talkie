@@ -251,7 +251,7 @@ struct AppEnvironment {
         defaults.set(SetupStateStore.currentStateVersion,
                      forKey: SetupStateStore.stateVersionKey)
         defaults.set(false, forKey: "simpleMode")
-        let profile = DictationProfile.privateOffline
+        let profile = DictationProfile.bestAccuracy
         defaults.set(profile.engineMode, forKey: "engineMode")
         defaults.set(profile.instantSkipCleanup, forKey: "instantSkipCleanup")
         defaults.set(profile.instantLiveType, forKey: "instantLiveType")

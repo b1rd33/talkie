@@ -37,12 +37,13 @@ struct DictationProfile: Codable, Equatable, Identifiable {
     }
 
     /// The key(s) this profile needs: union of the transcription provider's key and
-    /// (when cleanup runs) the cleanup provider's key. Local + no cleanup needs none.
+    /// (when cleanup runs) the cleanup provider's key. Retired local profiles are
+    /// blocked before either provider is called.
     var requiredKey: RequiredKey {
+        guard engineMode != "local" else { return .none }
         var openAI = false
         var openRouter = false
         switch engineMode {
-        case "local": break                         // on-device — no key
         case "instant": openAI = true               // realtime transcription is OpenAI
         default:                                     // "cloud" batch
             if transcriptionProvider == "openrouter" { openRouter = true } else { openAI = true }
@@ -84,15 +85,7 @@ struct DictationProfile: Codable, Equatable, Identifiable {
 
 extension DictationProfile {
     /// Stable IDs so a selected built-in survives relaunch / JSON round-trips.
-    static let privateOffline = DictationProfile(
-        id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!,
-        name: "Private / Offline", builtIn: true,
-        engineMode: "local", instantSkipCleanup: false, instantLiveType: false,
-        transcriptionProvider: "openai", transcriptionModel: ModelPresets.transcription[0],
-        realtimeTranscriptionModel: OpenAITranscriptionModel.gptLiveTranscribe.rawValue,
-        openrouterTranscriptionModel: ModelPresets.openrouterTranscription[0],
-        cleanupLevel: "none", cleanupProvider: "openai", cleanupModel: ModelPresets.openaiCleanup[0],
-        customCleanupPrompt: "")
+    static let legacyOfflineID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
 
     static let liveTyping = DictationProfile(
         id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!,
@@ -134,12 +127,12 @@ extension DictationProfile {
         cleanupLevel: "medium", cleanupProvider: "openrouter", cleanupModel: ModelPresets.openrouterCleanup[0],
         customCleanupPrompt: "")
 
-    /// First-run default is Private/Offline (no key required).
-    static let builtIns: [DictationProfile] = [privateOffline, liveTyping, instant, bestAccuracy, cheapestCloud]
+    static let builtIns: [DictationProfile] = [liveTyping, instant, bestAccuracy, cheapestCloud]
 
     /// Short key requirement, for picker rows: "needs OpenAI", "no key needed", etc.
     var keyRequirementShort: String {
-        switch requiredKey {
+        if engineMode == "local" { return "unavailable; choose a cloud profile" }
+        return switch requiredKey {
         case .none: "no key needed"
         case .openAI: "needs OpenAI"
         case .openRouter: "needs OpenRouter"
@@ -151,6 +144,7 @@ extension DictationProfile {
     /// at a glance — Picker rows render only their text (no subtitles in menu/radio
     /// styles). Built-ins show their intent; custom profiles show the key they need.
     var displaySummary: String {
+        if engineMode == "local" { return "\(name) — unavailable; choose a cloud profile" }
         let label = builtIn ? name : "\(name) (custom)"
         let detail = builtIn ? simpleDescription : keyRequirementShort
         return "\(label) — \(detail)"
@@ -158,8 +152,8 @@ extension DictationProfile {
 
     /// One-line, plain-language description for Simple mode's intent line.
     var simpleDescription: String {
-        switch id {
-        case Self.privateOffline.id: "Runs entirely on your Mac — no internet, no API key."
+        if engineMode == "local" { return EngineError.localTranscriptionRemoved.errorDescription! }
+        return switch id {
         case Self.liveTyping.id: "Types the words into the app as you speak (no cleanup)."
         case Self.instant.id: "Streams as you speak, then tidies it up."
         case Self.bestAccuracy.id: "Highest quality — transcribes, then polishes."

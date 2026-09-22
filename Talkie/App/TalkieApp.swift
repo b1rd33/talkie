@@ -35,10 +35,12 @@ struct MenuBarContent: View {
         Divider()
         // spec §7: the menu carries the Cloud/Local engine picker too — bound to
         // the same SettingsStore property the Engines tab's radio group uses (Phase 3).
+        if settings.engineMode == "local" {
+            Text(EngineError.localTranscriptionRemoved.errorDescription!)
+        }
         Picker("Engine", selection: $settings.engineMode) {
             Text("Cloud (OpenAI)").tag("cloud")
             Text("Instant (OpenAI streaming)").tag("instant")
-            Text("On this Mac (Parakeet)").tag("local")
         }
         .pickerStyle(.inline)
         Picker("Language", selection: $settings.pinnedLanguage) {

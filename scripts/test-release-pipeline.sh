@@ -598,8 +598,7 @@ for metadata_value in \
   "tree=$(git -C "$accepted_root" rev-parse 'HEAD^{tree}')" \
   "team_id=$team_id" \
   "signing_identity=$identity" \
-  "hotkey_version=0.2.1" \
-  "fluid_audio_version=0.15.5"
+  "hotkey_version=0.2.1"
 do
   grep -Fqx "$metadata_value" "$release_dir/release-metadata.txt" \
     || fail "release metadata missing $metadata_value"

@@ -101,17 +101,16 @@ final class ProfileStoreTests: XCTestCase {
     func testFirstRunProfileForKeyChoice() {
         XCTAssertEqual(ProfileStore.firstRunProfile(forKeyChoice: .openAI).id, DictationProfile.instant.id)
         XCTAssertEqual(ProfileStore.firstRunProfile(forKeyChoice: .openRouter).id, DictationProfile.cheapestCloud.id)
-        XCTAssertEqual(ProfileStore.firstRunProfile(forKeyChoice: .neither).id, DictationProfile.privateOffline.id)
     }
 
-    func testDeleteCustomFallsBackToPrivateOffline() {
+    func testDeleteCustomClearsSelectionWithoutApplyingAnotherProfile() {
         let store = ProfileStore(defaults: suite())
         var custom = DictationProfile.instant; custom.id = UUID(); custom.name = "Tmp"; custom.builtIn = false
         store.add(custom)
         store.select(custom.id)
         store.delete(custom.id)
         XCTAssertTrue(store.customProfiles.isEmpty)
-        XCTAssertEqual(store.selectedProfileID, DictationProfile.privateOffline.id)
+        XCTAssertNil(store.selectedProfileID)
     }
 
     func testSaveAsNewProfileCapturesSettingsAndSelects() {
@@ -170,5 +169,28 @@ final class ProfileStoreTests: XCTestCase {
         store.delete(a.id)
         XCTAssertEqual(store.selectedProfileID, b.id)
         XCTAssertEqual(store.customProfiles.map(\.name), ["B"])
+    }
+}
+
+
+extension ProfileStoreTests {
+    func testRetiredOfflineSelectionAndCustomProfileRemainBlockedUntilCloudIsChosen() throws {
+        let defaults = suite()
+        defaults.set(DictationProfile.legacyOfflineID.uuidString, forKey: "selectedProfileID")
+        let settings = SettingsStore(defaults: defaults)
+        XCTAssertEqual(settings.engineMode, "local")
+        let profiles = ProfileStore(defaults: defaults)
+        profiles.migrateIfNeeded(from: settings)
+        XCTAssertEqual(profiles.selectedProfile?.engineMode, "local")
+        XCTAssertTrue(profiles.selectedProfile!.displaySummary.contains("unavailable"))
+        XCTAssertEqual(SettingsStore(defaults: defaults).engineMode, "local")
+        let reloaded = ProfileStore(defaults: defaults)
+        XCTAssertEqual(reloaded.selectedProfile?.engineMode, "local")
+        reloaded.selectedProfile!.apply(to: settings)
+        XCTAssertEqual(settings.engineMode, "local")
+
+        DictationProfile.bestAccuracy.apply(to: settings)
+        reloaded.select(DictationProfile.bestAccuracy.id)
+        XCTAssertEqual(SettingsStore(defaults: defaults).engineMode, "cloud")
     }
 }
