@@ -1,13 +1,6 @@
 import AVFoundation
 import Observation
 
-func startAudioCapture(_ engine: AVAudioEngine, block: @escaping AVAudioNodeTapBlock) throws {
-    var error: NSError?
-    guard TalkieStartAudioCapture(engine, block, &error) else {
-        throw error ?? AudioError.engineFailure("could not start microphone") as NSError
-    }
-}
-
 struct AudioSignalMetrics: Sendable, Equatable {
     let frameCount: Int
     let duration: TimeInterval
@@ -218,7 +211,7 @@ final class AudioSink {
         do { try append(buffer) } catch { recordFailure(error) }
     }
 
-    private func recordFailure(_ error: Error) {
+    func recordFailure(_ error: Error) {
         levelLock.lock(); defer { levelLock.unlock() }
         if captureError == nil { captureError = error }
     }
@@ -232,7 +225,11 @@ final class AudioSink {
     /// arrives (used by Instant mode). Called on the tap thread — consumer must
     /// be thread-safe. Accumulation into `samples` continues regardless, so the
     /// batch path always has the full recording for fallback.
-    var chunkConsumer: (([Float]) -> Void)?
+    private var _chunkConsumer: (([Float]) -> Void)?
+    var chunkConsumer: (([Float]) -> Void)? {
+        get { levelLock.lock(); defer { levelLock.unlock() }; return _chunkConsumer }
+        set { levelLock.lock(); _chunkConsumer = newValue; levelLock.unlock() }
+    }
 
     var sampleCount: Int { samples.count }
     var duration: TimeInterval { Double(samples.count) / 16_000 }
@@ -262,7 +259,7 @@ final class AudioSink {
             silentWindowRatio: windows == 0 ? 0 : Float(silentWindows) / Float(windows))
     }
 
-    /// Hands out the accumulated 16kHz mono samples (used by the local engine's decoder).
+    /// The samples sent to transcription, also exposed for capture regression tests.
     func drainSamples() -> [Float] { samples }
 
     func append(_ buffer: AVAudioPCMBuffer) throws {
@@ -270,6 +267,9 @@ final class AudioSink {
             throw AudioError.engineFailure("invalid microphone format")
         }
         if converter == nil || sourceFormat != buffer.format {
+            // Bluetooth can switch formats mid-recording. Preserve the previous
+            // converter's buffered speech before replacing it.
+            finish()
             converter = AVAudioConverter(from: buffer.format, to: Self.targetFormat)
             sourceFormat = buffer.format
         }
@@ -389,7 +389,7 @@ final class AudioSink {
 @MainActor
 @Observable
 final class AudioRecorder: AudioRecording {
-    private var engine = AVAudioEngine()
+    private var capture: MicrophoneCapture?
     private let preferredDeviceUID: () -> String?
     private let deviceCatalog: any AudioDeviceCataloging
     private let deviceMonitor: any AudioDeviceMonitoring
@@ -431,24 +431,23 @@ final class AudioRecorder: AudioRecording {
         }
         try Task.checkCancellation()
 
-        // A stopped engine can retain the old Bluetooth route's format.
-        engine = AVAudioEngine()
         sink = AudioSink(healthPolicy: healthPolicy)
         sink.chunkConsumer = chunkConsumer
         deviceWasLost = false
         captureRequestedDeviceUID = preferredDeviceUID()
-        deviceResolution = deviceCatalog.configure(engine, preferredUID: captureRequestedDeviceUID)
-        if case .configurationFailed(_, let status) = deviceResolution {
-            throw AudioError.engineFailure("could not select input device (CoreAudio \(status))")
+        deviceResolution = deviceCatalog.resolve(preferredUID: captureRequestedDeviceUID)
+        guard let device = deviceResolution?.actualDevice else {
+            throw AudioError.engineFailure("no input device is available")
         }
-        let sink = self.sink
+        let capture = MicrophoneCapture(sink: sink)
         do {
-            try startAudioCapture(engine) { buffer, _ in
-                sink.capture(buffer)
-            }
+            try await capture.start(deviceUID: device.uid)
+            try Task.checkCancellation()
         } catch {
-            throw AudioError.engineFailure(error.localizedDescription)
+            capture.stop()
+            throw error
         }
+        self.capture = capture
         isRecording = true
         let activeUID = deviceResolution?.actualDevice?.uid
         deviceMonitor.start { [weak self] devices in
@@ -487,8 +486,8 @@ final class AudioRecorder: AudioRecording {
     private func teardown() {
         deviceMonitor.stop()
         guard isRecording else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        capture?.stop()
+        capture = nil
         isRecording = false
     }
 }

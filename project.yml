@@ -54,9 +54,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.archiev.talkie
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: Talkie/Talkie.entitlements
-        SWIFT_OBJC_BRIDGING_HEADER: Talkie/Core/Audio/AudioCapture.h
         MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "5"
+        CURRENT_PROJECT_VERSION: "6"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
         Debug:

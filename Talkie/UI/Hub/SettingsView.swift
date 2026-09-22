@@ -27,7 +27,11 @@ struct SettingsView: View {
                 SimpleSettingsView(keychain: keychain, settings: settings,
                                    profiles: AppServices.shared.profiles)
             } else {
-                devTabs
+                if #available(macOS 15.0, *) {
+                    devTabs.tabViewStyle(.grouped)
+                } else {
+                    devTabs
+                }
             }
         }
         .frame(width: screenshotReadableWidth, height: 480)
@@ -55,6 +59,7 @@ struct SettingsView: View {
             StyleSettingsTab(settings: settings, history: AppServices.shared.history)
                 .tabItem { Label("Style", systemImage: "textformat") }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

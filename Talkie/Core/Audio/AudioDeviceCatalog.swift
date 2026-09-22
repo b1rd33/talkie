@@ -1,5 +1,3 @@
-import AudioToolbox
-import AVFoundation
 import CoreAudio
 import Foundation
 
@@ -20,14 +18,12 @@ enum AudioDeviceResolution: Equatable, Sendable {
     case preferred(AudioInputDevice)
     case systemDefault(AudioInputDevice?)
     case preferredMissing(requestedUID: String, fallback: AudioInputDevice?)
-    case configurationFailed(requestedUID: String?, status: OSStatus)
 
     var actualDevice: AudioInputDevice? {
         switch self {
         case .preferred(let device): device
         case .systemDefault(let device): device
         case .preferredMissing(_, let fallback): fallback
-        case .configurationFailed: nil
         }
     }
 }
@@ -35,7 +31,7 @@ enum AudioDeviceResolution: Equatable, Sendable {
 @MainActor
 protocol AudioDeviceCataloging {
     func inputDevices() -> [AudioInputDevice]
-    func configure(_ engine: AVAudioEngine, preferredUID: String?) -> AudioDeviceResolution
+    func resolve(preferredUID: String?) -> AudioDeviceResolution
 }
 
 @MainActor
@@ -58,18 +54,6 @@ enum AudioDeviceSelection {
             return .preferredMissing(requestedUID: preferredUID, fallback: fallback)
         }
         return .preferred(preferred)
-    }
-
-    static func apply(_ resolution: AudioDeviceResolution, requestedUID: String?,
-                      setDevice: (AudioDeviceID) -> OSStatus) -> AudioDeviceResolution {
-        guard let device = resolution.actualDevice else {
-            return .configurationFailed(requestedUID: requestedUID, status: kAudio_ParamError)
-        }
-        let status = setDevice(device.id)
-        guard status == noErr else {
-            return .configurationFailed(requestedUID: requestedUID, status: status)
-        }
-        return resolution
     }
 
     static func activeDeviceWasRemoved(uid: String?, devices: [AudioInputDevice]) -> Bool {
@@ -97,25 +81,11 @@ struct SystemAudioDeviceCatalog: AudioDeviceCataloging {
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    func configure(_ engine: AVAudioEngine, preferredUID: String?) -> AudioDeviceResolution {
+    func resolve(preferredUID: String?) -> AudioDeviceResolution {
         let devices = inputDevices()
         let resolution = AudioDeviceSelection.resolution(
             preferredUID: preferredUID, devices: devices, defaultDeviceID: defaultInputDeviceID())
-        // Bind the resolved device, but avoid renegotiating an already-selected Bluetooth route.
-        return AudioDeviceSelection.apply(resolution, requestedUID: preferredUID) { deviceID in
-            guard let unit = engine.inputNode.audioUnit else { return kAudio_ParamError }
-            var currentID = AudioDeviceID(0)
-            var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-            if AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                                    kAudioUnitScope_Global, 0, &currentID, &size) == noErr,
-               currentID == deviceID {
-                return noErr
-            }
-            var mutableID = deviceID
-            return AudioUnitSetProperty(
-                unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
-                0, &mutableID, UInt32(MemoryLayout<AudioDeviceID>.size))
-        }
+        return resolution
     }
 
     private func defaultInputDeviceID() -> AudioDeviceID? {

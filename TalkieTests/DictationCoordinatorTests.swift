@@ -218,6 +218,8 @@ final class DictationCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.lastResult)
         XCTAssertEqual(history.recent(limit: 1).first?.status, .failed)
         XCTAssertNotEqual(history.recent(limit: 1).first?.status, .completed)
+        XCTAssertEqual(history.recent(limit: 1).first?.durationSec, 2)
+        XCTAssertEqual(history.recent(limit: 1).first?.audioHealthSummary, "healthy")
         XCTAssertEqual(events, [.batchEmptyResult])
     }
 

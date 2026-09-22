@@ -233,6 +233,7 @@ final class DictationCoordinator {
         // presses of a stop-double-tap bounce it off-then-on. So while hands-free
         // is recording, a stray press falls through to the guard below and no-ops.
         guard state == .idle || isErrorState else { return } // one dictation in flight
+        errorDismissTask?.cancel()
         clearCleanupDegraded() // a fresh dictation starts with a clean slate
         liveTranscript = ""     // clear any stale streamed preview
         liveBox.clear()
@@ -477,10 +478,12 @@ final class DictationCoordinator {
             clearActiveSession()
         }
         var audioURL: URL?
+        var capturedAudio: RecordedAudio?
         do {
             state = .transcribing
             let audio = try await recorder.stop()
             audioURL = audio.fileURL
+            capturedAudio = audio
             // Real recordings carry incrementally collected health metadata. Reject
             // unusable capture locally before realtime fallback or a paid batch call.
             // Legacy/test-created RecordedAudio defaults to `.healthy`.
@@ -708,13 +711,15 @@ final class DictationCoordinator {
                           language: activeConfiguration?.pinnedLanguage,
                           detectedLanguages: transcript.detectedLanguages,
                           audioPath: keptPath,
-                          deliveryOutcome: deliveryOutcome)
+                          deliveryOutcome: deliveryOutcome,
+                          audioHealthSummary: audio.healthDecision.rawValue)
         } catch is CancellationError {
             recorder.discard()
             state = .idle
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
-                          appName: targetApp.name, duration: 0, engine: "openai", status: .cancelled,
-                          audioPath: keepAudioForRetry(audioURL))
+                          appName: targetApp.name, duration: capturedAudio?.duration ?? 0, engine: "openai", status: .cancelled,
+                          audioPath: keepAudioForRetry(audioURL),
+                          audioHealthSummary: capturedAudio?.healthDecision.rawValue)
         } catch {
             recorder.discard()
             fail(error)
@@ -729,9 +734,10 @@ final class DictationCoordinator {
                 nil
             }
             history?.save(rawText: "", cleanedText: "", appBundleID: targetApp.bundleID,
-                          appName: targetApp.name, duration: 0, engine: "openai", status: .failed,
+                          appName: targetApp.name, duration: capturedAudio?.duration ?? 0, engine: "openai", status: .failed,
                           audioPath: keepAudioForRetry(audioURL),
-                          deliveryOutcome: deliveryOutcome)
+                          deliveryOutcome: deliveryOutcome,
+                          audioHealthSummary: capturedAudio?.healthDecision.rawValue)
         }
     }
 
@@ -914,7 +920,10 @@ final class DictationCoordinator {
         return false
     }
 
+    private var errorDismissTask: Task<Void, Never>?
+
     private func fail(_ error: Error) {
+        errorDismissTask?.cancel()
         isHandsFree = false // any failure disarms hands-free, else the next PTT inherits it
         if let engineError = error as? EngineError, engineError == .missingAPIKey {
             notifier?.notify(title: "API key missing",
@@ -926,9 +935,9 @@ final class DictationCoordinator {
                              destination: .microphone)
         }
         state = .error((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            guard let self, self.isErrorState else { return }
+        errorDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self, self.isErrorState else { return }
             self.state = .idle
         }
     }

@@ -103,6 +103,8 @@ struct PillRendererView: View {
                     }
                     if style == .thinkingOrb {
                         DictationOrbView(presentation: presentation, levelSource: levelSource)
+                        WaveformCanvasView(recorder: levelSource, color: contentForeground, barCount: 16)
+                            .accessibilityHidden(true)
                     } else {
                         WaveformCanvasView(recorder: levelSource, color: contentForeground)
                             .accessibilityHidden(true)
@@ -236,22 +238,26 @@ struct PillRendererView: View {
         }
     }
 
-    @ViewBuilder private func errorView(_ message: String) -> some View {
-        if isChromeless {
-            HStack(spacing: 5) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-                Text(message).foregroundStyle(.primary).lineLimit(1).truncationMode(.tail)
+    private func errorView(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.red)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Dictation failed").font(.caption.bold())
+                Text(message).font(.system(size: 10)).lineLimit(2)
             }
-            .font(.caption)
-            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-        } else {
-            content(accent: .red) {
-                Text(message).font(.caption)
-                    .foregroundStyle(style == .liquidGlass
-                                     ? AnyShapeStyle(.primary) : AnyShapeStyle(.white))
-                    .lineLimit(1).truncationMode(.tail)
-            }
+            Button(action: onCancel) { Image(systemName: "xmark") }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error")
         }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.red.opacity(0.6)))
+        .help(message)
     }
 
     private var cancelButton: some View {

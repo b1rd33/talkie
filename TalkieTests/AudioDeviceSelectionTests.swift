@@ -52,20 +52,4 @@ final class AudioDeviceSelectionTests: XCTestCase {
         XCTAssertTrue(AudioDeviceSelection.activeDeviceWasRemoved(uid: active.uid, devices: []))
         XCTAssertFalse(AudioDeviceSelection.activeDeviceWasRemoved(uid: nil, devices: []))
     }
-    func testDefaultAndMissingPreferenceRebindThePreviouslySelectedInput() {
-        let mic = AudioInputDevice(id: 7, uid: "built-in", name: "Mac")
-        for resolution in [AudioDeviceResolution.systemDefault(mic),
-                           .preferredMissing(requestedUID: "usb", fallback: mic)] {
-            var currentDevice: UInt32 = 9
-            let result = AudioDeviceSelection.apply(resolution, requestedUID: nil) {
-                currentDevice = $0
-                return 0
-            }
-            XCTAssertEqual(currentDevice, 7)
-            XCTAssertEqual(result, resolution)
-        }
-        XCTAssertEqual(AudioDeviceSelection.apply(.systemDefault(mic), requestedUID: nil,
-                                                  setDevice: { _ in -50 }),
-                       .configurationFailed(requestedUID: nil, status: -50))
-    }
 }

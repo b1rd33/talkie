@@ -364,6 +364,7 @@ final class AppServices {
             window.contentViewController = NSHostingController(
                 rootView: SettingsView(keychain: keychain, settings: settings))
             window.isReleasedWhenClosed = false
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .canJoinAllApplications]
             window.center()
             settingsWindow = window
         }
@@ -387,6 +388,7 @@ final class AppServices {
             window.title = "Talkie"
             window.contentViewController = NSHostingController(rootView: content)
             window.isReleasedWhenClosed = false
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .canJoinAllApplications]
             window.center()
             hubWindow = window
         }
