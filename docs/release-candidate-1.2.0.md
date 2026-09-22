@@ -8,7 +8,7 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 - Main: `27e70af` (1.1.0 candidate, PR #15).
 - This branch starts at `8b9f8d6`, the current head of open PR #17, which depends
   on open PR #16. Neither PR was merged during this task.
-- Version prepared: 1.2.0, build 4. No release tag has been created.
+- Version prepared: 1.2.0, build 5. No release tag has been created.
 - Remote dependency pins remain FluidAudio 0.15.5 and HotKey 0.2.1.
 - ThinkingOrbsKit is vendored from Libraries.dev commit
   `2015f0ba79a9faec351719c4a6d590a1e6bfa243`, with its MIT license bundled.
@@ -44,8 +44,11 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 
 Current provider contract checked against official documentation:
 https://developers.openai.com/api/docs/guides/realtime-transcription
-Automated validation made no live provider requests. During interactive review,
-the user ran the local microphone check and it reported input detected.
+Interactive microphone checks detected AirPods input. A generated speech fixture
+was recognized by the configured OpenAI batch model. With explicit user consent,
+a failed 2.7-second test clip and a slowed copy were sent to the same service; both
+returned empty text. The local model cache was incomplete, so no local-ASR result
+is claimed. Fresh end-to-end AirPods dictation remains under verification.
 
 ## Checks
 
@@ -81,6 +84,14 @@ the user ran the local microphone check and it reported input detected.
   against the old ad-hoc build. Reset only Talkie's Accessibility entry.
 - [x] Regranted app-control access; the installed app reports both Microphone
   and Accessibility Granted after restart. Left Talkie closed after verification.
+- [x] Bluetooth regression: 457 logic/rendering tests passed, including a stale
+  48 kHz output bus with 24 kHz hardware, startup-exception cleanup, and streaming/
+  file conversion across rate changes. Result: `/tmp/talkie-bluetooth-tests-v3.xcresult`.
+- [x] Build 5 rebuilds capture engines per session, selects the current hardware
+  input format, converts Objective-C startup exceptions into recoverable errors,
+  and surfaces conversion errors instead of silently dropping buffers. It avoids
+  resetting an already-selected Bluetooth device; 22 focused audio tests passed
+  after this final adjustment. Result: `/tmp/talkie-bluetooth-final.xcresult`.
 - [ ] Updated PR head must pass required CI before integration.
 - [ ] Signed host insertion suite and physical Fn/focus-switch checks remain
   user-assisted checks in `docs/testing-matrix.md`.
@@ -101,7 +112,9 @@ reports a blocked merge state. No approval or protection bypass is permitted.
 ## Local installation
 
 With explicit user approval, `/Applications/Talkie.app` was replaced by build 4,
-signed with the available Apple Development identity. The original bundle is
+signed with the available Apple Development identity. Build 5 was subsequently
+installed with the same identity, preserving build 4 in
+`build/local-install/Talkie-before-bluetooth-fix.app.backup`. The original bundle is
 retained at `build/local-install/Talkie-before-orbs.app.backup`. Settings and
 history were preserved. Only Talkie's stale Accessibility grant was reset after
 macOS diagnostics confirmed a signature mismatch; other app grants were untouched.

@@ -1,6 +1,13 @@
 import AVFoundation
 import Observation
 
+func startAudioCapture(_ engine: AVAudioEngine, block: @escaping AVAudioNodeTapBlock) throws {
+    var error: NSError?
+    guard TalkieStartAudioCapture(engine, block, &error) else {
+        throw error ?? AudioError.engineFailure("could not start microphone") as NSError
+    }
+}
+
 struct AudioSignalMetrics: Sendable, Equatable {
     let frameCount: Int
     let duration: TimeInterval
@@ -184,6 +191,7 @@ final class AudioSink {
     private var sourceFormat: AVAudioFormat?
     private let levelLock = NSLock()
     private var _latestLevel: Float = 0
+    private var captureError: Error?
     private let healthPolicy: AudioHealthPolicy
     private var energySum: Double = 0
     private var peakAmplitude: Float = 0
@@ -204,6 +212,20 @@ final class AudioSink {
     }
     private func setLevel(_ value: Float) {
         levelLock.lock(); _latestLevel = value; levelLock.unlock()
+    }
+
+    func capture(_ buffer: AVAudioPCMBuffer) {
+        do { try append(buffer) } catch { recordFailure(error) }
+    }
+
+    private func recordFailure(_ error: Error) {
+        levelLock.lock(); defer { levelLock.unlock() }
+        if captureError == nil { captureError = error }
+    }
+
+    func validateCapture() throws {
+        levelLock.lock(); defer { levelLock.unlock() }
+        if let captureError { throw captureError }
     }
 
     /// Streaming hook: every converted 16kHz mono chunk is forwarded here as it
@@ -244,6 +266,9 @@ final class AudioSink {
     func drainSamples() -> [Float] { samples }
 
     func append(_ buffer: AVAudioPCMBuffer) throws {
+        guard buffer.format.sampleRate > 0, buffer.format.channelCount > 0 else {
+            throw AudioError.engineFailure("invalid microphone format")
+        }
         if converter == nil || sourceFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: Self.targetFormat)
             sourceFormat = buffer.format
@@ -289,6 +314,10 @@ final class AudioSink {
             let status = converter.convert(to: out, error: &convError) { _, outStatus in
                 outStatus.pointee = .endOfStream
                 return nil
+            }
+            if let convError {
+                recordFailure(AudioError.engineFailure(convError.localizedDescription))
+                break
             }
             let n = Int(out.frameLength)
             if n > 0, let ptr = out.floatChannelData?[0] {
@@ -360,7 +389,7 @@ final class AudioSink {
 @MainActor
 @Observable
 final class AudioRecorder: AudioRecording {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let preferredDeviceUID: () -> String?
     private let deviceCatalog: any AudioDeviceCataloging
     private let deviceMonitor: any AudioDeviceMonitoring
@@ -400,7 +429,10 @@ final class AudioRecorder: AudioRecording {
             }
         default: throw AudioError.microphoneDenied
         }
+        try Task.checkCancellation()
 
+        // A stopped engine can retain the old Bluetooth route's format.
+        engine = AVAudioEngine()
         sink = AudioSink(healthPolicy: healthPolicy)
         sink.chunkConsumer = chunkConsumer
         deviceWasLost = false
@@ -409,16 +441,12 @@ final class AudioRecorder: AudioRecording {
         if case .configurationFailed(_, let status) = deviceResolution {
             throw AudioError.engineFailure("could not select input device (CoreAudio \(status))")
         }
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { throw AudioError.engineFailure("no input device") }
         let sink = self.sink
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
-            try? sink.append(buffer)
-        }
-        engine.prepare()
-        do { try engine.start() } catch {
-            input.removeTap(onBus: 0)
+        do {
+            try startAudioCapture(engine) { buffer, _ in
+                sink.capture(buffer)
+            }
+        } catch {
             throw AudioError.engineFailure(error.localizedDescription)
         }
         isRecording = true
@@ -434,6 +462,7 @@ final class AudioRecorder: AudioRecording {
     func stop() async throws -> RecordedAudio {
         teardown()
         sink.finish()
+        try validateCapture()
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("talkie-\(UUID().uuidString).m4a")
         let written = try sink.writeM4A(to: url)
@@ -452,6 +481,8 @@ final class AudioRecorder: AudioRecording {
         sink = AudioSink(healthPolicy: healthPolicy)
         sink.chunkConsumer = chunkConsumer
     }
+
+    func validateCapture() throws { try sink.validateCapture() }
 
     private func teardown() {
         deviceMonitor.stop()

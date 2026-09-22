@@ -33,7 +33,8 @@ enum EngineError: Error, Equatable, LocalizedError {
             "On-device models aren't downloaded. Download them in Settings → Engines, or explicitly switch to Cloud or Instant."
         case .requestFailed(let status, let message): "Request failed (\(status)): \(message)"
         case .invalidResponse: "The API returned an unreadable response."
-        case .emptyTranscription: "The transcription service returned no text."
+        case .emptyTranscription:
+            "No speech could be transcribed. Try a longer recording, or check the microphone in Settings → General."
         case .speakerReferenceMissing:
             "Speaker filtering needs a voice sample — record one in Settings → Engines."
         case .enrolledSpeakerNotDetected:

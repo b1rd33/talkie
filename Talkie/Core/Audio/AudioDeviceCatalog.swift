@@ -101,9 +101,16 @@ struct SystemAudioDeviceCatalog: AudioDeviceCataloging {
         let devices = inputDevices()
         let resolution = AudioDeviceSelection.resolution(
             preferredUID: preferredUID, devices: devices, defaultDeviceID: defaultInputDeviceID())
-        // Always rebind: a reused engine may still point at the previous selection.
+        // Bind the resolved device, but avoid renegotiating an already-selected Bluetooth route.
         return AudioDeviceSelection.apply(resolution, requestedUID: preferredUID) { deviceID in
             guard let unit = engine.inputNode.audioUnit else { return kAudio_ParamError }
+            var currentID = AudioDeviceID(0)
+            var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+            if AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                                    kAudioUnitScope_Global, 0, &currentID, &size) == noErr,
+               currentID == deviceID {
+                return noErr
+            }
             var mutableID = deviceID
             return AudioUnitSetProperty(
                 unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,

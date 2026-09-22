@@ -47,6 +47,7 @@ struct MicrophoneCheckView: View {
                     level = recorder.latestLevel
                     peak = max(peak, level)
                 }
+                try recorder.validateCapture()
                 result = peak >= AudioHealthPolicy.standard.signalFloorRMS * 10
                     ? "Input detected on \(input)."
                     : "No signal from \(input). Check its mute switch, input volume, or choose another microphone."
