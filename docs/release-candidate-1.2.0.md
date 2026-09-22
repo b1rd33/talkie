@@ -159,3 +159,8 @@ Public release signing remains a separate task.
   AirPods were not the active system-default microphone in that check.
 - A fresh human dictation test remains pending; an input-level check alone does
   not establish end-to-end transcription reliability.
+- User verification: after installing build 7, the user dictated the requested
+  test sentence and confirmed that the text appeared correctly. This verifies
+  the current MacBook Pro microphone end to end; AirPods were not active.
+- GitHub `logic-and-ui` passed for code head `21f9cdf` (3m26s); later documentation
+  commits only record installed-build evidence.
