@@ -386,11 +386,6 @@ final class HistoryStore {
         return (try? context.fetch(descriptor)) ?? []
     }
 
-    func deleteTransformPreset(_ preset: TransformPreset) {
-        context.delete(preset)
-        try? context.save()
-    }
-
     private func normalized(_ soundsLike: String?) -> String? {
         guard let trimmed = soundsLike?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else { return nil }

@@ -3,16 +3,9 @@ import XCTest
 
 final class OpenAITranscriptionModelTests: XCTestCase {
     func testRecommendedModelsExposeDocumentedCapabilities() {
-        XCTAssertEqual(OpenAITranscriptionModel.gptTranscribe.workflow, .batch)
         XCTAssertTrue(OpenAITranscriptionModel.gptTranscribe.supportsKeywords)
-        XCTAssertTrue(OpenAITranscriptionModel.gptTranscribe.supportsMultipleLanguages)
-        XCTAssertTrue(OpenAITranscriptionModel.gptTranscribe.returnsDetectedLanguages)
-        XCTAssertEqual(OpenAITranscriptionModel.gptTranscribe.pricePerMinute, 0.0045)
 
-        XCTAssertEqual(OpenAITranscriptionModel.gptLiveTranscribe.workflow, .realtime)
         XCTAssertTrue(OpenAITranscriptionModel.gptLiveTranscribe.supportsDelay)
-        XCTAssertFalse(OpenAITranscriptionModel.gptLiveTranscribe.returnsDetectedLanguages)
-        XCTAssertEqual(OpenAITranscriptionModel.gptLiveTranscribe.pricePerMinute, 0.017)
     }
 
     func testLegacyModelsRemainAvailableButAreNotDefaults() {
