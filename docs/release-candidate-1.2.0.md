@@ -149,3 +149,13 @@ Public release signing remains a separate task.
   Build 7 replaces that native TabView with a segmented section picker.
 - Installed build 6 retained both microphone and app-control permissions, and
   Settings opened from a full-screen Finder window.
+- Build 7: both Settings UI tests passed (`/tmp/talkie-build7-settings.xcresult`),
+  ReleaseAdhoc build and strict local Apple Development signature checks passed.
+  The signed app is installed at `/Applications/Talkie.app`; builds 5 and 6 are
+  retained as rollback backups.
+- Computer Use confirmed build 7 still reports Microphone and Accessibility
+  Granted. The five-second native capture check detected input on the current
+  system-default MacBook Pro microphone; diagnostics show mono 48 kHz PCM.
+  AirPods were not the active system-default microphone in that check.
+- A fresh human dictation test remains pending; an input-level check alone does
+  not establish end-to-end transcription reliability.
