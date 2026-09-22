@@ -8,7 +8,7 @@ Audit date: 2026-09-22. Branch: `codex/next-release-polish`.
 - Main: `27e70af` (1.1.0 candidate, PR #15).
 - This branch starts at `8b9f8d6`, the current head of open PR #17, which depends
   on open PR #16. Neither PR was merged during this task.
-- Version prepared: 1.2.0, build 5. No release tag has been created.
+- Version prepared: 1.2.0, build 7. No release tag has been created.
 - HotKey remains pinned to 0.2.1. FluidAudio was removed with local transcription.
 - ThinkingOrbsKit is vendored from Libraries.dev commit
   `2015f0ba79a9faec351719c4a6d590a1e6bfa243`, with its MIT license bundled.
@@ -48,7 +48,10 @@ Interactive microphone checks detected AirPods input. A generated speech fixture
 was recognized by the configured OpenAI batch model. With explicit user consent,
 a failed 2.7-second test clip and a slowed copy were sent to the same service; both
 returned empty text. The local model cache was incomplete, so no local-ASR result
-is claimed. Fresh end-to-end AirPods dictation remains under verification.
+is claimed. The user's later build-5 history includes successful short English dictations as
+well as failures. Build 6 replaces AVAudioEngine capture with AVCaptureSession
+and fixes a regression-test-confirmed loss of buffered PCM when formats change.
+Fresh end-to-end AirPods dictation on build 6 remains under verification.
 
 ## Checks
 
@@ -121,3 +124,28 @@ macOS diagnostics confirmed a signature mismatch; other app grants were untouche
 
 This local installation and PR do not require Developer ID or notarization.
 Public release signing remains a separate task.
+
+## Build 6 microphone and window follow-up
+
+- Native `AVCaptureSession` selects the resolved microphone by stable UID and
+  delivers PCM with its actual format; capture stops and drains callbacks before
+  finalizing audio. The old AudioUnit reconfiguration/exception bridge is removed.
+- A regression using integer PCM at 24 and 48 kHz exposed loss of buffered
+  speech on format changes. The resampler now drains before switching formats.
+- Thinking Orb includes an input waveform. Startup is labelled separately;
+  errors show a red message for eight seconds and can be dismissed or retried.
+- Failed/cancelled processing keeps the captured duration and audio-health result.
+- Home/Settings join the active full-screen Space. Advanced settings use a segmented
+  section picker inside the content area, preserving the window title bar.
+- Local transcription and downloads are removed. Persisted offline configurations
+  remain blocked until the user explicitly selects a cloud profile.
+- Focused capture/conversion/device-selection regression: 19 tests passed.
+  Result: `/tmp/talkie-native-capture-tests-v2.xcresult`.
+- Integrated build-6 regression: 445 logic/rendering tests passed, zero failures;
+  both Settings UI tests passed with grouped Advanced tabs. Results:
+  `/tmp/talkie-build6-regression.xcresult`, `/tmp/talkie-build6-settings.xcresult`.
+- Project configuration, dependency mirror and sensitive-content checks passed.
+- Manual build-6 UI verification exposed collapsed native tabs after reopening.
+  Build 7 replaces that native TabView with a segmented section picker.
+- Installed build 6 retained both microphone and app-control permissions, and
+  Settings opened from a full-screen Finder window.

@@ -19,9 +19,12 @@
   Bare Waveform and Dynamic Island.
 - Rebind the recorder to the actual default or fallback microphone, and add a
   local input-level test that names the device and releases capture afterward.
-- Recreate the audio engine for each recording and use the current hardware
-  format when Bluetooth switches sample rates. Recover from audio-startup
-  exceptions, surface conversion failures, and explain empty transcription results.
+- Capture microphone input through AVFoundation capture sessions using each
+  buffer's actual PCM format; preserve buffered speech across sample-rate changes.
+- Show microphone startup, a live input waveform beside Thinking Orb, and a
+  readable, dismissible failure message. Keep the actual duration in failed history.
+- Open Home and Settings in the active full-screen Space; keep Advanced tabs
+  inside the Settings window so switching modes does not change its title bar.
 - Open a visible Home window on launch, provide a direct Settings button, and
   improve permission recovery with app registration and a Finder shortcut.
 - Include the pending speaker-filtering and reliability integration from PRs

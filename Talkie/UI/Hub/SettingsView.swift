@@ -5,6 +5,7 @@ import ServiceManagement
 struct SettingsView: View {
     let keychain: KeychainStore
     @Bindable var settings: SettingsStore
+    @State private var selectedTab = "Profiles"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,11 +28,7 @@ struct SettingsView: View {
                 SimpleSettingsView(keychain: keychain, settings: settings,
                                    profiles: AppServices.shared.profiles)
             } else {
-                if #available(macOS 15.0, *) {
-                    devTabs.tabViewStyle(.grouped)
-                } else {
-                    devTabs
-                }
+                devTabs
             }
         }
         .frame(width: screenshotReadableWidth, height: 480)
@@ -47,19 +44,30 @@ struct SettingsView: View {
     }
 
     private var devTabs: some View {
-        TabView {
-            ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
-                .tabItem { Label("Profiles", systemImage: "person.crop.circle") }
-            GeneralSettingsTab(settings: settings)
-                .tabItem { Label("General", systemImage: "gearshape") }
-            EngineSettingsTab(keychain: keychain, settings: settings,
-                              speakerReference: AppServices.shared.speakerReference)
-                .tabItem { Label("Engines", systemImage: "waveform") }
-            StyleSettingsTab(settings: settings, history: AppServices.shared.history)
-                .tabItem { Label("Style", systemImage: "textformat") }
+        VStack(spacing: 0) {
+            Picker("Settings section", selection: $selectedTab) {
+                Text("Profiles").tag("Profiles")
+                Text("General").tag("General")
+                Text("Engines").tag("Engines")
+                Text("Style").tag("Style")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(8)
+            Group {
+                switch selectedTab {
+                case "General": GeneralSettingsTab(settings: settings)
+                case "Engines":
+                    EngineSettingsTab(keychain: keychain, settings: settings,
+                                      speakerReference: AppServices.shared.speakerReference)
+                case "Style": StyleSettingsTab(settings: settings, history: AppServices.shared.history)
+                default: ProfilesSettingsTab(settings: settings, profiles: AppServices.shared.profiles)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
 }
 
 /// The cleanup controls are inert when instant mode is inserting raw streamed

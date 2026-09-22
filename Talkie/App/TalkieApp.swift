@@ -6,8 +6,7 @@ struct TalkieApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
-        // Stop the Settings scene from auto-restoring; its restored Pill style
-        // picker would otherwise replay a stale selection over the user's choice.
+        // Clear restoration left by the old, separate SwiftUI Settings window.
         SettingsSceneRestoration.clear()
     }
 
@@ -17,9 +16,11 @@ struct TalkieApp: App {
         } label: {
             MenuBarIcon(coordinator: AppServices.shared.coordinator)
         }
-        Settings {
-            SettingsView(keychain: AppServices.shared.keychain,
-                         settings: AppServices.shared.settings)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { AppServices.shared.showSettings() }
+                    .keyboardShortcut(",")
+            }
         }
     }
 }
@@ -33,8 +34,7 @@ struct MenuBarContent: View {
         Text("Talkie — hold fn to dictate")
         Text("Transform selected text: ⇧⌥T").font(.caption)
         Divider()
-        // spec §7: the menu carries the Cloud/Local engine picker too — bound to
-        // the same SettingsStore property the Engines tab's radio group uses (Phase 3).
+        // The menu and Settings share the same engine preference.
         if settings.engineMode == "local" {
             Text(EngineError.localTranscriptionRemoved.errorDescription!)
         }
