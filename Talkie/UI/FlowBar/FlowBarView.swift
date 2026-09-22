@@ -42,6 +42,7 @@ struct FlowBarView: View {
         PillRendererView(
             presentation: presentation,
             levelSource: recorder,
+            microphoneReady: recorder.isRecording,
             recordingStartedAt: recordingStarted,
             cleanupFailureReason: coordinator.cleanupFailureReason,
             onCancel: { coordinator.cancel() },
@@ -71,6 +72,7 @@ struct FlowBarView: View {
 struct PillRendererView: View {
     let presentation: PillPresentation
     let levelSource: any AudioLevelReading
+    var microphoneReady = true
     var recordingStartedAt: Date?
     var cleanupFailureReason: String?
     var onCancel: () -> Void = {}
@@ -98,16 +100,20 @@ struct PillRendererView: View {
                 idleView
             case .recording:
                 activePill {
-                    if style == .dynamicIsland {
-                        Circle().fill(.red).frame(width: 7, height: 7)
-                    }
-                    if style == .thinkingOrb {
-                        DictationOrbView(presentation: presentation, levelSource: levelSource)
-                        WaveformCanvasView(recorder: levelSource, color: contentForeground, barCount: 16)
-                            .accessibilityHidden(true)
+                    if !microphoneReady {
+                        Text("Starting microphone…").font(.caption).foregroundStyle(contentForeground)
                     } else {
-                        WaveformCanvasView(recorder: levelSource, color: contentForeground)
-                            .accessibilityHidden(true)
+                        if style == .dynamicIsland {
+                            Circle().fill(.red).frame(width: 7, height: 7)
+                        }
+                        if style == .thinkingOrb {
+                            DictationOrbView(presentation: presentation, levelSource: levelSource)
+                            WaveformCanvasView(recorder: levelSource, color: contentForeground, barCount: 16)
+                                .accessibilityHidden(true)
+                        } else {
+                            WaveformCanvasView(recorder: levelSource, color: contentForeground)
+                                .accessibilityHidden(true)
+                        }
                     }
                     if presentation.showsTimer { timerView }
                     if presentation.showsCancelButton { cancelButton }
