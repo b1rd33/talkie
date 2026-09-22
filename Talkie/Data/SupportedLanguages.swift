@@ -19,10 +19,6 @@ enum SupportedLanguages {
         ("Chinese (Traditional)", "zh-Hant"),
     ]
 
-    static func transcriptionCode(for code: String?) -> String? {
-        code?.split(separator: "-").first.map(String.init)
-    }
-
     /// OpenAI's context-aware transcription models accept ISO 639-1 language
     /// hints plus documented regional Chinese codes. Talkie's broader display
     /// variants are reduced to a provider-supported value.

@@ -229,46 +229,9 @@ final class AppServices {
             notifier: notifier, // Phase 2: cap + failure notifications
             history: history,
             frontmostApp: { activeApp.frontmost },
-            dictionaryTermsProvider: { [history] in history?.dictionaryTermStrings() ?? [] },
-            dictionaryPromptTermsProvider: { [history] in history?.dictionaryPromptTerms() ?? [] },
-            snippetExpansionsProvider: { [history] in history?.snippetExpansions() ?? [] },
-            pressEnterEnabledProvider: {
-                defaults.object(forKey: "enablePressEnterAction") as? Bool ?? false
-            },
-            focusedContextProvider: {
-                let target = activeApp.frontmost.bundleID
-                let enabled = defaults.object(forKey: "contextAwarenessEnabled") as? Bool ?? false
-                let excluded = defaults.stringArray(forKey: "contextExcludedBundleIDs") ?? []
-                guard ContextPolicy.mayRead(enabled: enabled, bundleID: target,
-                                            exclusions: excluded) else { return nil }
-                return contextReader.read()
-            },
-            cleanupLevelProvider: {
-                CleanupLevel(rawValue: defaults.string(forKey: "cleanupLevel") ?? "high") ?? .high
-            },
             stylePresetProvider: { bundleID in resolver.resolve(bundleID: bundleID) },
-            pinnedLanguageProvider: {
-                // Settings stores the ISO code ("de"); the prompt wants a name ("German").
-                defaults.string(forKey: "pinnedLanguage").flatMap {
-                    Locale(identifier: "en").localizedString(forIdentifier: $0)
-                }
-            },
-            cleanupModelProvider: {
-                // Stamped into DictationRecord.cleanupModel (spec §8) — same key CleanupService reads.
-                defaults.string(forKey: "cleanupModel") ?? "google/gemini-2.5-flash-lite"
-            },
             keepRecordingsProvider: {
                 defaults.object(forKey: "keepRecordings") as? Bool ?? false
-            },
-            instantSkipCleanupProvider: {
-                defaults.object(forKey: "instantSkipCleanup") as? Bool ?? false
-            },
-            batchProgressEnabledProvider: {
-                (defaults.string(forKey: "engineMode") ?? "cloud") == "cloud"
-                    && (defaults.object(forKey: "streamBatchTranscription") as? Bool ?? true)
-            },
-            liveTypeProvider: {
-                defaults.object(forKey: "instantLiveType") as? Bool ?? false
             },
             sessionConfigurationProvider: { target in
                 sessionResolver.resolve(targetBundleID: target.bundleID)
